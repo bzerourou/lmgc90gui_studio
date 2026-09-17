@@ -1,6 +1,11 @@
 # LMGC90 GUI Studio
 
-Monorepo to build, visualise and export **LMGC90** scenes (DEM / contact) with a decoupled architecture:
+Monorepo to build, visualise and export **LMGC90** scenes (DEM / contact) 
+
+![interface](docs/captures/interface.png)
+
+
+With a decoupled architecture:
 
 | Package | Role | Heavy dependencies |
 |---------|------|--------------------|
