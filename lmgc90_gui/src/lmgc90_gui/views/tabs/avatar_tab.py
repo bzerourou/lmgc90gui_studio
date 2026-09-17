@@ -31,10 +31,13 @@ def create_avatar_tab(parent=None):
 
             form = QFormLayout()
             self.type_combo = QComboBox()
-            self.cx = QDoubleSpinBox(); self.cy = QDoubleSpinBox(); self.cz = QDoubleSpinBox()
+            # QLineEdit: supports dynamic expressions (avatar[0].x, 0,5, …)
+            self.cx = QLineEdit("0")
+            self.cy = QLineEdit("0")
+            self.cz = QLineEdit("0")
             for s in (self.cx, self.cy, self.cz):
-                s.setRange(-1e9, 1e9)
-                s.setDecimals(8)
+                s.setPlaceholderText("0  |  expr")
+                s.setProperty("class", "exprField")
             self.mat_combo = QComboBox()
             self.mod_combo = QComboBox()
             self.color_edit = QLineEdit("BLUEx")
