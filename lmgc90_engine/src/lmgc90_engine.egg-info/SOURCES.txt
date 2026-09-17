@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/lmgc90_engine/__init__.py
+src/lmgc90_engine/avatar_factory.py
+src/lmgc90_engine/datbox.py
+src/lmgc90_engine/errors.py
+src/lmgc90_engine/granulo.py
+src/lmgc90_engine/materialize.py
+src/lmgc90_engine/session.py
+src/lmgc90_engine.egg-info/PKG-INFO
+src/lmgc90_engine.egg-info/SOURCES.txt
+src/lmgc90_engine.egg-info/dependency_links.txt
+src/lmgc90_engine.egg-info/requires.txt
+src/lmgc90_engine.egg-info/top_level.txt
+tests/test_engine_purity.py
+tests/test_session_pure.py

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmgc90-core"
+version = "0.1.1"
+description = "Headless scientific core for LMGC90 scene preparation — no Qt, no pylmgc90."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Open Source"}
+authors = [{name = "Bachir Zerourou"}]
+keywords = ["LMGC90", "DEM", "granular", "pylmgc90", "scientific"]
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Repository = "https://github.com/bzerourou/LMG90_GUI_MVC"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --tb=short"

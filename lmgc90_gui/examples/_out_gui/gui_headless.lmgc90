@@ -1,0 +1,189 @@
+{
+  "schema_version": 2,
+  "project_name": "gui_headless",
+  "dimension": 2,
+  "units": "SI",
+  "materials": [
+    {
+      "name": "STEEL",
+      "type": "RIGID",
+      "density": 7800.0,
+      "props": {}
+    },
+    {
+      "name": "SAND",
+      "type": "RIGID",
+      "density": 2500.0,
+      "props": {}
+    }
+  ],
+  "models": [
+    {
+      "name": "rigid",
+      "physics": "MECAx",
+      "element": "Rxx2D",
+      "dimension": 2
+    }
+  ],
+  "avatars": [
+    {
+      "type": "rigidDisk",
+      "avatar_id": "4c1647a7f95949848a18930a64da183f",
+      "center": [
+        0.0,
+        0.2
+      ],
+      "material": "SAND",
+      "model": "rigid",
+      "color": "BLUEx",
+      "__origin": "manual",
+      "r": 0.08
+    },
+    {
+      "type": "rigidDisk",
+      "avatar_id": "cdbd45adf132443baada1946a4c3a85a",
+      "center": [
+        0.25,
+        0.2
+      ],
+      "material": "SAND",
+      "model": "rigid",
+      "color": "BLUEx",
+      "__origin": "manual",
+      "r": 0.08
+    },
+    {
+      "type": "rigidDisk",
+      "avatar_id": "24e9ae96eb9b427eb5d86bce79c4b1d5",
+      "center": [
+        0.5,
+        0.2
+      ],
+      "material": "SAND",
+      "model": "rigid",
+      "color": "BLUEx",
+      "__origin": "manual",
+      "r": 0.08
+    },
+    {
+      "type": "smoothWall",
+      "avatar_id": "5898ebd434be48c1b013865af488f6f6",
+      "center": [
+        0.25,
+        -0.04
+      ],
+      "material": "STEEL",
+      "model": "rigid",
+      "color": "GRAYx",
+      "__origin": "manual",
+      "l": 1.2,
+      "h": 0.08,
+      "nb_polyg": 12
+    }
+  ],
+  "particle_populations": [],
+  "avatar_groups": {},
+  "populations_groups": {},
+  "contact_laws": [],
+  "visibility_rules": [],
+  "operations": [],
+  "postpro_commands": [],
+  "loops": [],
+  "granulo_generations": [],
+  "dynamic_vars": {},
+  "journal": [
+    {
+      "op": "add_material",
+      "payload": {
+        "name": "STEEL",
+        "type": "RIGID",
+        "density": 7800.0,
+        "props": {}
+      }
+    },
+    {
+      "op": "add_material",
+      "payload": {
+        "name": "SAND",
+        "type": "RIGID",
+        "density": 2500.0,
+        "props": {}
+      }
+    },
+    {
+      "op": "add_model",
+      "payload": {
+        "name": "rigid",
+        "physics": "MECAx",
+        "element": "Rxx2D",
+        "dimension": 2
+      }
+    },
+    {
+      "op": "add_avatar",
+      "payload": {
+        "type": "rigidDisk",
+        "avatar_id": "4c1647a7f95949848a18930a64da183f",
+        "center": [
+          0.0,
+          0.2
+        ],
+        "material": "SAND",
+        "model": "rigid",
+        "color": "BLUEx",
+        "__origin": "manual",
+        "r": 0.08
+      }
+    },
+    {
+      "op": "add_avatar",
+      "payload": {
+        "type": "rigidDisk",
+        "avatar_id": "cdbd45adf132443baada1946a4c3a85a",
+        "center": [
+          0.25,
+          0.2
+        ],
+        "material": "SAND",
+        "model": "rigid",
+        "color": "BLUEx",
+        "__origin": "manual",
+        "r": 0.08
+      }
+    },
+    {
+      "op": "add_avatar",
+      "payload": {
+        "type": "rigidDisk",
+        "avatar_id": "24e9ae96eb9b427eb5d86bce79c4b1d5",
+        "center": [
+          0.5,
+          0.2
+        ],
+        "material": "SAND",
+        "model": "rigid",
+        "color": "BLUEx",
+        "__origin": "manual",
+        "r": 0.08
+      }
+    },
+    {
+      "op": "add_avatar",
+      "payload": {
+        "type": "smoothWall",
+        "avatar_id": "5898ebd434be48c1b013865af488f6f6",
+        "center": [
+          0.25,
+          -0.04
+        ],
+        "material": "STEEL",
+        "model": "rigid",
+        "color": "GRAYx",
+        "__origin": "manual",
+        "l": 1.2,
+        "h": 0.08,
+        "nb_polyg": 12
+      }
+    }
+  ]
+}

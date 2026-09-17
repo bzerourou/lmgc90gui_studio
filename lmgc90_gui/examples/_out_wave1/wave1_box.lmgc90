@@ -1,0 +1,359 @@
+{
+  "schema_version": 2,
+  "project_name": "wave1_box",
+  "dimension": 2,
+  "units": "SI",
+  "materials": [
+    {
+      "name": "STEEL",
+      "type": "RIGID",
+      "density": 7800.0,
+      "props": {}
+    },
+    {
+      "name": "SAND",
+      "type": "RIGID",
+      "density": 2500.0,
+      "props": {}
+    }
+  ],
+  "models": [
+    {
+      "name": "rigid",
+      "physics": "MECAx",
+      "element": "Rxx2D",
+      "dimension": 2
+    }
+  ],
+  "avatars": [
+    {
+      "type": "smoothWall",
+      "avatar_id": "e7b5a684ab0f44e1a55a6ecd91ad0a59",
+      "center": [
+        0.0,
+        -0.04
+      ],
+      "material": "STEEL",
+      "model": "rigid",
+      "color": "GRAYx",
+      "__origin": "manual",
+      "l": 2.0,
+      "h": 0.08,
+      "nb_polyg": 16
+    },
+    {
+      "type": "rigidDisk",
+      "avatar_id": "c64dff5077eb4c32b0547b49db59f6a3",
+      "center": [
+        0.0,
+        0.3
+      ],
+      "material": "SAND",
+      "model": "rigid",
+      "color": "BLUEx",
+      "__origin": "manual",
+      "r": 0.06
+    }
+  ],
+  "particle_populations": [
+    {
+      "population_id": "pop_69c2dd2b827b4cc7b2fda6d6bc7b5b18",
+      "avatar_type": "rigidDisk",
+      "material_name": "SAND",
+      "model_name": "rigid",
+      "color": "CYANx",
+      "origin": "granulo",
+      "dimension": 2,
+      "group_name": "depot",
+      "n_particles": 40,
+      "extra_params": {}
+    }
+  ],
+  "avatar_groups": {
+    "grid": [
+      "38a6e2c7469b4501ad4a22b5d4a226f9",
+      "b67407cc647a47719a13a000d5fed12a",
+      "a6d9dffdf7f5475c90850fc6fb8e9253",
+      "e4a6c139211343aba2e918e06f52f54f",
+      "3dc62bf1760d425a8a8ce04ec65d5545",
+      "31da13255b6a4f29bbfa60c412491111",
+      "d2047842fd6d41a9bf94572b327e3f65",
+      "3caa3a093cae482083f3f6a8df793569",
+      "45ad859d0957455097f323187db92ba5"
+    ]
+  },
+  "populations_groups": {
+    "depot": [
+      "pop_69c2dd2b827b4cc7b2fda6d6bc7b5b18"
+    ]
+  },
+  "contact_laws": [
+    {
+      "name": "st_sd",
+      "law": "IQS_CLB",
+      "fric": 0.35
+    }
+  ],
+  "visibility_rules": [
+    {
+      "CorpsCandidat": "RBDY2",
+      "candidat": "DISKx",
+      "colorCandidat": "BLUEx",
+      "CorpsAntagoniste": "RBDY2",
+      "antagoniste": "JONCx",
+      "colorAntagoniste": "GRAYx",
+      "behav": "st_sd",
+      "alert": 0.05
+    },
+    {
+      "CorpsCandidat": "RBDY2",
+      "candidat": "DISKx",
+      "colorCandidat": "CYANx",
+      "CorpsAntagoniste": "RBDY2",
+      "antagoniste": "JONCx",
+      "colorAntagoniste": "GRAYx",
+      "behav": "st_sd",
+      "alert": 0.05
+    }
+  ],
+  "operations": [
+    {
+      "type": "imposeDrivenDof",
+      "target": "avatar",
+      "target_value": "e7b5a684ab0f44e1a55a6ecd91ad0a59",
+      "params": {
+        "component": [
+          1,
+          2,
+          3
+        ],
+        "dofty": "vlocy",
+        "ct": 0.0
+      }
+    }
+  ],
+  "postpro_commands": [
+    {
+      "name": "SOLVER INFORMATIONS",
+      "step": 20,
+      "target_type": "global",
+      "target_value": null
+    }
+  ],
+  "loops": [
+    {
+      "type": "grid",
+      "model_avatar_id": "c64dff5077eb4c32b0547b49db59f6a3",
+      "count": 9,
+      "radius": 0.0,
+      "step": 0.15,
+      "offset_x": -0.15,
+      "offset_y": 0.3,
+      "offset_z": 0.0,
+      "spiral_factor": 0.0,
+      "invert_axis": false,
+      "group_name": "grid",
+      "generated_ids": [
+        "38a6e2c7469b4501ad4a22b5d4a226f9",
+        "b67407cc647a47719a13a000d5fed12a",
+        "a6d9dffdf7f5475c90850fc6fb8e9253",
+        "e4a6c139211343aba2e918e06f52f54f",
+        "3dc62bf1760d425a8a8ce04ec65d5545",
+        "31da13255b6a4f29bbfa60c412491111",
+        "d2047842fd6d41a9bf94572b327e3f65",
+        "3caa3a093cae482083f3f6a8df793569",
+        "45ad859d0957455097f323187db92ba5"
+      ],
+      "loop_id": "d1e88b99cd4c41fc9a1f42d385a00fb5"
+    }
+  ],
+  "granulo_generations": [
+    {
+      "nb_particles": 40,
+      "radius_min": 0.015,
+      "radius_max": 0.025,
+      "container_type": "Box2D",
+      "container_params": {
+        "lx": 1.0,
+        "ly": 0.6
+      },
+      "material_name": "SAND",
+      "model_name": "rigid",
+      "avatar_type": "rigidDisk",
+      "color": "CYANx",
+      "group_name": "depot",
+      "seed": 1,
+      "population_id": "pop_69c2dd2b827b4cc7b2fda6d6bc7b5b18",
+      "dimension": 2,
+      "use_particle_population": true
+    }
+  ],
+  "dynamic_vars": {},
+  "journal": [
+    {
+      "op": "add_material",
+      "payload": {
+        "name": "STEEL",
+        "type": "RIGID",
+        "density": 7800.0,
+        "props": {}
+      }
+    },
+    {
+      "op": "add_material",
+      "payload": {
+        "name": "SAND",
+        "type": "RIGID",
+        "density": 2500.0,
+        "props": {}
+      }
+    },
+    {
+      "op": "add_model",
+      "payload": {
+        "name": "rigid",
+        "physics": "MECAx",
+        "element": "Rxx2D",
+        "dimension": 2
+      }
+    },
+    {
+      "op": "add_avatar",
+      "payload": {
+        "type": "smoothWall",
+        "avatar_id": "e7b5a684ab0f44e1a55a6ecd91ad0a59",
+        "center": [
+          0.0,
+          -0.04
+        ],
+        "material": "STEEL",
+        "model": "rigid",
+        "color": "GRAYx",
+        "__origin": "manual",
+        "l": 2.0,
+        "h": 0.08,
+        "nb_polyg": 16
+      }
+    },
+    {
+      "op": "add_dof",
+      "payload": {
+        "type": "imposeDrivenDof",
+        "target": "avatar",
+        "target_value": "e7b5a684ab0f44e1a55a6ecd91ad0a59",
+        "params": {
+          "component": [
+            1,
+            2,
+            3
+          ],
+          "dofty": "vlocy",
+          "ct": 0.0
+        }
+      }
+    },
+    {
+      "op": "add_avatar",
+      "payload": {
+        "type": "rigidDisk",
+        "avatar_id": "c64dff5077eb4c32b0547b49db59f6a3",
+        "center": [
+          0.0,
+          0.3
+        ],
+        "material": "SAND",
+        "model": "rigid",
+        "color": "BLUEx",
+        "__origin": "manual",
+        "r": 0.06
+      }
+    },
+    {
+      "op": "add_loop",
+      "payload": {
+        "type": "grid",
+        "model_avatar_id": "c64dff5077eb4c32b0547b49db59f6a3",
+        "count": 9,
+        "radius": 0.0,
+        "step": 0.15,
+        "offset_x": -0.15,
+        "offset_y": 0.3,
+        "offset_z": 0.0,
+        "spiral_factor": 0.0,
+        "invert_axis": false,
+        "group_name": "grid",
+        "generated_ids": [
+          "38a6e2c7469b4501ad4a22b5d4a226f9",
+          "b67407cc647a47719a13a000d5fed12a",
+          "a6d9dffdf7f5475c90850fc6fb8e9253",
+          "e4a6c139211343aba2e918e06f52f54f",
+          "3dc62bf1760d425a8a8ce04ec65d5545",
+          "31da13255b6a4f29bbfa60c412491111",
+          "d2047842fd6d41a9bf94572b327e3f65",
+          "3caa3a093cae482083f3f6a8df793569",
+          "45ad859d0957455097f323187db92ba5"
+        ],
+        "loop_id": "d1e88b99cd4c41fc9a1f42d385a00fb5"
+      }
+    },
+    {
+      "op": "add_population",
+      "payload": {
+        "population_id": "pop_69c2dd2b827b4cc7b2fda6d6bc7b5b18",
+        "avatar_type": "rigidDisk",
+        "material_name": "SAND",
+        "model_name": "rigid",
+        "color": "CYANx",
+        "origin": "granulo",
+        "dimension": 2,
+        "group_name": "depot",
+        "n_particles": 40,
+        "extra_params": {}
+      }
+    },
+    {
+      "op": "add_law",
+      "payload": {
+        "name": "st_sd",
+        "law": "IQS_CLB",
+        "fric": 0.35
+      }
+    },
+    {
+      "op": "add_see",
+      "payload": {
+        "CorpsCandidat": "RBDY2",
+        "candidat": "DISKx",
+        "colorCandidat": "BLUEx",
+        "CorpsAntagoniste": "RBDY2",
+        "antagoniste": "JONCx",
+        "colorAntagoniste": "GRAYx",
+        "behav": "st_sd",
+        "alert": 0.05
+      }
+    },
+    {
+      "op": "add_see",
+      "payload": {
+        "CorpsCandidat": "RBDY2",
+        "candidat": "DISKx",
+        "colorCandidat": "CYANx",
+        "CorpsAntagoniste": "RBDY2",
+        "antagoniste": "JONCx",
+        "colorAntagoniste": "GRAYx",
+        "behav": "st_sd",
+        "alert": 0.05
+      }
+    },
+    {
+      "op": "add_postpro",
+      "payload": {
+        "name": "SOLVER INFORMATIONS",
+        "step": 20,
+        "target_type": "global",
+        "target_value": null
+      }
+    }
+  ],
+  "particle_populations_sidecar": "wave1_box.populations.npz"
+}

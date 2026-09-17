@@ -1,0 +1,14 @@
+lmgc90-core>=0.1.0
+lmgc90-engine>=0.1.0
+numpy>=1.24
+
+[dev]
+pytest>=7.0
+
+[qt]
+PyQt6>=6.4
+
+[viz]
+PyQt6>=6.4
+pyvista>=0.40
+pyvistaqt>=0.11

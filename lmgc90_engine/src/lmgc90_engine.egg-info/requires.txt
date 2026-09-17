@@ -1,0 +1,8 @@
+lmgc90-core>=0.1.0
+numpy>=1.24
+
+[dev]
+pytest>=7.0
+
+[pylmgc]
+pylmgc90

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmgc90-engine"
+version = "0.1.0"
+description = "LMGC90 runtime engine — materialize lmgc90_core.Project into pylmgc90.pre objects, write DATBOX, run granulo."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Open Source"}
+authors = [{name = "Bachir Zerourou"}]
+keywords = ["LMGC90", "DEM", "granular", "pylmgc90", "scientific"]
+dependencies = [
+    "lmgc90-core>=0.1.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+pylmgc = ["pylmgc90"]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Repository = "https://github.com/bzerourou/LMG90_GUI_MVC"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --tb=short"
+markers = [
+    "pylmgc: tests that require pylmgc90 installed",
+]

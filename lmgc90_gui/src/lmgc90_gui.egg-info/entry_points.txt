@@ -1,0 +1,2 @@
+[console_scripts]
+lmgc90-gui = lmgc90_gui.app:main

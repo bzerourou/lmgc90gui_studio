@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmgc90gui-studio"
+version = "0.1.0"
+description = "LMGC90 GUI Studio — monorepo (core + engine + gui)"
+readme = "README_INSTALL.md"
+requires-python = ">=3.10"
+license = {text = "Open Source"}
+authors = [{name = "Bachir Zerourou"}]
+# Root package is a thin meta-installer. Real code lives in the three subprojects.
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+qt = ["PyQt6>=6.4"]
+viz = ["PyQt6>=6.4", "pyvista>=0.40", "pyvistaqt>=0.11"]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools]
+packages = []
+
+[tool.setuptools.package-dir]
+# no packages at root — install subprojects instead

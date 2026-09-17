@@ -1,0 +1,109 @@
+Metadata-Version: 2.4
+Name: lmgc90-core
+Version: 0.1.0
+Summary: Headless scientific core for LMGC90 scene preparation — no Qt, no pylmgc90.
+Author: Bachir Zerourou
+License: Open Source
+Project-URL: Repository, https://github.com/bzerourou/LMG90_GUI_MVC
+Keywords: LMGC90,DEM,granular,pylmgc90,scientific
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.24
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+
+# lmgc90_core
+
+Cœur scientifique **headless** de préparation de scènes LMGC90.
+
+Pas de Qt. Pas de pylmgc90. Une dépendance : `numpy`.
+
+Un chercheur l’importe dans un notebook. Un ingénieur en fait le client d’un `sbatch`. La GUI n’est plus le logiciel — elle devient un *client* de cette bibliothèque.
+
+```python
+from lmgc90_core import Project, pre
+
+p = Project(name="box", dimension=2)
+p.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+p.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+p.add(pre.rigidDisk(r=0.1, center=[0, 0], model="rigid", material="STEEL"))
+
+print(p.equivalent(p.avatars[0]))
+# av_........ = pre.rigidDisk(r=0.1, center=[0, 0], model=mod_rigid, material=mat_STEEL, color='BLUEx')
+
+p.save("box.lmgc90")
+open("pre.py", "w").write(p.to_pre_script())
+```
+
+Les kwargs de `lmgc90_core.pre` sont ceux de `pylmgc90.pre`. Si vous savez écrire un `pre.py`, vous savez piloter le core.
+
+## Ce que ça change pour un labo
+
+| Avant (GUI MVC) | Maintenant (`lmgc90_core`) |
+|---|---|
+| `controller.add_avatar` + `controller._pylmgc_bodies.append` | `p.add(pre.rigidDisk(...))` |
+| Granulo SoA = case à cocher | Dépôt massif → `ParticlePopulation` **par défaut** |
+| Pas de Ctrl+Z | `p.undo()` / `p.redo()` — une population = une commande |
+| Script `pre.py` généré depuis des widgets | `p.to_pre_script()` est l’artefact de reproductibilité |
+| Cluster = copier des fichiers à la main | `p.sbatch(partition="cpu", time="04:00:00")` |
+| Tests qui importent `ProjectController` (Qt) | `pytest` sans pylmgc90 ni Qt |
+
+## Installation
+
+```bash
+pip install -e ./lmgc90_core
+pytest -q
+```
+
+## Trois gestes d’un essai
+
+1. **Construire** le projet (matériaux, corps, lois, DOF) — validé, journalisé.
+2. **Lire** l’équivalent `pre.*` (`p.equivalent(obj)` ou le script entier).
+3. **Exporter** `.lmgc90` + sidecar `.npz` + `pre.py` + `command.py` + `run.sbatch`.
+
+Exemples :
+
+- `examples/uniaxial_compression.py` — éprouvette béton C30/37, plateaux, `GAP_SGR_CLB`
+- `examples/granular_box.py` — dépôt SoA, undo d’une boucle
+
+## Contrat d’architecture
+
+```
+chercheur / notebook / sbatch
+        │
+        ▼
+   lmgc90_core     (ce paquet — numpy)
+        │
+        ├── .lmgc90 + .populations.npz
+        ├── pre.py / command.py     (texte, auditable)
+        └── run.sbatch
+        │
+        ▼
+   lmgc90_engine   (plus tard — pylmgc90.pre / chipy, DATBOX réel)
+        │
+        ▼
+   LMGC90_GUI      (plus tard — PyQt6 client de Project)
+```
+
+`src/core` actuel de la GUI **n’est pas** ce paquet : il importe `pylmgc90`, `PyQt6` (worker) et même `gui.dialogs.mesh_wiz_def`. Ce dépôt-ci est une refonte depuis l’API chercheur, pas un `git mv`.
+
+## Règles non négociables
+
+- Identité = `avatar_id` / `population_id`. Jamais un indice de liste.
+- AoS (`Avatar`) = édition fine. SoA (`ParticlePopulation`) = génération de masse.
+- Une action utilisateur = une `Command` inversible. Un dépôt de 50 k particules = **une** commande.
+- Le script `pre.py` généré est la source de vérité pour une publication, pas le JSON.
+- Aucun import `pylmgc90` / `PyQt6` dans ce paquet — `tests/test_purity.py` casse le CI sinon.
+
+## Limites 0.1.0 (honnêtes)
+
+- Le DATBOX réel (`pre.writeDatbox`) n’est pas exécuté ici : il faut pylmgc90, c’est le moteur.
+- Les types d’avatars rares (ovoid, granuloWall3D, polyèdre faces custom) sont stockés et validés ; l’émetteur `pre.py` a un TODO ciblé.
+- Compatible schéma `.lmgc90` v2 de la GUI (load/save), journal en plus (la GUI l’ignore).
+- `ForLoop` à expressions libres n’est pas repris : trop d’`eval`. Les boucles géométriques (`circle/grid/line/spiral`) oui.
+
+## Suite
+
+1. Brancher `LMGC90_GUI` comme client de `Project` (les mixins appellent `project.add`, plus `_pylmgc_bodies[i]`).
+2. `lmgc90_engine.EngineSession` : map `avatar_id → body` pylmgc, sync différée hors thread UI.
+3. Tests golden : `pre.py` de ce core vs `pre.py` écrit à la main vs DATBOX (conteneur LMGC90).
