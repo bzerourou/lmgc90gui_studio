@@ -42,8 +42,8 @@ def create_about_dialog(parent=None):
 <tr><td>F7</td><td>Application journal</td></tr>
 <tr><td>Ctrl+,</td><td>Preferences</td></tr>
 </table>
-<h3>Crédit : Bachir Zerourou</h3>
-<h4>© 2026 - Open Source</h4>
+<h3>Identity rule</h3>
+<p>Always <code>avatar_id</code> / <code>population_id</code> — never list index.</p>
 """)
             layout.addWidget(text)
             buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)

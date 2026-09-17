@@ -21,6 +21,9 @@ src/lmgc90_gui/dialogs/masonry_wizard.py
 src/lmgc90_gui/dialogs/mesh_wizard.py
 src/lmgc90_gui/dialogs/pipeline_dialog.py
 src/lmgc90_gui/dialogs/preferences_dialog.py
+src/lmgc90_gui/resources/__init__.py
+src/lmgc90_gui/resources/app.ico
+src/lmgc90_gui/resources/app.png
 src/lmgc90_gui/utils/__init__.py
 src/lmgc90_gui/utils/app_journal.py
 src/lmgc90_gui/utils/eval_context.py
@@ -38,6 +41,7 @@ src/lmgc90_gui/views/viewer_3d.py
 src/lmgc90_gui/views/tabs/__init__.py
 src/lmgc90_gui/views/tabs/avatar_tab.py
 src/lmgc90_gui/views/tabs/base_tab.py
+src/lmgc90_gui/views/tabs/compute_tab.py
 src/lmgc90_gui/views/tabs/contact_tab.py
 src/lmgc90_gui/views/tabs/contactors_tab.py
 src/lmgc90_gui/views/tabs/deformable_tab.py

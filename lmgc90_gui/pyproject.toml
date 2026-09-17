@@ -35,3 +35,6 @@ where = ["src"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q --tb=short"
+
+[tool.setuptools.package-data]
+lmgc90_gui = ["resources/*"]

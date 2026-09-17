@@ -18,6 +18,7 @@ TAB_ICONS = {
     "Groups": "📁",
     "Contactors": "🔗",
     "Deformable": "🧩",
+    "Compute": "⚙️",
     "Masonry": "🧱",
 }
 

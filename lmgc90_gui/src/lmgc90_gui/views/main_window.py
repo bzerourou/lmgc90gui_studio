@@ -13,7 +13,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
         raise ImportError("PyQt6 required (pip install lmgc90-gui[qt])")
 
     from PyQt6.QtCore import Qt
-    from PyQt6.QtGui import QAction, QKeySequence, QIcon
+    from PyQt6.QtGui import QAction, QKeySequence
     from PyQt6.QtWidgets import (
         QDockWidget, QFileDialog, QMainWindow, QMessageBox, QStatusBar,
         QTabWidget, QToolBar, QWidget,
@@ -34,6 +34,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
     from .tabs.contactors_tab import create_contactors_tab
     from .tabs.deformable_tab import create_deformable_tab
     from .tabs.masonry_tab import create_masonry_tab
+    from .tabs.compute_tab import create_compute_tab
     from .history_dock import create_history_dock
     from .tree_view import create_tree_view
     from .styles import apply_app_style, tab_title, MENU_ICONS, EXPR_HINT_HTML
@@ -44,7 +45,6 @@ def create_main_window(controller: Optional[ProjectController] = None):
             self.controller = controller or ProjectController()
             self.setWindowTitle(f"LMGC90_GUI — {self.controller.project.name}")
             self.resize(1280, 860)
-            self.setWindowIcon(QIcon("app.ico"))
             apply_app_style(self)
             self._build_ui()
             self._connect()
@@ -71,6 +71,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
             self.contactors_tab = create_contactors_tab()
             self.deformable_tab = create_deformable_tab()
             self.masonry_tab = create_masonry_tab()
+            self.compute_tab = create_compute_tab()
 
             # Registry of all available tabs (id → title, widget, icon)
             from .styles import TAB_ICONS
@@ -90,9 +91,10 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 "contactors": ("Contactors", self.contactors_tab, TAB_ICONS.get("Contactors", "🔗")),
                 "deformable": ("Deformable", self.deformable_tab, TAB_ICONS.get("Deformable", "🧩")),
                 "masonry":    ("Masonry", self.masonry_tab, TAB_ICONS.get("Masonry", "🧱")),
+                "compute":    ("Compute", self.compute_tab, TAB_ICONS.get("Compute", "⚙️")),
             }
             self._default_tab_ids = [
-                "material", "model", "avatar", "contact", "visibility", "dof", "viewer",
+                "material", "model", "avatar", "contact", "visibility", "dof", "viewer", "compute",
             ]
             for tid in self._default_tab_ids:
                 self._add_tab(tid)
@@ -130,7 +132,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 self.loop_tab, self.for_loop_tab, self.granulo_tab, self.contact_tab,
                 self.visibility_tab, self.dof_tab, self.postpro_tab, self.viewer_tab,
                 self.groups_tab, self.contactors_tab,
-                self.deformable_tab, self.masonry_tab, self.tree,
+                self.deformable_tab, self.masonry_tab, self.compute_tab, self.tree,
             )
             for tab in self._all_tabs:
                 tab.bind_controller(self.controller)
@@ -558,7 +560,29 @@ def create_main_window(controller: Optional[ProjectController] = None):
             runner.worker.failed.connect(on_failed)
             runner.start()
 
+        def _show_tab(self, key: str) -> None:
+            meta = self.all_tabs.get(key)
+            if not meta:
+                return
+            title, widget, icon = meta
+            for i in range(self.tabs.count()):
+                if self.tabs.widget(i) is widget:
+                    self.tabs.setCurrentIndex(i)
+                    return
+            # reopen closed tab
+            idx = self.tabs.addTab(widget, f"{icon} {title}" if icon else title)
+            self.tabs.setCurrentIndex(idx)
+
         def _on_run_computation(self) -> None:
+
+            # Prefer dedicated Compute tab when available
+            try:
+                if hasattr(self, "compute_tab") and self.compute_tab is not None:
+                    self._show_tab("compute")
+                    self.compute_tab.run_computation()
+                    return
+            except Exception:
+                pass
             from pathlib import Path as _P
             from ..dialogs.compute_log_dialog import create_compute_log_dialog
             from ..workers.compute_worker import create_compute_worker

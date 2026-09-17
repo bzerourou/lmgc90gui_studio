@@ -17,6 +17,9 @@ class Preferences:
     relax: float = 1.0
     gs_it1: int = 50
     gs_it2: int = 1000
+    norm: str = "Quad "
+    deformable: bool = False
+    disable_log: bool = True
     freq_write: int = 50
     freq_display: int = 50
     solver_type: str = "Stored_Delassus_Loops         "
@@ -39,9 +42,12 @@ class Preferences:
             "relax": self.relax,
             "gs_it1": self.gs_it1,
             "gs_it2": self.gs_it2,
+            "norm": self.norm,
             "freq_write": self.freq_write,
             "freq_display": self.freq_display,
             "solver_type": self.solver_type,
+            "deformable": self.deformable,
+            "disable_log": self.disable_log,
         }
 
     def to_dict(self) -> dict:
