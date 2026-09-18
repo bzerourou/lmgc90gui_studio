@@ -15,6 +15,7 @@ The GUI (LMGC90_GUI) is a client of this package, not the other way around.
 
 from . import pre
 from .chipy_script import emit_chipy
+from .compute_script import ComputeScriptGenerator, generate_command_script, write_command_script
 from .commands import CommandHistory
 from .entities import (
     Avatar, ContactLaw, DOFOperation, ForLoop, GranuloConfig, Loop, Material, Model,
@@ -39,6 +40,7 @@ __all__ = [
     "MaterialType", "AvatarType", "AvatarOrigin", "ContactLawType", "UnitSystem",
     "CommandHistory", "Pipeline", "render_sbatch",
     "emit_pre", "emit_chipy", "emit_equivalent",
+    "ComputeScriptGenerator", "generate_command_script", "write_command_script",
     "ValidationError", "UnknownReferenceError", "HistoryError", "LMGC90Error",
     "new_avatar_id", "new_population_id",
     "compatible_contactors", "is_shape_compatible",

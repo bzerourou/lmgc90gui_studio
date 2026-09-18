@@ -24,5 +24,5 @@ def test_model_defaults():
 
 def test_law_defaults():
     assert suggest_law_name("IQS_CLB", []) == "IQS"
-    assert suggest_law_name("IQS_CLB", ["IQS"]) == "IQS1"
+    assert suggest_law_name("IQS_CLB", ["IQS"]) == "IQS01"
     assert suggest_law_name("GAP_SGR_CLB", []) == "GAP"

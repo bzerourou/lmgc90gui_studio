@@ -43,7 +43,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def __init__(self, controller: Optional[ProjectController] = None):
             super().__init__()
             self.controller = controller or ProjectController()
-            self.setWindowTitle(f"LMGC90_GUI — {self.controller.project.name}")
+            self.setWindowTitle(f"LMGC90_GUI v0.5.8 — {self.controller.project.name}")
             self.resize(1280, 860)
             apply_app_style(self)
             self._build_ui()
@@ -94,24 +94,10 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 "compute":    ("Compute", self.compute_tab, TAB_ICONS.get("Compute", "⚙️")),
             }
             self._default_tab_ids = [
-                "material", "model", "avatar", "contact", "visibility", "dof", "viewer", "compute",
+                "material", "model", "avatar", "contact", "visibility", "dof", "viewer",
             ]
             for tid in self._default_tab_ids:
                 self._add_tab(tid)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
             self.tree = create_tree_view()
             dock = QDockWidget("🌳  Model tree", self)
@@ -168,6 +154,16 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_quit.triggered.connect(self.close)
             file_m.addAction(act_quit)
 
+            edit = mb.addMenu(f"{MENU_ICONS['edit']} &Edit")
+            act_undo = QAction(f"{MENU_ICONS['undo']} Undo", self)
+            act_undo.setShortcut(QKeySequence.StandardKey.Undo)
+            act_undo.triggered.connect(self._on_undo)
+            edit.addAction(act_undo)
+            act_redo = QAction(f"{MENU_ICONS['redo']} Redo", self)
+            act_redo.setShortcut(QKeySequence.StandardKey.Redo)
+            act_redo.triggered.connect(self._on_redo)
+            edit.addAction(act_redo)
+
             project_m = mb.addMenu("&Project")
             act_dim = QAction("Set &dimension…", self)
             act_dim.triggered.connect(self._on_set_dimension)
@@ -212,7 +208,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_datbox.setShortcut(QKeySequence("Ctrl+F5"))
             act_datbox.triggered.connect(self._on_generate_datbox)
             comp.addAction(act_datbox)
-            act_run = QAction(f"{MENU_ICONS['run']} &Run computation", self)
+            act_run = QAction(f"{MENU_ICONS['run']} &Computation", self)
             act_run.setShortcut(QKeySequence("F5"))
             act_run.triggered.connect(self._on_run_computation)
             comp.addAction(act_run)
@@ -226,16 +222,6 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_refresh_view.setShortcut(QKeySequence("F6"))
             act_refresh_view.triggered.connect(self._on_refresh_viewer)
             view_m.addAction(act_refresh_view)
-
-            edit = mb.addMenu(f"{MENU_ICONS['edit']} &Edit")
-            act_undo = QAction(f"{MENU_ICONS['undo']} Undo", self)
-            act_undo.setShortcut(QKeySequence.StandardKey.Undo)
-            act_undo.triggered.connect(self._on_undo)
-            edit.addAction(act_undo)
-            act_redo = QAction(f"{MENU_ICONS['redo']} Redo", self)
-            act_redo.setShortcut(QKeySequence.StandardKey.Redo)
-            act_redo.triggered.connect(self._on_redo)
-            edit.addAction(act_redo)
 
             # ── Menu Onglets (open / close) ─────────────────────────────────
             tabs_m = mb.addMenu("📑 &Onglets")
@@ -308,10 +294,10 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 f"𝑥 vars={n_vars}  ·  "
                 f"pylmgc={'✅' if self.controller.pylmgc_available() else '—'}"
             )
-            self.setWindowTitle(f"LMGC90_GUI — {p.name}")
+            self.setWindowTitle(f"LMGC90_GUI v0.5.8 — {p.name}")
 
         def _on_error(self, msg: str) -> None:
-            QMessageBox.warning(self, "LMGC90_GUI", msg)
+            QMessageBox.warning(self, "LMGC90_GUI v0.5.8", msg)
 
         def _on_loaded(self) -> None:
             self._update_status()
@@ -579,7 +565,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
             try:
                 if hasattr(self, "compute_tab") and self.compute_tab is not None:
                     self._show_tab("compute")
-                    self.compute_tab.run_computation()
+                    #self.compute_tab.run_computation()
                     return
             except Exception:
                 pass

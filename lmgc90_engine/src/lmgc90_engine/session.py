@@ -14,6 +14,7 @@ from typing import Any, Optional, Union
 from lmgc90_core.chipy_script import emit_chipy
 from lmgc90_core.entities import GranuloConfig
 from lmgc90_core.population import ParticlePopulation
+from lmgc90_core.numpy_compat import patch_numpy_cross
 from lmgc90_core.pre_script import emit_pre
 from lmgc90_core.project import Project
 from lmgc90_core.types import AvatarType
@@ -82,6 +83,7 @@ class EngineSession:
 
         Safe to call from a worker thread; does not touch Qt.
         """
+        patch_numpy_cross()
         if self.is_materialized and not force:
             return self._scene  # type: ignore[return-value]
         self._scene = materialize_project(self.project)
@@ -119,6 +121,7 @@ class EngineSession:
 
     def write_datbox(self, path: Union[str, Path]) -> Path:
         """Materialize if needed, then pre.writeDatbox."""
+        patch_numpy_cross()
         scene = self.materialize()
         return datbox_mod.write_datbox(scene, path)
 

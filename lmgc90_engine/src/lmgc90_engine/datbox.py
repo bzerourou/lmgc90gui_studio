@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Union
 
+from lmgc90_core.numpy_compat import patch_numpy_cross
 from lmgc90_core.pre_script import emit_pre
 from lmgc90_core.project import Project
 
@@ -19,22 +20,21 @@ def write_datbox(
 ) -> Path:
     """Call pre.writeDatbox on the live containers.
 
-    Parameters
-    ----------
-    scene : MaterializedScene
-        Result of materialize_project.
-    path : path-like
-        Destination directory (LMGC90 convention: folder containing DATBOX files).
-    dimension : optional override; defaults to scene.dimension.
+    Applies NumPy 2 / 2D ``np.cross`` compatibility patch before writing.
     """
     try:
         from pylmgc90 import pre
     except ImportError as exc:
-        raise PylmgcNotAvailable("pylmgc90 required for write_datbox") from exc
+        raise PylmgcNotAvailable(
+            "pylmgc90 is required for live DATBOX. "
+            "Use export_pre_script() or emit_pre_script() instead."
+        ) from exc
+
+    patch_numpy_cross()
 
     out = Path(path)
     out.mkdir(parents=True, exist_ok=True)
-    dim = dimension if dimension is not None else scene.dimension
+    dim = int(dimension if dimension is not None else scene.dimension)
 
     try:
         pre.writeDatbox(
@@ -45,10 +45,9 @@ def write_datbox(
             sees=scene.sees_container,
             bodies=scene.bodies_container,
             post=scene.posts_container,
-            # some versions accept a path / datbox_path keyword
+            datbox_path=str(out),
         )
     except TypeError:
-        # older signature without explicit path — DATBOX is written CWD-relative
         import os
         cwd = Path.cwd()
         try:

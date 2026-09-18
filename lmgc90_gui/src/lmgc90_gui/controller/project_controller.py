@@ -392,7 +392,10 @@ class ProjectController(_QObject):
         return self._session.emit_pre_script(path)
 
     def emit_chipy_script(self, path: Optional[Union[str, Path]] = None, **kw) -> str:
-        return self._session.emit_chipy_script(path, **kw)
+        """Full ``command.py`` via engine → core ``emit_chipy`` (all ChipyRoutines keys)."""
+        params = dict(self.prefs.chipy_params())
+        params.update(kw)
+        return self._session.emit_chipy_script(path, **params)
 
     def materialize(self, *, force: bool = False):
         """Build live pylmgc objects (needs pylmgc90). Safe for worker thread."""

@@ -1986,7 +1986,7 @@ class ChipyRoutinesDialog(QDialog):
 
     def _show_preview(self):
 
-        from lmgc90_core.chipy_script import emit_chipy
+        from lmgc90_core import emit_chipy
         preview_params = {
             "dt": 1e-3, "nb_steps": 100, "theta": 0.5,
             "tol": 1.666e-4, "relax": 1.0, "norm": "Quad ",

@@ -74,6 +74,7 @@ def project_to_dict(project: Project) -> dict[str, Any]:
         "postpro_commands": [p.to_dict() for p in project.postpro],
         "loops": [lp.to_dict() for lp in project.loops],
         "granulo_generations": [g.to_dict() for g in project.granulo],
+        "history": project.history.to_dict(),
         "dynamic_vars": dict(project.dynamic_vars),
         "journal": project.journal(),
     }
@@ -149,6 +150,10 @@ def load_project(filepath: Path) -> Project:
     for raw in data.get("granulo_generations") or []:
         record_off.granulo.append(GranuloConfig.from_dict(raw))
     record_off.dynamic_vars = dict(data.get("dynamic_vars") or {})
+    # Restore undo/redo stacks (commands already reflected in loaded state)
+    hist = data.get("history")
+    if hist:
+        record_off.history.load_stacks(hist)
     record_off.record = True
     return record_off
 

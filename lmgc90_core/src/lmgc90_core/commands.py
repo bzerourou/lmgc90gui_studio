@@ -96,7 +96,13 @@ class RemoveAvatar:
         return f"remove {self.avatar.avatar_type.value} {self.avatar.avatar_id[:8]}"
 
     def to_journal(self) -> dict[str, Any]:
-        return {"op": "remove_avatar", "payload": {"avatar_id": self.avatar.avatar_id}}
+        return {
+            "op": "remove_avatar",
+            "payload": {
+                "avatar": self.avatar.to_dict(),
+                "groups_touched": {k: list(v) for k, v in (self.groups_touched or {}).items()},
+            },
+        }
 
 
 @dataclass
@@ -119,7 +125,10 @@ class AddPopulation:
     def to_journal(self) -> dict[str, Any]:
         return {
             "op": "add_population",
-            "payload": self.population.to_meta_dict(),
+            "payload": {
+                "population": self.population.to_dict(),
+                "config": self.config.to_dict() if self.config is not None else None,
+            },
         }
 
 
@@ -220,7 +229,13 @@ class AddLoop:
         return f"loop {self.loop.loop_type} × {self.loop.count}"
 
     def to_journal(self) -> dict[str, Any]:
-        return {"op": "add_loop", "payload": self.loop.to_dict()}
+        return {
+            "op": "add_loop",
+            "payload": {
+                "loop": self.loop.to_dict(),
+                "generated": [a.to_dict() for a in self.generated],
+            },
+        }
 
 
 @dataclass
@@ -243,7 +258,14 @@ class SetGroup:
         return f"group {self.name} = {len(self.ids)} ids"
 
     def to_journal(self) -> dict[str, Any]:
-        return {"op": "set_group", "payload": {"name": self.name, "ids": list(self.ids)}}
+        return {
+            "op": "set_group",
+            "payload": {
+                "name": self.name,
+                "ids": list(self.ids),
+                "previous": list(self.previous) if self.previous is not None else None,
+            },
+        }
 
 
 class CommandHistory:
@@ -284,3 +306,80 @@ class CommandHistory:
 
     def __len__(self) -> int:
         return len(self._undo)
+
+
+def command_from_journal(entry: dict[str, Any]) -> Command:
+    """Rebuild a Command from a journal entry (for save/load). Does not apply it."""
+    op = entry.get("op") or entry.get("type") or ""
+    payload = entry.get("payload") or {}
+    if op == "add_material":
+        return AddMaterial(Material.from_dict(payload))
+    if op == "add_model":
+        return AddModel(Model.from_dict(payload))
+    if op == "add_avatar":
+        return AddAvatar(Avatar.from_dict(payload))
+    if op == "remove_avatar":
+        av_data = payload.get("avatar") or payload
+        groups = payload.get("groups_touched") or {}
+        return RemoveAvatar(Avatar.from_dict(av_data), groups_touched={k: list(v) for k, v in groups.items()})
+    if op == "add_population":
+        pop_data = payload.get("population") or payload
+        cfg_data = payload.get("config")
+        cfg = GranuloConfig.from_dict(cfg_data) if cfg_data else None
+        return AddPopulation(ParticlePopulation.from_dict(pop_data), cfg)
+    if op == "add_law":
+        return AddLaw(ContactLaw.from_dict(payload))
+    if op == "add_see":
+        return AddSeeTable(VisibilityRule.from_dict(payload))
+    if op == "add_dof":
+        return AddDOF(DOFOperation.from_dict(payload))
+    if op == "add_postpro":
+        return AddPostPro(PostProCommand.from_dict(payload))
+    if op == "add_loop":
+        loop_data = payload.get("loop") or payload
+        gens = [Avatar.from_dict(a) for a in (payload.get("generated") or [])]
+        return AddLoop(Loop.from_dict(loop_data), gens)
+    if op == "set_group":
+        cmd = SetGroup(str(payload.get("name", "")), list(payload.get("ids") or []))
+        prev = payload.get("previous")
+        cmd.previous = list(prev) if prev is not None else None
+        return cmd
+    raise HistoryError(f"unknown journal op {op!r}")
+
+
+# bind methods onto CommandHistory
+def _history_to_dict(self) -> dict[str, Any]:
+    return {
+        "limit": self.limit,
+        "undo": [c.to_journal() for c in self._undo],
+        "redo": [c.to_journal() for c in self._redo],
+    }
+
+
+def _history_load_stacks(self, data: dict[str, Any] | None) -> None:
+    """Restore undo/redo from saved journal without re-applying commands."""
+    if not data:
+        self._undo.clear()
+        self._redo.clear()
+        return
+    if "limit" in data:
+        self.limit = int(data["limit"])
+    undo_entries = list(data.get("undo") or [])
+    redo_entries = list(data.get("redo") or [])
+    self._undo = []
+    self._redo = []
+    for entry in undo_entries:
+        try:
+            self._undo.append(command_from_journal(entry))
+        except Exception as exc:
+            # skip unreadable entries rather than fail the whole load
+            print(f"WARNING: skip history undo entry: {exc}")
+    for entry in redo_entries:
+        try:
+            self._redo.append(command_from_journal(entry))
+        except Exception as exc:
+            print(f"WARNING: skip history redo entry: {exc}")
+
+
+CommandHistory.to_dict = _history_to_dict  # type: ignore[attr-defined]
+CommandHistory.load_stacks = _history_load_stacks  # type: ignore[attr-defined]

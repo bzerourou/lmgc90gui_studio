@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: lmgc90-core
-Version: 0.1.1
+Version: 0.1.0
 Summary: Headless scientific core for LMGC90 scene preparation — no Qt, no pylmgc90.
 Author: Bachir Zerourou
 License: Open Source

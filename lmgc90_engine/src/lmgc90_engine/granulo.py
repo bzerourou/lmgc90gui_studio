@@ -18,6 +18,8 @@ from .errors import MaterializationError, PylmgcNotAvailable
 
 def _pre():
     try:
+        from lmgc90_core.numpy_compat import patch_numpy_cross
+        patch_numpy_cross()
         from pylmgc90 import pre
         return pre
     except ImportError as exc:
