@@ -123,6 +123,25 @@ class ProjectController(_QObject):
         self._emit()
         self.project_loaded.emit()
 
+    def apply_scene(self, builder) -> None:
+        """Run a pure core scene builder ``builder(project)`` then notify UI.
+
+        Architecture: scene logic lives in ``lmgc90_core.scenes``; the GUI never
+        mutates ``Project`` fields directly — only this entry point.
+
+        Pending ``GranuloConfig`` entries (no ``population_id`` yet) are resolved
+        via ``deposit`` (pylmgc ``depositInBox2D`` if available, else NumpyGranulo).
+        """
+        if not callable(builder):
+            raise TypeError("apply_scene expects a callable(project) -> None")
+        builder(self._project)
+        for cfg in list(self._project.granulo):
+            if getattr(cfg, "population_id", None):
+                continue
+            self.deposit(cfg)
+        self._session.mark_dirty()
+        self._emit()
+
     def save_project(self, path: Optional[Union[str, Path]] = None) -> Path:
         target = Path(path) if path is not None else self._filepath
         if target is None:
@@ -287,8 +306,16 @@ class ProjectController(_QObject):
         return self.add(pop)
 
     def deposit(self, config: GranuloConfig) -> ParticlePopulation:
-        """Pure numpy deposit via core (no pylmgc required)."""
+        """Deposit particles: **pylmgc90** when available, else core NumpyGranulo RSA.
+
+        Architecture: engine ``run_granulo`` → ``pre.depositInBox2D``; fallback
+        stays pure in ``Project.deposit`` (no pylmgc import in core).
+        """
         try:
+            if self.pylmgc_available():
+                pop = self._session.run_granulo(config)
+                self._emit()
+                return pop
             pop = self._project.deposit(config)
             self._session.mark_dirty()
             self._emit()

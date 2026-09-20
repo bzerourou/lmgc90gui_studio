@@ -64,7 +64,7 @@ def create_postpro_tab(parent=None):
             tt = self.target_type.currentText()
             if tt == "avatar":
                 for a in p.avatars:
-                    self.target_value.addItem(f"{a.avatar_id[:12]}…|{a.avatar_type.value}")
+                    self.target_value.addItem(f"{a.avatar_id[:12]}… | {a.avatar_type.value}")
             elif tt == "group":
                 self.target_value.addItems(list(p.avatar_groups.keys()))
 

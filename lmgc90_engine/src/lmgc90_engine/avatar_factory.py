@@ -51,14 +51,21 @@ def build_avatar(
 
     try:
         if t == AvatarType.RIGID_DISK:
-            body = pre.rigidDisk(
-                r=float(av.radius), center=center, model=mod, material=mat,
-                color=color, is_Hollow=bool(av.is_hollow),
+            kwargs = dict(
+                r=float(av.radius), center=center, model=mod, material=mat, color=color,
             )
+            import inspect
+            try:
+                if "is_Hollow" in inspect.signature(pre.rigidDisk).parameters:
+                    kwargs["is_Hollow"] = bool(av.is_hollow)
+            except (TypeError, ValueError):
+                pass
+            body = pre.rigidDisk(**kwargs)
         elif t == AvatarType.RIGID_SPHERE:
+            # pylmgc90.pre.rigidSphere does not accept is_Hollow
             body = pre.rigidSphere(
                 r=float(av.radius), center=center, model=mod, material=mat,
-                color=color, is_Hollow=bool(av.is_hollow),
+                color=color,
             )
         elif t == AvatarType.RIGID_JONC:
             ax = av.axis or {}
@@ -102,15 +109,23 @@ def build_avatar(
             )
         elif t == AvatarType.RIGID_CYLINDER:
             h = (av.wall_params or {}).get("h", 1.0)
-            body = pre.rigidCylinder(
+            kwargs = dict(
                 r=float(av.radius), h=float(h), center=center,
                 model=mod, material=mat, color=color,
             )
+            import inspect
+            try:
+                if "is_Hollow" in inspect.signature(pre.rigidCylinder).parameters:
+                    kwargs["is_Hollow"] = bool(av.is_hollow)
+            except (TypeError, ValueError):
+                pass
+            body = pre.rigidCylinder(**kwargs)
         elif t == AvatarType.RIGID_PLAN:
             ax = av.axis or av.wall_params or {}
             body = pre.rigidPlan(
                 axe1=float(ax.get("axe1", 1.0)),
                 axe2=float(ax.get("axe2", 1.0)),
+                axe3=float(ax.get("axe3", 0.05)),
                 center=center, model=mod, material=mat, color=color,
             )
         elif t == AvatarType.RIGID_POLYHEDRON:
@@ -163,10 +178,12 @@ def _build_wall_2d(pre, av: Avatar, mat, mod) -> Any:
             **common,
         )
     if t == AvatarType.ROUGH_WALL:
+        # pylmgc90 / core pre.roughWall(l, r, center, ...): r = thickness
         return pre.roughWall(
-            l=float(wp.get("l", 1.0)), h=float(wp.get("h", 0.1)),
-            rmin=float(wp.get("rmin", 0.01)), rmax=float(wp.get("rmax", 0.02)),
-            nb_vertex=int(wp.get("nb_vertex", 10)), **common,
+            l=float(wp.get("l", 1.0)),
+            r=float(wp.get("r", wp.get("h", 0.03))),
+            nb_vertex=int(wp.get("nb_vertex", 10)),
+            **common,
         )
     # GRANULO_WALL
     fn = getattr(pre, "granuloRoughWall", None)

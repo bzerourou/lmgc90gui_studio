@@ -17,10 +17,10 @@ def create_about_dialog(parent=None):
     class AboutDialog(QDialog):
         def __init__(self, parent=None):
             super().__init__(parent)
-            self.setWindowTitle("About LMGC90_GUI v0.5.8")
+            self.setWindowTitle("About LMGC90_GUI")
             self.resize(520, 420)
             layout = QVBoxLayout(self)
-            layout.addWidget(QLabel(f"<b>LMGC90_GUI v0.5.8</b>  gui={gui_v}  core={core_v}"))
+            layout.addWidget(QLabel(f"<b>LMGC90_GUI</b>  gui={gui_v}  core={core_v}"))
             text = QTextEdit()
             text.setReadOnly(True)
             text.setHtml("""
@@ -42,8 +42,8 @@ def create_about_dialog(parent=None):
 <tr><td>F7</td><td>Application journal</td></tr>
 <tr><td>Ctrl+,</td><td>Preferences</td></tr>
 </table>
-<h3>Crédit : Bachir Zerourou</h3>
-<p>© 2026 - Open Source"</p>
+<h3>Crédit : Zerourou Bachir</h3>
+<p>© 2026 - Open Source</p>
 """)
             layout.addWidget(text)
             buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)

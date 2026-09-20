@@ -1,0 +1,42 @@
+"""Pure demo scenes — depend only on ``Project`` / ``pre`` (no Qt, no engine)."""
+from .demos import SCENE_BUILDERS
+from .demos import (
+    avalanche_slope,
+    ball_bearing,
+    cable_pendulum,
+    circle_loop,
+    cluster_pile,
+    cohesive_wall,
+    disc_brake,
+    dof_conditions,
+    dumbbell,
+    falling_disks,
+    for_loop_ramp,
+    granulo_deposit,
+    hexagon_packing,
+    hopper_discharge,
+    masonry_wall,
+    rotating_drum,
+    sphere_stack,
+)
+
+__all__ = [
+    "SCENE_BUILDERS",
+    "avalanche_slope",
+    "ball_bearing",
+    "cable_pendulum",
+    "circle_loop",
+    "cluster_pile",
+    "cohesive_wall",
+    "disc_brake",
+    "dof_conditions",
+    "dumbbell",
+    "falling_disks",
+    "for_loop_ramp",
+    "granulo_deposit",
+    "hexagon_packing",
+    "hopper_discharge",
+    "masonry_wall",
+    "rotating_drum",
+    "sphere_stack",
+]

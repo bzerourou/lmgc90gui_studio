@@ -119,6 +119,10 @@ class Project:
         result = NumpyGranulo().deposit(config)
         self._check_population(result.population)
         self._run(AddPopulation(result.population, config))
+        if config.group_name:
+            pid = result.population.population_id
+            self.population_groups.setdefault(config.group_name, []).append(pid)
+            self.avatar_groups.setdefault(config.group_name, []).append(pid)
         return result.population
 
     def apply_loop(self, loop: Loop, template: Optional[Avatar] = None) -> list[Avatar]:

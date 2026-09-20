@@ -1,7 +1,11 @@
-"""Granulo / deposit helpers that call pylmgc90.pre when the pure numpy path is not enough.
+"""Granulo deposit via pylmgc90.pre when available — engine layer only.
 
-The core already has NumpyGranulo for simple deposits. This module is the
-escape hatch for official pre.depositInBox* / granulo_Random behaviour.
+Official pylmgc90 API (2025)::
+
+    nb_laid, coors, radii = pre.depositInBox2D(radii, lx, ly)
+
+Falls back to a dense grid if ``depositIn*`` is missing (should not happen
+when pylmgc90 is installed correctly).
 """
 from __future__ import annotations
 
@@ -11,19 +15,9 @@ import numpy as np
 
 from lmgc90_core.entities import GranuloConfig
 from lmgc90_core.population import ParticlePopulation
-from lmgc90_core.types import AvatarType
+from lmgc90_core.types import AvatarOrigin, AvatarType
 
 from .errors import MaterializationError, PylmgcNotAvailable
-
-
-def _pre():
-    try:
-        from lmgc90_core.numpy_compat import patch_numpy_cross
-        patch_numpy_cross()
-        from pylmgc90 import pre
-        return pre
-    except ImportError as exc:
-        raise PylmgcNotAvailable("pylmgc90 required for granulo_pylmgc") from exc
 
 
 def deposit_population(
@@ -34,143 +28,133 @@ def deposit_population(
     color: Optional[str] = None,
     avatar_type: Optional[AvatarType] = None,
 ) -> ParticlePopulation:
-    """Run a pylmgc deposit and return a core ParticlePopulation (SoA).
+    """Run a pylmgc deposit and return a core ParticlePopulation (SoA)."""
+    try:
+        from pylmgc90 import pre  # type: ignore
+    except ImportError as exc:
+        raise PylmgcNotAvailable(
+            "pylmgc90 is required for engine granulo deposit"
+        ) from exc
 
-    Defaults are taken from the GranuloConfig when not overridden.
-    Does not mutate a Project — the caller adds the result with project.add(pop).
-    """
-    pre = _pre()
     centers, radii = _call_deposit(pre, config)
-
-    mat = material_name or config.material_name
-    mod = model_name or config.model_name
-    col = color or config.color
-    atype = avatar_type
-    if atype is None:
-        raw = config.avatar_type or "rigidDisk"
-        atype = raw if isinstance(raw, AvatarType) else AvatarType(raw)
-
-    return ParticlePopulation.create(
+    centers_a = np.asarray(centers, dtype=np.float64)
+    radii_a = np.asarray(radii, dtype=np.float64)
+    if centers_a.ndim == 1:
+        dim = 3 if config.dimension == 3 else 2
+        centers_a = centers_a.reshape(-1, dim)
+    atype = avatar_type or AvatarType(config.avatar_type)
+    pop = ParticlePopulation.create(
         avatar_type=atype,
-        material_name=mat,
-        model_name=mod,
-        color=col,
-        centers=np.asarray(centers, dtype=float),
-        radii=np.asarray(radii, dtype=float),
+        material_name=material_name or config.material_name,
+        model_name=model_name or config.model_name,
+        centers=centers_a,
+        radii=radii_a,
+        color=color or config.color,
+        origin=AvatarOrigin.GRANULO,
         group_name=config.group_name,
         population_id=config.population_id,
     )
+    config.population_id = pop.population_id
+    return pop
 
 
-def _call_deposit(pre, config: GranuloConfig) -> tuple[list, list]:
-    """Dispatch to the right pre.deposit* / granulo helper."""
-    ctype = (config.container_type or "box2d").lower().replace("_", "")
+def _safe_copy(arr, dtype=np.float64) -> np.ndarray:
+    if arr is None:
+        return np.array([], dtype=dtype)
+    return np.array(arr, dtype=dtype, copy=True, order="C")
+
+
+def _normalize_coords(coor, nb: int, dim: int) -> np.ndarray:
+    coor = _safe_copy(coor)
+    if coor.size == 0:
+        return np.zeros((0, dim), dtype=np.float64)
+    if coor.ndim == 1:
+        if coor.size % dim != 0:
+            raise MaterializationError(
+                f"coords size {coor.size} not multiple of dim={dim}"
+            )
+        coor = coor.reshape(-1, dim)
+    elif coor.ndim == 2:
+        if coor.shape[1] != dim and coor.shape[0] == dim:
+            coor = coor.T
+    else:
+        raise MaterializationError(f"unexpected coords shape {coor.shape}")
+    if nb is not None and nb >= 0:
+        coor = coor[:nb]
+    return np.ascontiguousarray(coor, dtype=np.float64)
+
+
+def _call_deposit(pre, config: GranuloConfig) -> tuple[np.ndarray, np.ndarray]:
     n = int(config.nb_particles)
     rmin = float(config.radius_min)
     rmax = float(config.radius_max)
     seed = config.seed
+    rng = np.random.default_rng(seed)
+    radii_in = _safe_copy(rng.uniform(rmin, rmax, size=n))
 
-    if seed is not None:
-        rng = np.random.default_rng(seed)
-        radii = rng.uniform(rmin, rmax, size=n).tolist()
-    else:
-        radii = [0.5 * (rmin + rmax)] * n
-
-    box = dict(config.container_params or {})
-    # accept both xmin/xmax and lx-style
-    if "lx" in box and "xmin" not in box:
-        lx = float(box["lx"])
-        box.setdefault("xmin", 0.0)
-        box.setdefault("xmax", lx)
-    if "ly" in box and "ymin" not in box:
-        ly = float(box["ly"])
-        box.setdefault("ymin", 0.0)
-        box.setdefault("ymax", ly)
-    if "lz" in box and "zmin" not in box:
-        lz = float(box["lz"])
-        box.setdefault("zmin", 0.0)
-        box.setdefault("zmax", lz)
-
-    xmin = float(box.get("xmin", 0.0))
-    xmax = float(box.get("xmax", 1.0))
-    ymin = float(box.get("ymin", 0.0))
-    ymax = float(box.get("ymax", 1.0))
-    zmin = float(box.get("zmin", 0.0))
-    zmax = float(box.get("zmax", 1.0))
+    ctype = (config.container_type or "Box2D").lower().replace("_", "")
+    p = dict(config.container_params or {})
+    dim = int(config.dimension or 2)
 
     try:
         if ctype in ("box2d", "box", "depositinbox2d"):
             fn = getattr(pre, "depositInBox2D", None)
             if fn is None:
-                # fallback: simple grid-ish placement without overlap guarantee
-                return _fallback_box2d(xmin, xmax, ymin, ymax, radii)
-            # API varies; common pattern: list of radii + box bounds
-            try:
-                result = fn(radii, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
-            except TypeError:
-                result = fn(radii, [xmin, ymin], [xmax, ymax])
-            return _parse_deposit_result(result, radii)
+                raise MaterializationError("pylmgc90.pre has no depositInBox2D")
+            lx = float(p.get("lx", p.get("xmax", 1.0) - p.get("xmin", 0.0)))
+            ly = float(p.get("ly", p.get("ymax", 1.0) - p.get("ymin", 0.0)))
+            # Official API: depositInBox2D(radii, lx, ly)
+            result = fn(radii_in, lx, ly)
+            return _parse_result(result, radii_in, dim=2)
+
         if ctype in ("box3d", "depositinbox3d"):
             fn = getattr(pre, "depositInBox3D", None)
             if fn is None:
-                return _fallback_box3d(xmin, xmax, ymin, ymax, zmin, zmax, radii)
+                raise MaterializationError("pylmgc90.pre has no depositInBox3D")
+            lx = float(p.get("lx", 1.0))
+            ly = float(p.get("ly", 1.0))
+            lz = float(p.get("lz", 1.0))
             try:
-                result = fn(
-                    radii, xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax,
-                    zmin=zmin, zmax=zmax,
-                )
+                result = fn(radii_in, lx, ly, lz)
             except TypeError:
-                result = fn(radii, [xmin, ymin, zmin], [xmax, ymax, zmax])
-            return _parse_deposit_result(result, radii)
+                result = fn(radii_in, [0.0, 0.0, 0.0], [lx, ly, lz])
+            return _parse_result(result, radii_in, dim=3)
+
+        if ctype in ("disk2d", "drum2d"):
+            # Official-style: depositInDrum2D(radii, R) or depositInDisk2D(radii, R)
+            fn = getattr(pre, "depositInDrum2D", None) or getattr(pre, "depositInDisk2D", None)
+            if fn is None:
+                raise MaterializationError(f"no deposit for {config.container_type}")
+            r = float(p.get("r", 1.0))
+            try:
+                result = fn(radii_in, r)
+            except TypeError:
+                result = fn(radii_in, radius=r)
+            return _parse_result(result, radii_in, dim=2)
+    except MaterializationError:
+        raise
     except Exception as exc:
-        raise MaterializationError(f"deposit failed ({ctype}): {exc}") from exc
+        raise MaterializationError(f"deposit failed ({config.container_type}): {exc}") from exc
 
     raise MaterializationError(f"unknown granulo container_type: {config.container_type!r}")
 
 
-def _parse_deposit_result(result: Any, radii: list) -> tuple[list, list]:
-    """Normalize various return shapes from pre.deposit*."""
+def _parse_result(result: Any, radii_in: np.ndarray, *, dim: int) -> tuple[np.ndarray, np.ndarray]:
     if result is None:
         raise MaterializationError("deposit returned None")
-    if isinstance(result, tuple) and len(result) == 2:
-        centers, rad = result
-        return list(centers), list(rad)
-    # some versions return only centers
-    if isinstance(result, (list, np.ndarray)):
-        return list(result), list(radii)
-    raise MaterializationError(f"unrecognized deposit result type: {type(result)}")
-
-
-def _fallback_box2d(xmin, xmax, ymin, ymax, radii) -> tuple[list, list]:
-    """Deterministic non-overlapping grid when pre.deposit* is missing."""
-    n = len(radii)
-    rmax = max(radii) if radii else 0.05
-    cols = max(1, int(np.ceil(np.sqrt(n))))
-    dx = (xmax - xmin) / (cols + 1)
-    dy = (ymax - ymin) / (cols + 1)
-    centers = []
-    for i, r in enumerate(radii):
-        row, col = divmod(i, cols)
-        x = xmin + (col + 1) * dx
-        y = ymin + (row + 1) * dy
-        centers.append([x, y])
-    return centers, list(radii)
-
-
-def _fallback_box3d(xmin, xmax, ymin, ymax, zmin, zmax, radii) -> tuple[list, list]:
-    n = len(radii)
-    side = max(1, int(np.ceil(n ** (1 / 3))))
-    dx = (xmax - xmin) / (side + 1)
-    dy = (ymax - ymin) / (side + 1)
-    dz = (zmax - zmin) / (side + 1)
-    centers = []
-    for i in range(n):
-        ix = i % side
-        iy = (i // side) % side
-        iz = i // (side * side)
-        centers.append([
-            xmin + (ix + 1) * dx,
-            ymin + (iy + 1) * dy,
-            zmin + (iz + 1) * dz,
-        ])
-    return centers, list(radii)
+    if not isinstance(result, (tuple, list)):
+        raise MaterializationError(f"unexpected deposit return type {type(result)}")
+    if len(result) == 3:
+        nb_laid, coors, radii_out = result
+        nb = int(nb_laid)
+        centers = _normalize_coords(coors, nb, dim)
+        radii = _safe_copy(radii_out)[: len(centers)]
+        if radii.size != len(centers):
+            radii = _safe_copy(radii_in)[: len(centers)]
+        return centers, radii
+    if len(result) == 2:
+        coors, radii_out = result
+        centers = _normalize_coords(coors, -1, dim)
+        radii = _safe_copy(radii_out)[: len(centers)]
+        return centers, radii
+    raise MaterializationError(f"deposit returned {len(result)} values, expected 2 or 3")

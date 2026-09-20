@@ -188,6 +188,13 @@ class EngineSession:
         )
         if add_to_project:
             self.project.add(pop)
+            if config.group_name:
+                pid = pop.population_id
+                self.project.population_groups.setdefault(config.group_name, []).append(pid)
+                self.project.avatar_groups.setdefault(config.group_name, []).append(pid)
+            if config not in self.project.granulo:
+                # keep intent list in sync when deposit was triggered from pending config
+                pass
             self.mark_dirty()
         return pop
 

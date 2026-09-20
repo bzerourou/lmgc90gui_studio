@@ -43,7 +43,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def __init__(self, controller: Optional[ProjectController] = None):
             super().__init__()
             self.controller = controller or ProjectController()
-            self.setWindowTitle(f"LMGC90_GUI v0.5.8 — {self.controller.project.name}")
+            self.setWindowTitle(f"LMGC90_GUI v0.6.0 — {self.controller.project.name}")
             self.resize(1280, 860)
             apply_app_style(self)
             self._build_ui()
@@ -154,6 +154,11 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_quit.triggered.connect(self.close)
             file_m.addAction(act_quit)
 
+            project_m = mb.addMenu("&Project")
+            act_dim = QAction("Set &dimension…", self)
+            act_dim.triggered.connect(self._on_set_dimension)
+            project_m.addAction(act_dim)
+
             edit = mb.addMenu(f"{MENU_ICONS['edit']} &Edit")
             act_undo = QAction(f"{MENU_ICONS['undo']} Undo", self)
             act_undo.setShortcut(QKeySequence.StandardKey.Undo)
@@ -163,11 +168,6 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_redo.setShortcut(QKeySequence.StandardKey.Redo)
             act_redo.triggered.connect(self._on_redo)
             edit.addAction(act_redo)
-
-            project_m = mb.addMenu("&Project")
-            act_dim = QAction("Set &dimension…", self)
-            act_dim.triggered.connect(self._on_set_dimension)
-            project_m.addAction(act_dim)
 
             tools = mb.addMenu(f"{MENU_ICONS['tools']} &Tools")
             act_pre = QAction("Generate pre.py…", self)
@@ -208,7 +208,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_datbox.setShortcut(QKeySequence("Ctrl+F5"))
             act_datbox.triggered.connect(self._on_generate_datbox)
             comp.addAction(act_datbox)
-            act_run = QAction(f"{MENU_ICONS['run']} &Computation", self)
+            act_run = QAction(f"{MENU_ICONS['run']} &Run computation", self)
             act_run.setShortcut(QKeySequence("F5"))
             act_run.triggered.connect(self._on_run_computation)
             comp.addAction(act_run)
@@ -262,6 +262,12 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_defaults.triggered.connect(self._reopen_default_tabs)
             tabs_m.addAction(act_defaults)
 
+            ex_m = mb.addMenu("📚 &Exemples")
+            act_browse = QAction("Bibliothèque d'exemples…", self)
+            act_browse.setShortcut(QKeySequence("Ctrl+Shift+E"))
+            act_browse.triggered.connect(self._on_browse_examples)
+            ex_m.addAction(act_browse)
+
             help_m = mb.addMenu(f"{MENU_ICONS['help']} &Help")
             act_about = QAction(f"{MENU_ICONS['about']} &About / shortcuts", self)
             act_about.triggered.connect(self._on_about)
@@ -294,10 +300,10 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 f"𝑥 vars={n_vars}  ·  "
                 f"pylmgc={'✅' if self.controller.pylmgc_available() else '—'}"
             )
-            self.setWindowTitle(f"LMGC90_GUI v0.5.8 — {p.name}")
+            self.setWindowTitle(f"LMGC90_GUI v0.6.0 — {p.name}")
 
         def _on_error(self, msg: str) -> None:
-            QMessageBox.warning(self, "LMGC90_GUI v0.5.8", msg)
+            QMessageBox.warning(self, "LMGC90_GUI v0.6.0", msg)
 
         def _on_loaded(self) -> None:
             self._update_status()
@@ -482,6 +488,37 @@ def create_main_window(controller: Optional[ProjectController] = None):
             dlg = create_pipeline_dialog(self.controller, self)
             dlg.exec()
 
+
+        def _on_browse_examples(self) -> None:
+            from ..dialogs.examples_dialog import create_examples_dialog
+            dlg = create_examples_dialog(self)
+            if dlg.exec():
+                ex = dlg.selected_example()
+                if ex is not None:
+                    self._load_example(ex)
+
+        def _load_example(self, example) -> None:
+            from PyQt6.QtWidgets import QMessageBox
+            r = QMessageBox.question(
+                self,
+                "Charger l'exemple",
+                f"Remplacer le projet courant par\n« {example.title} » ?",
+            )
+            if r != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                self.controller.new_project(example.id, dimension=int(example.dimension))
+                self.controller.apply_scene(example.scene)
+                self.controller.journal.info(f"Example loaded: {example.id}")
+                self.statusBar().showMessage(f"Exemple chargé : {example.title}", 5000)
+                self._update_status()
+            except Exception as exc:
+                QMessageBox.critical(self, "Exemple", str(exc))
+                try:
+                    self.controller.journal.exception("example load failed", exc)
+                except Exception:
+                    pass
+
         def _on_about(self) -> None:
             from ..dialogs.about_dialog import create_about_dialog
             create_about_dialog(self).exec()
@@ -565,7 +602,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
             try:
                 if hasattr(self, "compute_tab") and self.compute_tab is not None:
                     self._show_tab("compute")
-                    #self.compute_tab.run_computation()
+                    self.compute_tab.run_computation()
                     return
             except Exception:
                 pass
