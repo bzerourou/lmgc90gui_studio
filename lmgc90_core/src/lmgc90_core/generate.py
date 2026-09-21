@@ -226,10 +226,11 @@ class NumpyGranulo:
         p = cfg.container_params
         kind = cfg.container_type
         if kind == "Box2D":
+            # Match pylmgc90 depositInBox2D: particles in [0, lx] × [0, ly]
             lx, ly = p["lx"], p["ly"]
             return np.column_stack([
-                rng.uniform(-lx / 2, lx / 2, n),
-                rng.uniform(-ly / 2, ly / 2, n),
+                rng.uniform(0.0, lx, n),
+                rng.uniform(0.0, ly, n),
             ])
         if kind in ("Disk2D", "Drum2D"):
             r = p["r"]
@@ -244,9 +245,9 @@ class NumpyGranulo:
         if kind == "Box3D":
             lx, ly, lz = p["lx"], p["ly"], p["lz"]
             return np.column_stack([
-                rng.uniform(-lx / 2, lx / 2, n),
-                rng.uniform(-ly / 2, ly / 2, n),
-                rng.uniform(-lz / 2, lz / 2, n),
+                rng.uniform(0.0, lx, n),
+                rng.uniform(0.0, ly, n),
+                rng.uniform(0.0, lz, n),
             ])
         if kind == "Sphere3D":
             r = p["r"]
@@ -268,8 +269,8 @@ class NumpyGranulo:
         if kind == "Box2D":
             lx, ly = p["lx"], p["ly"]
             return (
-                (centers[:, 0] - r >= -lx / 2) & (centers[:, 0] + r <= lx / 2)
-                & (centers[:, 1] - r >= -ly / 2) & (centers[:, 1] + r <= ly / 2)
+                (centers[:, 0] - r >= 0.0) & (centers[:, 0] + r <= lx)
+                & (centers[:, 1] - r >= 0.0) & (centers[:, 1] + r <= ly)
             )
         if kind in ("Disk2D", "Drum2D"):
             return np.linalg.norm(centers, axis=1) + r <= p["r"]
@@ -279,9 +280,9 @@ class NumpyGranulo:
         if kind == "Box3D":
             lx, ly, lz = p["lx"], p["ly"], p["lz"]
             return (
-                (centers[:, 0] - r >= -lx / 2) & (centers[:, 0] + r <= lx / 2)
-                & (centers[:, 1] - r >= -ly / 2) & (centers[:, 1] + r <= ly / 2)
-                & (centers[:, 2] - r >= -lz / 2) & (centers[:, 2] + r <= lz / 2)
+                (centers[:, 0] - r >= 0.0) & (centers[:, 0] + r <= lx)
+                & (centers[:, 1] - r >= 0.0) & (centers[:, 1] + r <= ly)
+                & (centers[:, 2] - r >= 0.0) & (centers[:, 2] + r <= lz)
             )
         if kind == "Sphere3D":
             return np.linalg.norm(centers, axis=1) + r <= p["r"]

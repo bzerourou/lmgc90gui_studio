@@ -17,11 +17,7 @@ def build(controller) -> None:
         controller.add_avatar(pre.rigidJonc(
             axe1=0.15, axe2=0.04, center=[mx, my], model="rigid",
             material="TDURx", color="GRAYx"))
-    for i in range(15):
-        a = 2 * math.pi * i / 15
-        controller.add_avatar(pre.rigidDisk(
-            r=0.06, center=[0.45 * math.cos(a), 0.45 * math.sin(a)],
-            model="rigid", material="TDURx", color="BLUEx"))
+
     iqs_law(controller, "iqsc0", 0.4)
     see_disk_disk(controller, "iqsc0")
     see_disk_wall(controller, "iqsc0")

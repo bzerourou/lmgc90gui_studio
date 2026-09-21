@@ -829,33 +829,59 @@ def build_avatar_mesh(avatar: Avatar) -> Optional[pv.PolyData]:
         return None
 
 
-def _apply_avatar_rotations(mesh: pv.PolyData, avatar: Avatar, controller) -> pv.PolyData:
-    """Rejoue les rotations DOF sur le mesh paramétrique de l'avatar."""
+def _apply_avatar_dofs(mesh: pv.PolyData, avatar: Avatar, controller) -> pv.PolyData:
+    """Rejoue les DOF géométriques (rotate + translate) sur le mesh viewer.
+
+    Ordre = ordre des ``project.operations`` (comme materialize / pre.visuAvatars).
+    Cible : avatar_id ou groupe contenant l'avatar.
+    """
     state = getattr(controller, 'project', None)
-    operations = getattr(state, 'operations', []) if state is not None else []
-    for operation in operations or []:
+    if state is None:
+        return mesh
+    operations = getattr(state, 'operations', []) or []
+    groups = getattr(state, 'avatar_groups', {}) or {}
+
+    for operation in operations:
         targets_avatar = (
             operation.target_type == 'avatar'
-            and operation.target_value == avatar.avatar_id
+            and str(operation.target_value) == str(avatar.avatar_id)
         )
         targets_group = (
             operation.target_type == 'group'
-            and avatar.avatar_id in state.avatar_groups.get(
-                operation.target_value, []
-            )
-        ) if state is not None else False
-        if operation.operation_type != 'rotate' or not (targets_avatar or targets_group):
+            and str(avatar.avatar_id) in [
+                str(x) for x in groups.get(str(operation.target_value), [])
+            ]
+        )
+        if not (targets_avatar or targets_group):
             continue
 
-        parameters = operation.parameters
-        if parameters.get('description') != 'axis':
-            continue
-        axis = parameters.get('axis')
-        alpha = parameters.get('alpha')
-        if axis is None or alpha is None:
-            continue
-        mesh.rotate_vector(axis, np.degrees(float(alpha)), point=_as3(avatar.center), inplace=True)
+        op = operation.operation_type
+        parameters = dict(operation.parameters or {})
+
+        if op == 'rotate':
+            # 2D scenes often omit axis → default Z (same as pre / hopper walls)
+            alpha = parameters.get('alpha')
+            if alpha is None:
+                continue
+            axis = parameters.get('axis') or [0.0, 0.0, 1.0]
+            pivot = parameters.get('center') or avatar.center
+            deg = np.degrees(float(alpha))
+            try:
+                mesh.rotate_vector(list(axis), deg, point=_as3(pivot), inplace=True)
+            except Exception:
+                mesh.rotate_z(deg, point=_as3(pivot), inplace=True)
+
+        elif op == 'translate':
+            dx = float(parameters.get('dx', 0.0) or 0.0)
+            dy = float(parameters.get('dy', 0.0) or 0.0)
+            dz = float(parameters.get('dz', 0.0) or 0.0)
+            if dx == 0.0 and dy == 0.0 and dz == 0.0:
+                continue
+            mesh.translate([dx, dy, dz], inplace=True)
+
     return mesh
+
+
 
 
 def _expand_renderables(renderables) -> List[Tuple[int, Avatar]]:
@@ -1414,7 +1440,7 @@ class Viewer3D(QWidget):
         mesh = build_avatar_mesh(avatar)
         if mesh is None:
             return
-        mesh = _apply_avatar_rotations(mesh, avatar, self.controller)
+        mesh = _apply_avatar_dofs(mesh, avatar, self.controller)
 
         color   = _color_for_avatar(avatar, self._color_mode)
         opacity = _opacity_for_avatar(avatar)

@@ -103,7 +103,6 @@ def _call_deposit(pre, config: GranuloConfig) -> tuple[np.ndarray, np.ndarray]:
                 raise MaterializationError("pylmgc90.pre has no depositInBox2D")
             lx = float(p.get("lx", p.get("xmax", 1.0) - p.get("xmin", 0.0)))
             ly = float(p.get("ly", p.get("ymax", 1.0) - p.get("ymin", 0.0)))
-            # Official API: depositInBox2D(radii, lx, ly)
             result = fn(radii_in, lx, ly)
             return _parse_result(result, radii_in, dim=2)
 
@@ -121,7 +120,6 @@ def _call_deposit(pre, config: GranuloConfig) -> tuple[np.ndarray, np.ndarray]:
             return _parse_result(result, radii_in, dim=3)
 
         if ctype in ("disk2d", "drum2d"):
-            # Official-style: depositInDrum2D(radii, R) or depositInDisk2D(radii, R)
             fn = getattr(pre, "depositInDrum2D", None) or getattr(pre, "depositInDisk2D", None)
             if fn is None:
                 raise MaterializationError(f"no deposit for {config.container_type}")
@@ -131,12 +129,39 @@ def _call_deposit(pre, config: GranuloConfig) -> tuple[np.ndarray, np.ndarray]:
             except TypeError:
                 result = fn(radii_in, radius=r)
             return _parse_result(result, radii_in, dim=2)
+
+        if ctype in ("couette2d", "couette"):
+            # Try common pylmgc names; fall back to core NumpyGranulo via caller if missing
+            fn = (
+                getattr(pre, "depositInCouette2D", None)
+                or getattr(pre, "depositIn2DCouette", None)
+                or getattr(pre, "depositInCouette", None)
+            )
+            if fn is None:
+                raise MaterializationError(
+                    "pylmgc90.pre has no depositInCouette2D "
+                    "(use core NumpyGranulo fallback)"
+                )
+            rint = float(p.get("rint", 1.0))
+            rext = float(p.get("rext", 2.0))
+            try:
+                result = fn(radii_in, rint, rext)
+            except TypeError:
+                try:
+                    result = fn(radii_in, r_int=rint, r_ext=rext)
+                except TypeError:
+                    result = fn(radii_in, [rint, rext])
+            return _parse_result(result, radii_in, dim=2)
+
+        raise MaterializationError(
+            f"unknown granulo container_type: {config.container_type!r}"
+        )
     except MaterializationError:
         raise
     except Exception as exc:
-        raise MaterializationError(f"deposit failed ({config.container_type}): {exc}") from exc
-
-    raise MaterializationError(f"unknown granulo container_type: {config.container_type!r}")
+        raise MaterializationError(
+            f"deposit failed ({config.container_type}): {exc}"
+        ) from exc
 
 
 def _parse_result(result: Any, radii_in: np.ndarray, *, dim: int) -> tuple[np.ndarray, np.ndarray]:

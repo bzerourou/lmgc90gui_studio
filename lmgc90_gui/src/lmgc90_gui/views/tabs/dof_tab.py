@@ -138,7 +138,7 @@ def create_dof_tab(parent=None):
                 return []
             items = []
             for av in self.controller.project.avatars:
-                label = f"{av.avatar_id[:12]}… ({av.avatar_type.value})"
+                label = f"{av.avatar_id[:12]}… | ({av.avatar_type.value})"
                 items.append((av.avatar_id, label))
             return items  # type: ignore[return-value]
 
