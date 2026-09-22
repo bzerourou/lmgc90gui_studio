@@ -46,6 +46,17 @@ def create_entity_tree(
         def clear_rows(self) -> None:
             self.clear()
 
+        def set_rows(self, rows: Iterable[tuple[Sequence[str], Any]]) -> None:
+            """Replace all rows: ``rows`` is iterable of ``(columns, payload)``."""
+            self.blockSignals(True)
+            self.clear()
+            for columns, payload in rows:
+                item = QTreeWidgetItem([str(c) for c in columns])
+                item.setData(0, self._payload_role, payload)
+                self.addTopLevelItem(item)
+            self.blockSignals(False)
+            self.resize_columns()
+
         def add_row(self, columns: Sequence[str], payload: Any) -> QTreeWidgetItem:
             item = QTreeWidgetItem([str(c) for c in columns])
             item.setData(0, self._payload_role, payload)
