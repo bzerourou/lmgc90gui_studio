@@ -75,3 +75,69 @@ def export_pre_script(project: Project, path: Union[str, Path]) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(emit_pre(project), encoding="utf-8")
     return out
+
+
+def _parse_cell_phases(project: Project) -> dict:
+    """Parse ``project.dynamic_vars['cell_phases']`` (dict or repr-string)."""
+    raw = (project.dynamic_vars or {}).get("cell_phases")
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        import ast as _ast
+        try:
+            val = _ast.literal_eval(raw)
+            return val if isinstance(val, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def write_cell_dual_datbox(
+    scene: MaterializedScene,
+    project: Project,
+    base_path: Union[str, Path],
+) -> dict[str, Path]:
+    """Write DATBOX_SPRD and DATBOX_STBL under *base_path* (cell adhesion).
+
+    Both folders receive the current materialized scene (geometry + DOF as built).
+    Phase stiffness tables and timing are written to ``PHASES.json`` for the
+    solver / chipy scripts. Full law re-materialization per phase can be added
+    later without changing this layout.
+    """
+    import json
+
+    base = Path(base_path)
+    base.mkdir(parents=True, exist_ok=True)
+    phases = _parse_cell_phases(project)
+    sprd_name = (phases.get("sprd") or {}).get("path", "DATBOX_SPRD")
+    stbl_name = (phases.get("stbl") or {}).get("path", "DATBOX_STBL")
+    if isinstance(sprd_name, str) and "/" not in sprd_name:
+        sprd_path = base / sprd_name
+    else:
+        sprd_path = base / "DATBOX_SPRD"
+    if isinstance(stbl_name, str) and "/" not in stbl_name:
+        stbl_path = base / stbl_name
+    else:
+        stbl_path = base / "DATBOX_STBL"
+
+    dim = int(getattr(project, "dimension", scene.dimension) or scene.dimension)
+    p1 = write_datbox(scene, sprd_path, dimension=dim)
+    p2 = write_datbox(scene, stbl_path, dimension=dim)
+
+    meta_path = base / "PHASES.json"
+    meta = {
+        "wave": 5,
+        "phases": phases,
+        "datbox_sprd": str(p1),
+        "datbox_stbl": str(p2),
+        "note": (
+            "Geometry/DOF written to both DATBOX; stiff_pen/pstr_pen in phases "
+            "are for command.py / recalibration of tact_behav before each run."
+        ),
+    }
+    meta_path.write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
+    # also emit pre scripts for audit
+    export_pre_script(project, base / "pre_cell.py")
+    return {"DATBOX_SPRD": p1, "DATBOX_STBL": p2, "PHASES": meta_path}

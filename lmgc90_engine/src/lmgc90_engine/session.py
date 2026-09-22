@@ -125,6 +125,12 @@ class EngineSession:
         scene = self.materialize()
         return datbox_mod.write_datbox(scene, path)
 
+    def write_cell_dual_datbox(self, base_path: Union[str, Path]) -> dict:
+        """Export DATBOX_SPRD + DATBOX_STBL (+ PHASES.json) for cell adhesion."""
+        patch_numpy_cross()
+        scene = self.materialize()
+        return datbox_mod.write_cell_dual_datbox(scene, self.project, base_path)
+
     def emit_pre_script(self, path: Optional[Union[str, Path]] = None) -> str:
         """Always available — delegates to lmgc90_core (no pylmgc required)."""
         text = emit_pre(self.project)

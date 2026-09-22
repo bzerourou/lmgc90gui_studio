@@ -172,7 +172,11 @@ def _make_see(pre, rule: VisibilityRule) -> Any:
 
 
 def _apply_dof(project: Project, scene: MaterializedScene, op) -> None:
-    """Apply one DOFOperation onto the corresponding live body(ies)."""
+    """Apply one DOFOperation onto the corresponding live body(ies).
+
+    Supports ``imposeDrivenDof`` with ``description='predefined'`` (cell spreading).
+    Studio-only keys (``phase``, …) are stripped before calling pylmgc.
+    """
     targets: list[Any] = []
     if op.target_type == "avatar":
         body = scene.body_by_avatar_id.get(str(op.target_value))
@@ -188,15 +192,44 @@ def _apply_dof(project: Project, scene: MaterializedScene, op) -> None:
             if body is not None:
                 targets.append(body)
     else:
-        # global / bodies — leave to writeDatbox / script path
         return
 
     method = op.operation_type
-    params = dict(op.parameters or {})
+    raw = dict(op.parameters or {})
+    # drop studio metadata
+    raw.pop("phase", None)
+    raw.pop("protein_target", None)
+
+    # allowed kwargs for common body methods
+    allowed = {
+        "component", "dofty", "ct", "description", "amp", "omega", "phi",
+        "rampi", "ramp", "dx", "dy", "dz", "axis", "alpha", "center",
+    }
+    params = {k: v for k, v in raw.items() if k in allowed}
+
     for body in targets:
         fn = getattr(body, method, None)
         if fn is None:
             raise MaterializationError(
                 f"body has no method {method!r} for DOF on {op.target_value!r}"
             )
-        fn(**params)
+        try:
+            fn(**params)
+        except TypeError:
+            # older API: component as list, or fewer kwargs
+            p2 = dict(params)
+            if "component" in p2 and not isinstance(p2["component"], (list, tuple)):
+                p2["component"] = [p2["component"]]
+            try:
+                fn(**p2)
+            except TypeError as exc:
+                # last resort: only component + dofty + ct
+                minimal = {
+                    k: p2[k] for k in ("component", "dofty", "ct") if k in p2
+                }
+                try:
+                    fn(**minimal)
+                except Exception as exc2:
+                    raise MaterializationError(
+                        f"DOF {method} failed on {op.target_value!r}: {exc2}"
+                    ) from exc2

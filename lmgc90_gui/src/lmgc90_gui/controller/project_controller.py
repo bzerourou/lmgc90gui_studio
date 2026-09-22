@@ -123,22 +123,43 @@ class ProjectController(_QObject):
         self._emit()
         self.project_loaded.emit()
 
-    def apply_scene(self, builder) -> None:
+    def apply_scene(self, builder, *, on_conflict: str = "error") -> None:
         """Run a pure core scene builder ``builder(project)`` then notify UI.
 
         Architecture: scene logic lives in ``lmgc90_core.scenes``; the GUI never
         mutates ``Project`` fields directly — only this entry point.
 
-        Pending ``GranuloConfig`` entries (no ``population_id`` yet) are resolved
-        via ``deposit`` (pylmgc ``depositInBox2D`` if available, else NumpyGranulo).
+        Does **not** reset the project or the command history.
+
+        on_conflict (passed to ``Project.add`` / ``group``):
+          • ``error`` — fail on duplicate material/model/law names
+          • ``skip`` / ``merge`` — reuse existing named entities; merge groups;
+            skip duplicate visibility / post-pro (for *Ajouter au projet*)
+
+        Pending ``GranuloConfig`` entries are resolved via ``deposit``.
         """
         if not callable(builder):
             raise TypeError("apply_scene expects a callable(project) -> None")
-        builder(self._project)
-        for cfg in list(self._project.granulo):
-            if getattr(cfg, "population_id", None):
-                continue
-            self.deposit(cfg)
+        prev = getattr(self._project, "_on_conflict", "error")
+        self._project._on_conflict = on_conflict
+        try:
+            builder(self._project)
+            for cfg in list(self._project.granulo):
+                if getattr(cfg, "population_id", None):
+                    continue
+                try:
+                    self.deposit(cfg)
+                except Exception as dep_exc:
+                    # duplicate population / deposit clash → skip when merging
+                    if on_conflict in ("skip", "merge"):
+                        try:
+                            self.journal.warning(f"deposit skipped: {dep_exc}")
+                        except Exception:
+                            pass
+                    else:
+                        raise
+        finally:
+            self._project._on_conflict = prev
         self._session.mark_dirty()
         self._emit()
 

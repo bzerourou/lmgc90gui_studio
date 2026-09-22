@@ -496,21 +496,65 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 ex = dlg.selected_example()
                 if ex is not None:
                     self._load_example(ex)
-
+                    
         def _load_example(self, example) -> None:
+            """Load example: replace project OR append (keeps command history)."""
             from PyQt6.QtWidgets import QMessageBox
-            r = QMessageBox.question(
-                self,
-                "Charger l'exemple",
-                f"Remplacer le projet courant par\n« {example.title} » ?",
+
+            box = QMessageBox(self)
+            box.setWindowTitle("Charger l'exemple")
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setText(f"Exemple « {example.title} »")
+            box.setInformativeText(
+                "• Remplacer : nouveau projet (historique effacé)\n"
+                "• Ajouter : garde le projet, le tree et tout l'historique "
+                "des commandes, puis empile la scène."
             )
-            if r != QMessageBox.StandardButton.Yes:
+            btn_replace = box.addButton("Remplacer", QMessageBox.ButtonRole.AcceptRole)
+            btn_append = box.addButton("Ajouter au projet", QMessageBox.ButtonRole.ActionRole)
+            btn_cancel = box.addButton("Annuler", QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(btn_replace)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is None or clicked is btn_cancel:
                 return
+
             try:
-                self.controller.new_project(example.id, dimension=int(example.dimension))
-                self.controller.apply_scene(example.scene)
-                self.controller.journal.info(f"Example loaded: {example.id}")
-                self.statusBar().showMessage(f"Exemple chargé : {example.title}", 5000)
+                dim = int(example.dimension)
+                if clicked is btn_replace:
+                    self.controller.new_project(example.id, dimension=dim)
+                    self.controller.apply_scene(example.scene)
+                    self.controller.journal.info(f"Example replaced: {example.id}")
+                    self.statusBar().showMessage(
+                        f"Exemple chargé (remplacé) : {example.title}", 5000
+                    )
+                else:
+                    # Append: keep Project + CommandHistory, only run builder
+                    cur_dim = int(getattr(self.controller.project, "dimension", dim))
+                    if cur_dim != dim:
+                        QMessageBox.warning(
+                            self,
+                            "Exemple",
+                            f"Dimension incompatible : projet {cur_dim}D, "
+                            f"exemple {dim}D.\n"
+                            "Utilisez « Remplacer » ou changez de dimension.",
+                        )
+                        return
+                    n_before = len(self.controller.project.avatars)
+                    h_before = len(getattr(self.controller.project.history, "undo_stack", []) or [])
+                    try:
+                        h_before = len(self.controller.project.history.commands)  # type: ignore
+                    except Exception:
+                        pass
+                    self.controller.apply_scene(example.scene, on_conflict="merge")
+                    n_after = len(self.controller.project.avatars)
+                    self.controller.journal.info(
+                        f"Example appended: {example.id} "
+                        f"(avatars {n_before} → {n_after})"
+                    )
+                    self.statusBar().showMessage(
+                        f"Exemple ajouté (historique conservé) : {example.title}", 5000
+                    )
                 self._update_status()
             except Exception as exc:
                 QMessageBox.critical(self, "Exemple", str(exc))

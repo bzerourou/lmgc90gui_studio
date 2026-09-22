@@ -13,7 +13,7 @@
 """
 from __future__ import annotations
 
-from .datbox import export_pre_script, write_datbox
+from .datbox import export_pre_script, write_datbox, write_cell_dual_datbox
 from .errors import (
     DatboxError,
     EngineError,
@@ -31,6 +31,7 @@ __all__ = [
     "MaterializedScene",
     "materialize_project",
     "write_datbox",
+    "write_cell_dual_datbox",
     "export_pre_script",
     "deposit_population",
     "EngineError",

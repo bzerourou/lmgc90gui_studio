@@ -56,47 +56,114 @@ class Project:
     record: bool = True
 
     # ------------------------------------------------------------------ API
-    def add(self, obj: Entity):
-        """Validate, apply, journal. Returns the entity (or generated result)."""
+
+    def _conflict_mode(self, on_conflict: Optional[str] = None) -> str:
+        """error | skip | merge — see apply_scene(on_conflict=...)."""
+        mode = on_conflict or getattr(self, "_on_conflict", None) or "error"
+        if mode not in ("error", "skip", "merge"):
+            return "error"
+        return mode
+
+    def _find_material(self, name: str) -> Optional[Material]:
+        for m in self.materials:
+            if m.name == name:
+                return m
+        return None
+
+    def _find_model(self, name: str) -> Optional[Model]:
+        for m in self.models:
+            if m.name == name:
+                return m
+        return None
+
+    def _find_law(self, name: str) -> Optional[ContactLaw]:
+        for law in self.laws:
+            if law.name == name:
+                return law
+        return None
+
+    def add(self, obj: Entity, *, on_conflict: Optional[str] = None):
+        """Validate, apply, journal. Returns the entity (or existing on skip).
+
+        on_conflict:
+          • ``error`` (default) — raise ValidationError on name clash
+          • ``skip`` — return existing material/model/law; skip duplicate see/postpro
+          • ``merge`` — like skip for named entities; groups union ids
+        """
+        mode = self._conflict_mode(on_conflict)
+
         if isinstance(obj, Material):
             validate_material(obj)
-            if any(m.name == obj.name for m in self.materials):
+            existing = self._find_material(obj.name)
+            if existing is not None:
+                if mode in ("skip", "merge"):
+                    return existing
                 raise ValidationError(f"material {obj.name!r} already exists")
             return self._run(AddMaterial(obj), obj)
+
         if isinstance(obj, Model):
             validate_model(obj)
             if obj.dimension != self.dimension:
                 raise ValidationError(
                     f"model {obj.name!r} is {obj.dimension}D, project is {self.dimension}D"
                 )
-            if any(m.name == obj.name for m in self.models):
+            existing = self._find_model(obj.name)
+            if existing is not None:
+                if mode in ("skip", "merge"):
+                    return existing
                 raise ValidationError(f"model {obj.name!r} already exists")
             return self._run(AddModel(obj), obj)
+
         if isinstance(obj, Avatar):
             self._check_avatar(obj)
             return self._run(AddAvatar(obj), obj)
+
         if isinstance(obj, ParticlePopulation):
             self._check_population(obj)
             return self._run(AddPopulation(obj), obj)
+
         if isinstance(obj, ContactLaw):
             validate_contact_law(obj)
-            if any(l.name == obj.name for l in self.laws):
+            existing = self._find_law(obj.name)
+            if existing is not None:
+                if mode in ("skip", "merge"):
+                    return existing
                 raise ValidationError(f"law {obj.name!r} already exists")
             return self._run(AddLaw(obj), obj)
+
         if isinstance(obj, VisibilityRule):
             validate_visibility(obj, {l.name for l in self.laws})
+            if mode in ("skip", "merge"):
+                for v in self.visibility:
+                    if (
+                        v.candidate_body == obj.candidate_body
+                        and v.candidate_contactor == obj.candidate_contactor
+                        and v.candidate_color == obj.candidate_color
+                        and v.antagonist_body == obj.antagonist_body
+                        and v.antagonist_contactor == obj.antagonist_contactor
+                        and v.antagonist_color == obj.antagonist_color
+                        and v.behavior_name == obj.behavior_name
+                    ):
+                        return v
             cmd = AddSeeTable(obj)
             self._run(cmd, obj)
             return obj
+
         if isinstance(obj, DOFOperation):
             self._check_dof(obj)
             cmd = AddDOF(obj)
             self._run(cmd, obj)
             return obj
+
         if isinstance(obj, PostProCommand):
+            if mode in ("skip", "merge"):
+                for p in self.postpro:
+                    if p.name == obj.name and p.step == obj.step:
+                        return p
             cmd = AddPostPro(obj)
             self._run(cmd, obj)
             return obj
+
         if isinstance(obj, Loop):
             return self.apply_loop(obj)
         if isinstance(obj, ForLoop):
@@ -106,7 +173,15 @@ class Project:
         raise TypeError(f"cannot add {type(obj).__name__}")
 
     def group(self, name: str, ids: Iterable[str]) -> None:
-        self._run(SetGroup(name, list(ids)))
+        """Register or merge an avatar group (merge when on_conflict=skip|merge)."""
+        id_list = list(ids)
+        mode = self._conflict_mode()
+        if mode in ("skip", "merge") and name in self.avatar_groups:
+            prev = list(self.avatar_groups.get(name, []))
+            merged = list(dict.fromkeys(prev + id_list))
+            self._run(SetGroup(name, merged))
+        else:
+            self._run(SetGroup(name, id_list))
 
     def remove_avatar(self, avatar_id: str) -> Avatar:
         av = self.avatar(avatar_id)
