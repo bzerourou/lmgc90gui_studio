@@ -1070,6 +1070,7 @@ class Viewer3D(QWidget):
         self._measure_pts    = []
         self._measure_actors = []
         self._dof_actors     = []          # flèches DOF
+        self._law_actors     = []          # liens see-tables / lois
         self._color_mode     = 'lmgc90'   # lmgc90 | type | material | origin
         self._pylmgc90_mode  = False       # True = rendu via visuAvatars
         self._setup_ui()
@@ -1136,6 +1137,14 @@ class Viewer3D(QWidget):
         )
         self._dof_check.toggled.connect(self._toggle_dof)
         tb.addWidget(self._dof_check)
+
+        self._law_check = QCheckBox("Lois")
+        self._law_check.setChecked(False)
+        self._law_check.setToolTip(
+            "See-tables: lien couleur candidat -> antagoniste, teinte par nom de loi"
+        )
+        self._law_check.toggled.connect(self._toggle_laws)
+        tb.addWidget(self._law_check)
 
         tb.addWidget(_sep())
 
@@ -1586,6 +1595,8 @@ class Viewer3D(QWidget):
             except Exception:
                 pass
         self._dof_actors.clear()
+        if hasattr(self, "_clear_law_actors"):
+            self._clear_law_actors()
 
     def _toggle_dof(self, show: bool):
         if show:
@@ -1599,6 +1610,89 @@ class Viewer3D(QWidget):
     # =========================================================================
     # API publique
     # =========================================================================
+
+    def _toggle_laws(self, show: bool):
+        if show:
+            self._draw_law_links([av for _, av in self.avatars_data])
+        else:
+            self._clear_law_actors()
+        self.plotter.render()
+
+    def _clear_law_actors(self):
+        for actor in getattr(self, "_law_actors", []) or []:
+            try:
+                self.plotter.remove_actor(actor)
+            except Exception:
+                pass
+        self._law_actors = []
+
+    def _law_color(self, name: str) -> str:
+        h = hash(name or "law") & 0xFFFFFF
+        r = 0x40 + ((h >> 16) & 0xBF)
+        g = 0x40 + ((h >> 8) & 0xBF)
+        b = 0x40 + (h & 0xBF)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def _draw_law_links(self, avatars: List[Avatar]):
+        """See-tables: segment centroide(couleur candidat) -> centroide(antagoniste)."""
+        self._clear_law_actors()
+        if not getattr(self, "_law_check", None) or not self._law_check.isChecked():
+            return
+        state = getattr(self.controller, "project", None)
+        if state is None:
+            return
+        rules = getattr(state, "visibility", None) or []
+        if not rules or not avatars:
+            return
+
+        by_color: Dict[str, List] = {}
+        for av in avatars:
+            col = (getattr(av, "color", None) or "").strip()
+            if not col:
+                continue
+            by_color.setdefault(col, []).append(_as3(av.center))
+
+        def _centroid(pts):
+            return np.array(pts, dtype=float).mean(axis=0)
+
+        drawn = 0
+        for rule in rules:
+            if drawn >= 40:
+                break
+            c_col = (getattr(rule, "candidate_color", None) or "").strip()
+            a_col = (getattr(rule, "antagonist_color", None) or "").strip()
+            law = (getattr(rule, "behavior_name", None) or "?").strip()
+            c_pts = by_color.get(c_col) or []
+            a_pts = by_color.get(a_col) or []
+            if not c_pts or not a_pts:
+                continue
+            c0 = _centroid(c_pts)
+            a0 = _centroid(a_pts)
+            if float(np.linalg.norm(c0 - a0)) < 1e-9:
+                a0 = a0 + np.array([0.05, 0.05, 0.05])
+            color = self._law_color(law)
+            try:
+                line = pv.Line(c0, a0)
+                actor = self.plotter.add_mesh(
+                    line, color=color, line_width=3, opacity=0.85, pickable=False,
+                )
+                self._law_actors.append(actor)
+                rad = max(0.02, float(np.linalg.norm(c0 - a0)) * 0.03)
+                tip = pv.Sphere(center=a0, radius=rad, theta_resolution=8, phi_resolution=8)
+                tip_actor = self.plotter.add_mesh(
+                    tip, color=color, opacity=0.7, pickable=False,
+                )
+                self._law_actors.append(tip_actor)
+                drawn += 1
+            except Exception:
+                continue
+        try:
+            base = self.info_label.text().split(" · ")[0]
+            self.info_label.setText(f"{base} · {drawn} lien(s) de loi")
+        except Exception:
+            pass
+        self.plotter.render()
+
 
     def add_avatar(self, avatar: Avatar, index: int):
         """Ajoute un avatar individuel à la scène."""
@@ -1721,6 +1815,8 @@ class Viewer3D(QWidget):
         # DOF hints si activés
         if self._dof_check.isChecked():
             self._draw_dof_hints([av for _, av in renderables])
+        if getattr(self, "_law_check", None) is not None and self._law_check.isChecked():
+            self._draw_law_links([av for _, av in renderables])
 
         self._refresh_group_combo()
         self._update_info()
