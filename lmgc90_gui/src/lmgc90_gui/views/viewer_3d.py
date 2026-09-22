@@ -93,7 +93,22 @@ _WALL_COLOR     = '#b0b0b0'
 _MESH_COLOR     = '#40c8a0'
 _SELECT_COLOR   = '#ffcc00'
 _MEASURE_COLOR  = '#ff4444'
-_DOF_COLOR      = '#ff8800'
+_DOF_COLOR      = '#ff8800'  # legacy default
+# Palette DOF enrichie (direction + type)
+_DOF_AXIS_COLORS = {
+    1: '#e74c3c',  # X — rouge
+    2: '#27ae60',  # Y — vert
+    3: '#3498db',  # Z — bleu
+}
+_DOF_TYPE_COLORS = {
+    'fixed':       '#8e44ad',  # violet — encastrement / v=0
+    'velocity':    None,       # use axis color
+    'force':       '#f39c12',  # orange — force
+    'init':        '#1abc9c',  # turquoise — imposeInitValue
+    'rotate':      '#e91e63',  # rose — rotation imposée
+    'translate':   '#00bcd4',  # cyan — translation
+    'predefined':  '#ff5722',  # deep orange — predefined spreading
+}
 
 # Opacité par catégorie
 _OPACITY_RIGID    = 0.92
@@ -172,14 +187,64 @@ def _rect_poly(cx: float, cy: float, cz: float,
 
 
 def _arrow_mesh(origin, direction, scale: float = 0.05) -> pv.PolyData:
-    """Petite flèche pour visualiser une contrainte DOF."""
+    """Flèche unitaire pour DOF (vitesse / force / translation)."""
     d = np.array(direction, dtype=float)
     n = np.linalg.norm(d)
     if n > 1e-10:
-        d /= n
-    return pv.Arrow(start=np.array(origin, dtype=float) - d * scale * 0.5,
-                    direction=d, tip_length=0.4, tip_radius=0.2,
-                    shaft_radius=0.08, scale=scale)
+        d = d / n
+    else:
+        d = np.array([1.0, 0.0, 0.0])
+    o = np.array(origin, dtype=float)
+    return pv.Arrow(
+        start=o - d * scale * 0.15,
+        direction=d,
+        tip_length=0.35,
+        tip_radius=0.18,
+        shaft_radius=0.07,
+        scale=scale,
+    )
+
+
+def _pin_mesh(origin, scale: float = 0.04) -> pv.PolyData:
+    """Marqueur d'encastrement (petite sphère + axes courts)."""
+    o = np.array(origin, dtype=float)
+    s = max(scale, 0.02)
+    ball = pv.Sphere(center=o, radius=s * 0.35, theta_resolution=12, phi_resolution=12)
+    return ball
+
+
+def _fixed_axis_mesh(origin, axis: int, scale: float = 0.05) -> pv.PolyData:
+    """Barre bidirectionnelle = translation bloquée selon un axe."""
+    o = np.array(origin, dtype=float)
+    if axis == 1:
+        d = np.array([1.0, 0.0, 0.0])
+    elif axis == 2:
+        d = np.array([0.0, 1.0, 0.0])
+    else:
+        d = np.array([0.0, 0.0, 1.0])
+    # double arrow (both ways) via two arrows
+    a1 = pv.Arrow(start=o, direction=d, tip_length=0.3, tip_radius=0.15,
+                  shaft_radius=0.06, scale=scale * 0.55)
+    a2 = pv.Arrow(start=o, direction=-d, tip_length=0.3, tip_radius=0.15,
+                  shaft_radius=0.06, scale=scale * 0.55)
+    return a1.merge(a2)
+
+
+def _rotate_hint_mesh(origin, axis, scale: float = 0.06) -> pv.PolyData:
+    """Anneau + flèche pour rotation imposée autour d'un axe."""
+    o = np.array(origin, dtype=float)
+    ax = np.array(axis, dtype=float)
+    n = np.linalg.norm(ax)
+    ax = ax / n if n > 1e-10 else np.array([0.0, 0.0, 1.0])
+    # torus-like: disk ring in plane perpendicular to axis
+    ring = pv.Polygon(center=o, radius=scale * 0.7, normal=ax, n_sides=24)
+    tip = o + ax * scale * 0.5
+    arrow = pv.Arrow(start=o, direction=ax, tip_length=0.4, tip_radius=0.12,
+                     shaft_radius=0.05, scale=scale * 0.7)
+    try:
+        return ring.merge(arrow)
+    except Exception:
+        return arrow
 
 
 # ============================================================================
@@ -1066,7 +1131,9 @@ class Viewer3D(QWidget):
         # Conditions aux limites
         self._dof_check = QCheckBox("DOF")
         self._dof_check.setChecked(False)
-        self._dof_check.setToolTip("Afficher les flèches de conditions aux limites")
+        self._dof_check.setToolTip(
+            "DOF : X rouge · Y vert · Z bleu · encastrement (barre+violet) · vitesse (flèche) · force (orange) · predefined (orange vif) · rotate (rose) · translate (cyan)"
+        )
         self._dof_check.toggled.connect(self._toggle_dof)
         tb.addWidget(self._dof_check)
 
@@ -1355,62 +1422,160 @@ class Viewer3D(QWidget):
     # =========================================================================
 
     def _draw_dof_hints(self, avatars: List[Avatar]):
-        """Ajoute des flèches colorées pour les avatars avec conditions aux limites."""
+        """Marqueurs DOF enrichis : direction (X/Y/Z), type, signe.
+
+        Couleurs axes : X rouge · Y vert · Z bleu
+        Types :
+          • encastrement (ct≈0) → barre bidirectionnelle + violet
+          • vitesse / predefined (ct≠0) → flèche sens du signe, couleur d'axe
+          • force → orange
+          • imposeInitValue → turquoise
+          • rotate → rose (anneau + axe)
+          • translate → cyan
+        """
         self._clear_dof_actors()
         if not self._dof_check.isChecked():
             return
 
-        state  = self.controller.project
-        ops    = getattr(state, 'operations', []) or []
+        state = self.controller.project
+        ops = getattr(state, 'operations', []) or []
         bodies = avatars
+        id_map = {str(av.avatar_id): av for av in bodies}
 
-        for op in ops:
-            if op.operation_type not in ('imposeDrivenDof', 'imposeInitValue'):
-                continue
-
+        def _targets(op):
             if op.target_type == 'avatar':
-                target = op.target_value
-                if isinstance(target, int):
-                    target_avatars = [
-                        bodies[target]
-                    ] if 0 <= target < len(bodies) else []
-                else:
-                    target_avatars = [
-                        av for av in bodies if av.avatar_id == target
-                    ]
-            elif op.target_type == 'group':
-                group_ids = state.avatar_groups.get(op.target_value, [])
-                target_avatars = [
-                    av for av in bodies if av.avatar_id in group_ids
+                tv = op.target_value
+                if isinstance(tv, int):
+                    return [bodies[tv]] if 0 <= tv < len(bodies) else []
+                av = id_map.get(str(tv))
+                return [av] if av is not None else []
+            if op.target_type == 'group':
+                gids = [
+                    str(x) for x in (state.avatar_groups.get(str(op.target_value), []) or [])
                 ]
-            else:
-                target_avatars = []
+                return [id_map[i] for i in gids if i in id_map]
+            return []
 
-            for av in target_avatars:
-                c = _as3(av.center)
+        def _components(params) -> list:
+            comp = params.get('component', 1)
+            if isinstance(comp, (list, tuple)):
+                return [int(c) for c in comp if int(c) in (1, 2, 3)]
+            try:
+                c = int(comp)
+                return [c] if c in (1, 2, 3) else [1]
+            except Exception:
+                return [1]
 
-                comp = op.parameters.get('component', 1)
-                # Composante → direction de la flèche
-                if isinstance(comp, list):
-                    dirs = [d for d in comp if d != 0]
-                    comp = dirs[0] if dirs else 1
+        def _axis_dir(comp: int):
+            return {1: (1, 0, 0), 2: (0, 1, 0), 3: (0, 0, 1)}.get(comp, (1, 0, 0))
 
-                if comp == 1:
-                    direction = (1, 0, 0)
-                elif comp == 2:
-                    direction = (0, 1, 0)
-                elif comp == 3:
-                    direction = (0, 0, 1)
-                else:
-                    direction = (1, 0, 0)
-
-                scale = max(0.04, (av.radius or 0.1) * 0.8)
-                arrow = _arrow_mesh(c, direction, scale=scale)
+        def _add(mesh, color, opacity=0.92):
+            try:
                 actor = self.plotter.add_mesh(
-                    arrow, color=_DOF_COLOR,
-                    opacity=0.9, pickable=False,
+                    mesh, color=color, opacity=opacity, pickable=False,
                 )
                 self._dof_actors.append(actor)
+            except Exception:
+                pass
+
+        for op in ops:
+            params = dict(op.parameters or {})
+            targets = _targets(op)
+            if not targets:
+                continue
+            op_type = op.operation_type
+
+            for av in targets:
+                # apply same geometric DOFs as mesh so markers sit on displaced body
+                c = list(_as3(av.center))
+                for prev in ops:
+                    if prev is op:
+                        break
+                    # crude: if this avatar is target of prior translate, shift marker
+                    if prev.operation_type != 'translate':
+                        continue
+                    hit = False
+                    if prev.target_type == 'avatar' and str(prev.target_value) == str(av.avatar_id):
+                        hit = True
+                    if prev.target_type == 'group':
+                        g = state.avatar_groups.get(str(prev.target_value), [])
+                        if str(av.avatar_id) in [str(x) for x in g]:
+                            hit = True
+                    if hit:
+                        pp = prev.parameters or {}
+                        c[0] += float(pp.get('dx', 0) or 0)
+                        c[1] += float(pp.get('dy', 0) or 0)
+                        c[2] += float(pp.get('dz', 0) or 0)
+
+                base_scale = max(0.05, float(av.radius or 0.1) * 0.9)
+
+                # --- rotate ---
+                if op_type == 'rotate':
+                    axis = params.get('axis') or [0, 0, 1]
+                    mesh = _rotate_hint_mesh(c, axis, scale=base_scale * 1.2)
+                    _add(mesh, _DOF_TYPE_COLORS['rotate'])
+                    continue
+
+                # --- translate (free kinematic move, not driven dof) ---
+                if op_type == 'translate':
+                    dx = float(params.get('dx', 0) or 0)
+                    dy = float(params.get('dy', 0) or 0)
+                    dz = float(params.get('dz', 0) or 0)
+                    vec = np.array([dx, dy, dz], dtype=float)
+                    if np.linalg.norm(vec) < 1e-12:
+                        continue
+                    mesh = _arrow_mesh(c, vec, scale=base_scale * 1.1)
+                    _add(mesh, _DOF_TYPE_COLORS['translate'])
+                    continue
+
+                if op_type not in ('imposeDrivenDof', 'imposeInitValue'):
+                    continue
+
+                description = str(params.get('description', '') or '')
+                dofty = str(params.get('dofty', 'vlocy') or 'vlocy').lower()
+                try:
+                    ct = float(params.get('ct', 0.0) or 0.0)
+                except Exception:
+                    ct = 0.0
+                is_init = op_type == 'imposeInitValue'
+                is_predef = description == 'predefined'
+                is_force = 'force' in dofty or 'f' == dofty
+                is_fixed = (not is_predef) and abs(ct) < 1e-14 and not is_init
+
+                comps = _components(params)
+                # offset markers slightly if several components on same body
+                for i, comp in enumerate(comps):
+                    direction = np.array(_axis_dir(comp), dtype=float)
+                    # shift origin a bit along axis so multi-comp don't overlap
+                    origin = np.array(c, dtype=float) + direction * (base_scale * 0.15 * i)
+                    axis_color = _DOF_AXIS_COLORS.get(comp, _DOF_COLOR)
+
+                    if is_fixed:
+                        mesh = _fixed_axis_mesh(origin, comp, scale=base_scale)
+                        # blend axis color with fixed purple
+                        _add(mesh, axis_color, opacity=0.85)
+                        pin = _pin_mesh(origin, scale=base_scale * 0.6)
+                        _add(pin, _DOF_TYPE_COLORS['fixed'], opacity=0.9)
+                    elif is_init:
+                        # arrow in +axis, turquoise
+                        mesh = _arrow_mesh(origin, direction, scale=base_scale)
+                        _add(mesh, _DOF_TYPE_COLORS['init'])
+                    else:
+                        # driven velocity / force / predefined
+                        sign = 1.0 if ct >= 0 else -1.0
+                        if is_predef and abs(ct) > 0:
+                            sign = 1.0 if ct > 0 else -1.0
+                        direction = direction * sign
+                        # scale arrow slightly by |ct| (clamped)
+                        mag = min(2.0, 1.0 + abs(ct) * 0.02) if abs(ct) > 0 else 1.0
+                        mesh = _arrow_mesh(origin, direction, scale=base_scale * mag)
+                        if is_force:
+                            color = _DOF_TYPE_COLORS['force']
+                        elif is_predef:
+                            color = _DOF_TYPE_COLORS['predefined']
+                        else:
+                            color = axis_color
+                        _add(mesh, color)
 
         self.plotter.render()
 
