@@ -36,7 +36,8 @@ def create_link_visibility_dialog(controller, parent=None):
             dim = int(getattr(pr, "dimension", 2) or 2)
             bodies = list(_BODY_2D if dim == 2 else _BODY_3D)
             colors = _project_colors(pr)
-            shapes = _project_shapes(pr)
+            shapes_c = _project_shapes(pr, role="candidate")
+            shapes_a = _project_shapes(pr, role="antagonist")
             laws = _project_laws(pr)
 
             def _cb(items, editable=False, default=None):
@@ -57,8 +58,9 @@ def create_link_visibility_dialog(controller, parent=None):
 
             self.c_body = _cb(bodies, default=default_body)
             self.a_body = _cb(bodies, default=default_body)
-            self.c_shape = _cb(shapes, editable=True, default=default_shape)
-            self.a_shape = _cb(shapes, editable=True, default=default_shape)
+            self.c_shape = _cb(shapes_c, editable=True, default=default_shape)
+            default_ant = "PLANx" if dim == 3 else "JONCx"
+            self.a_shape = _cb(shapes_a, editable=True, default=default_ant)
             self.c_color = _cb(colors, editable=True, default=c0)
             self.a_color = _cb(colors, editable=True, default=c1)
             self.behav = _cb(laws, editable=True, default=laws[0] if laws else "IQS")
@@ -73,11 +75,11 @@ def create_link_visibility_dialog(controller, parent=None):
             self.group_b = _cb(["(aucun)"] + groups, editable=False)
 
             form.addRow("Corps A", self.c_body)
-            form.addRow("Shape A", self.c_shape)
+            form.addRow("Shape A (candidat)", self.c_shape)
             form.addRow("Couleur A", self.c_color)
             form.addRow("Groupe A (info)", self.group_a)
             form.addRow("Corps B", self.a_body)
-            form.addRow("Shape B", self.a_shape)
+            form.addRow("Shape B (antagoniste)", self.a_shape)
             form.addRow("Couleur B", self.a_color)
             form.addRow("Groupe B (info)", self.group_b)
             form.addRow("Loi", self.behav)
