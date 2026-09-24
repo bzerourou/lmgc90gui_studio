@@ -2424,8 +2424,119 @@ def masonry_deformable_wall(project: Project) -> None:
 
 
 
+def cylinder_deposit_3d(project: Project) -> None:
+    """Dépôt de sphères dans un cylindre creux 3D (gen_sample LMGC90).
+
+    • granulo random [0.5, 2] + depositInCylinder3D (R=7.5, lz=10)
+    • fond rigidPlan + cylindre creux (is_Hollow) VERTx
+    • IQS_CLB grains / parois · see-tables SPHER / PLANx / DNLYC
+    Core : GranuloConfig ; dépôt réel via engine (pylmgc ou fallback).
+    """
+    from ..entities import DOFOperation, GranuloConfig
+
+    if not any(m.name == "PLEXx" for m in project.materials):
+        project.add(Material(
+            name="PLEXx", material_type=MaterialType.RIGID, density=100.0,
+        ))
+    if not any(m.name == "TDURx" for m in project.materials):
+        project.add(Material(
+            name="TDURx", material_type=MaterialType.RIGID, density=1000.0,
+        ))
+    if not any(m.name == "rigid" for m in project.models):
+        project.add(Model(
+            name="rigid", physics="MECAx", element="Rxx3D", dimension=3,
+        ))
+
+    R = 7.5
+    lz = 10.0
+    rmin, rmax = 0.3, 1.2
+    nb = 100
+
+    # walls first (fixed)
+    floor = project.add(Avatar(
+        avatar_type=AvatarType.RIGID_PLAN,
+        center=[0.0, 0.0, -rmin],
+        material_name="TDURx",
+        model_name="rigid",
+        color="VERTx",
+        origin=AvatarOrigin.MANUAL,
+        axis={"axe1": R, "axe2": R, "axe3": rmin},
+    ))
+    cyl = project.add(Avatar(
+        avatar_type=AvatarType.RIGID_CYLINDER,
+        center=[0.0, 0.0, 0.5 * lz],
+        material_name="TDURx",
+        model_name="rigid",
+        color="VERTx",
+        origin=AvatarOrigin.MANUAL,
+        radius=R,
+        is_hollow=True,
+        wall_params={"h": lz, "r": R},
+        contactors=[{"shape": "DNLYC", "color": "VERTx"}],
+    ))
+    for aid in (floor.avatar_id, cyl.avatar_id):
+        project.add(DOFOperation(
+            operation_type="imposeDrivenDof",
+            target_type="avatar",
+            target_value=aid,
+            parameters={
+                "component": [1, 2, 3, 4, 5, 6],
+                "dofty": "vlocy",
+                "ct": 0.0,
+            },
+        ))
+    project.group("walls", [floor.avatar_id, cyl.avatar_id])
+
+    # deposit intent — resolved by engine depositInCylinder3D
+    project.granulo.append(GranuloConfig(
+        nb_particles=nb,
+        radius_min=rmin,
+        radius_max=rmax,
+        container_type="Cylinder3D",
+        container_params={"R": R, "lz": lz, "r": R},
+        material_name="PLEXx",
+        model_name="rigid",
+        avatar_type="rigidSphere",
+        color="BLEUx",
+        group_name="grains",
+        dimension=3,
+    ))
+
+    project.add(ContactLaw(
+        name="iqsc0", law_type=ContactLawType.IQS_CLB, friction=0.3,
+    ))
+    project.add(ContactLaw(
+        name="iqsc1", law_type=ContactLawType.IQS_CLB, friction=0.5,
+    ))
+    alert = 0.1 * rmin
+    see_table(
+        project,
+        cand_body="RBDY3", cand="SPHER", cand_color="BLEUx",
+        ant_body="RBDY3", ant="SPHER", ant_color="BLEUx",
+        law="iqsc0", alert=alert,
+    )
+    see_table(
+        project,
+        cand_body="RBDY3", cand="SPHER", cand_color="BLEUx",
+        ant_body="RBDY3", ant="PLANx", ant_color="VERTx",
+        law="iqsc1", alert=alert,
+    )
+    see_table(
+        project,
+        cand_body="RBDY3", cand="SPHER", cand_color="BLEUx",
+        ant_body="RBDY3", ant="DNLYC", ant_color="VERTx",
+        law="iqsc1", alert=rmin,
+    )
+    project.dynamic_vars["cylinder_deposit_3d"] = (
+        f"{{'nb':{nb},'R':{R},'lz':{lz},'rmin':{rmin},'rmax':{rmax},"
+        f"'source':'gen_sample_cylinder3d'}}"
+    )
+
+
+
 
 SCENE_BUILDERS = {
+    "cylinder_deposit_3d": cylinder_deposit_3d,
     "masonry_deformable_wall": masonry_deformable_wall,
     "cell_adhesion_v5": cell_adhesion_v5,
     "cell_adhesion_v4": cell_adhesion_v4,

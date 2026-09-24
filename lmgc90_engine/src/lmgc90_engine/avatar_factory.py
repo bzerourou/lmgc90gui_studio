@@ -470,6 +470,10 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
             )
             if not has_axes:
                 continue
+        # DNLYC / CYLND without extra params: already on rigidCylinder
+        if sh in ("DNLYC", "CYLND") and set(c.keys()) <= {"shape", "color", "params"}:
+            if not params:
+                continue
         # DISKx / SPHER without radius: already on rigidDisk / rigidSphere
         if sh in ("DISKX", "SPHER", "XKSID") and c.get("byrd") is None and params.get("byrd") is None:
             # only skip pure color re-tag without geometry

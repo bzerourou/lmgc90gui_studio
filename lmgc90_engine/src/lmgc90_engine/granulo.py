@@ -153,6 +153,22 @@ def _call_deposit(pre, config: GranuloConfig) -> tuple[np.ndarray, np.ndarray]:
                     result = fn(radii_in, [rint, rext])
             return _parse_result(result, radii_in, dim=2)
 
+
+        if ctype in ("cylinder3d", "depositincylinder3d", "cylinder"):
+            fn = getattr(pre, "depositInCylinder3D", None)
+            if fn is None:
+                raise MaterializationError("pylmgc90.pre has no depositInCylinder3D")
+            R = float(p.get("R", p.get("r", 7.5)))
+            lz = float(p.get("lz", 10.0))
+            try:
+                result = fn(radii_in, R, lz, seed=seed)
+            except TypeError:
+                try:
+                    result = fn(radii_in, R, lz)
+                except TypeError:
+                    result = fn(radii_in, radius=R, height=lz)
+            return _parse_result(result, radii_in, dim=3)
+
         raise MaterializationError(
             f"unknown granulo container_type: {config.container_type!r}"
         )
