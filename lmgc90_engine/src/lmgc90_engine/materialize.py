@@ -204,8 +204,19 @@ def _apply_dof(project: Project, scene: MaterializedScene, op) -> None:
     allowed = {
         "component", "dofty", "ct", "description", "amp", "omega", "phi",
         "rampi", "ramp", "dx", "dy", "dz", "axis", "alpha", "center",
+        "evolutionFile", "evolution_file",
     }
     params = {k: v for k, v in raw.items() if k in allowed}
+    # normalize evolution_file → evolutionFile (pylmgc spelling)
+    if "evolution_file" in params and "evolutionFile" not in params:
+        params["evolutionFile"] = params.pop("evolution_file")
+    # evolution BC requires a non-empty filename
+    if str(params.get("description", "")).lower() == "evolution":
+        evo = params.get("evolutionFile")
+        if not evo or not str(evo).strip():
+            params["evolutionFile"] = "vx.dat"
+        else:
+            params["evolutionFile"] = str(evo).strip()
 
     for body in targets:
         fn = getattr(body, method, None)

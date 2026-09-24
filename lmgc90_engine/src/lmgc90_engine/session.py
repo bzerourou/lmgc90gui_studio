@@ -123,7 +123,12 @@ class EngineSession:
         """Materialize if needed, then pre.writeDatbox."""
         patch_numpy_cross()
         scene = self.materialize()
-        return datbox_mod.write_datbox(scene, path)
+        out = datbox_mod.write_datbox(scene, path)
+        try:
+            datbox_mod._maybe_write_evolution_files(self.project, Path(out))
+        except Exception:
+            pass
+        return out
 
     def write_cell_dual_datbox(self, base_path: Union[str, Path]) -> dict:
         """Export DATBOX_SPRD + DATBOX_STBL (+ PHASES.json) for cell adhesion."""

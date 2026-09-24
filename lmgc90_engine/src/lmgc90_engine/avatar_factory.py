@@ -68,9 +68,12 @@ def build_avatar(
                 color=color,
             )
         elif t == AvatarType.RIGID_JONC:
-            ax = av.axis or {}
+            ax = dict(av.axis or {})
+            if not ax and av.wall_params:
+                ax = dict(av.wall_params)
             body = pre.rigidJonc(
-                axe1=float(ax["axe1"]), axe2=float(ax["axe2"]),
+                axe1=float(ax.get("axe1", 0.5)),
+                axe2=float(ax.get("axe2", 0.05)),
                 center=center, model=mod, material=mat, color=color,
             )
         elif t == AvatarType.RIGID_POLYGON:
@@ -331,6 +334,52 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
         body = pre.buildMeshedAvatar(mesh=mesh, model=mod, material=mat)
     """
     mp = av.mesh_params or {}
+
+    # --- brick2D.deformableBrick (masonry gen_sample) ---
+    if (
+        str(mp.get("geom", "")).lower() in ("deformablebrick", "deformable_brick", "brick")
+        or mp.get("source") == "deformableBrick"
+        or "brick_lx" in mp
+    ):
+        brick2d = None
+        for obj in (pre, getattr(pre, "avatars", None)):
+            if obj is None:
+                continue
+            fn = getattr(obj, "brick2D", None)
+            if callable(fn):
+                brick2d = fn
+                break
+        if brick2d is None:
+            raise MaterializationError("pylmgc90.pre has no brick2D for deformableBrick")
+        blx = float(mp.get("brick_lx") or mp.get("lx") or 0.1)
+        bly = float(mp.get("brick_ly") or mp.get("ly") or 0.05)
+        bname = str(mp.get("brick_name", "brique"))
+        brick = brick2d(bname, blx, bly)
+        deform = getattr(brick, "deformableBrick", None)
+        if deform is None:
+            raise MaterializationError("brick2D has no deformableBrick()")
+        center = list(av.center)
+        nb_elem_x = int(mp.get("nb_elem_x", mp.get("nx", 2)))
+        nb_elem_y = int(mp.get("nb_elem_y", mp.get("ny", 2)))
+        mesh_type = str(mp.get("mesh_type", "Q4"))
+        apabh = mp.get("apabh") or mp.get("apab_brick") or [0.25, 0.75]
+        apabv = mp.get("apabv") or mp.get("apab_brick") or [0.25, 0.75]
+        colors = mp.get("colors")  # optional face colors list
+        kwargs = dict(
+            center=center, material=mat, model=mod,
+            mesh_type=mesh_type, nb_elem_x=nb_elem_x, nb_elem_y=nb_elem_y,
+            apabh=apabh, apabv=apabv,
+        )
+        if colors is not None:
+            kwargs["colors"] = colors
+        try:
+            body = deform(**kwargs)
+        except TypeError:
+            # older signature without colors
+            kwargs.pop("colors", None)
+            body = deform(**kwargs)
+        return body
+
     geom = mp.get("geom") or ("Rectangle" if "lx" in mp else None)
     build_mesh = getattr(pre, "buildMesh2D", None)
     build_avatar = getattr(pre, "buildMeshedAvatar", None)
@@ -399,8 +448,10 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
         shape = c.get("shape")
         if not shape:
             continue
-        if str(shape).upper() in ("POLYG", "POLYGX", "POLY"):
-            params = c.get("params") or {}
+        sh = str(shape).upper()
+        params = c.get("params") or {}
+        # POLYG without vertices: already on rigidPolygon / brick
+        if sh in ("POLYG", "POLYGX", "POLY"):
             has_verts = (
                 c.get("vertices") is not None
                 or params.get("vertices") is not None
@@ -408,7 +459,22 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
                 or params.get("nb_vertices") is not None
             )
             if not has_verts:
-                continue  # geometry already on body (brick / polygon)
+                continue
+        # JONCx without axe1/axe2: already registered by rigidJonc(color=…)
+        if sh in ("JONCX", "JONC"):
+            has_axes = (
+                c.get("axe1") is not None
+                or params.get("axe1") is not None
+                or c.get("axe2") is not None
+                or params.get("axe2") is not None
+            )
+            if not has_axes:
+                continue
+        # DISKx / SPHER without radius: already on rigidDisk / rigidSphere
+        if sh in ("DISKX", "SPHER", "XKSID") and c.get("byrd") is None and params.get("byrd") is None:
+            # only skip pure color re-tag without geometry
+            if set(c.keys()) <= {"shape", "color", "params"} and not params:
+                continue
         kwargs = {k: v for k, v in c.items() if k not in ("shape", "params")}
         if isinstance(c.get("params"), dict):
             kwargs.update(c["params"])

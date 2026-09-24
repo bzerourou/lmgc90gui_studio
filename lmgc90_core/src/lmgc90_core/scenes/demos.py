@@ -2156,8 +2156,277 @@ def cell_adhesion_v5(project: Project) -> None:
 
 
 
+def masonry_deformable_wall(project: Project) -> None:
+    """Mur de maçonnerie déformable (gen_sample LMGC90) — pure core.
+
+    Fidèle à gen_sample.py :
+      • matériau ELAS ``stone`` + modèle Q4 ``M2D_L``
+      • assises alternées demi-brique / brique (brique entière = 2 demi liées CZM)
+      • fondation + poutre de charge en rigidJonc (WALLx)
+      • lois MAL_CZM (joints + rupture brique) + COUPLED_DOF (poutre/fondation)
+      • see-tables HORIx / VERTx / REDxx / UPxxx
+      • DOF poutre : évolution vx (metadata + imposeDrivenDof)
+    """
+    from ..entities import DOFOperation, PostProCommand
+
+    # --- dimensions (m) ---
+    brick_length = 210.0e-3
+    brick_height = 52.0e-3
+    joint_thick = 10.0e-3
+    lcx = (4.5 * brick_length + 4.0 * joint_thick) / (4.5 * 2.0)
+    lcy = (18.0 * brick_height + 17.0 * joint_thick) / 18.0
+    apab = [0.25, 0.75]
+    ep_h = 0.0
+    ep_v = 0.0
+
+    # --- materials / models ---
+    if not any(m.name == "TDURx" for m in project.materials):
+        project.add(Material(
+            name="TDURx", material_type=MaterialType.RIGID, density=2500.0,
+        ))
+    if not any(m.name == "stone" for m in project.materials):
+        project.add(Material(
+            name="stone",
+            material_type=MaterialType.ELAS,
+            density=2.5e3,
+            properties={
+                "elas": "standard",
+                "young": 1.67e10,
+                "nu": 0.15,
+                "anisotropy": "isotropic",
+            },
+        ))
+    if not any(m.name == "M2D_L" for m in project.models):
+        project.add(Model(
+            name="M2D_L",
+            physics="MECAx",
+            element="Q4xxx",
+            dimension=2,
+            options={
+                "external_model": "MatL_",
+                "kinematic": "small",
+                "material": "elas_",
+                "anisotropy": "iso__",
+                "mass_storage": "lump_",
+            },
+        ))
+    if not any(m.name == "rigid" for m in project.models):
+        project.add(Model(
+            name="rigid", physics="MECAx", element="Rxx2D", dimension=2,
+        ))
+
+    # courses: 18 assises alternate
+    # demi = lcx x lcy, full = 2*lcx x lcy (split into two demi)
+    assise_paire = ["demi", "full", "full", "full", "full"]
+    assise_impaire = ["full", "full", "full", "full", "demi"]
+    mur = []
+    for j in range(18):
+        mur.append(assise_paire if j % 2 == 1 else assise_impaire)
+
+    def _half_brick(cx: float, cy: float, colors: list[str] | None, top: bool) -> Avatar:
+        nb_x = max(1, int((lcx / (0.5 * lcx))))
+        nb_y = max(1, int((lcy / (0.5 * lcy))))
+        # floor: demi_moellon.lx/(0.5*lcx) = lcx/(0.5*lcx)=2
+        nb_elem_x = int(max(1, (lcx / (0.5 * lcx)) // 1))
+        nb_elem_y = int(max(1, (lcy / (0.5 * lcy)) // 1))
+        mp = {
+            "geom": "deformableBrick",
+            "source": "deformableBrick",
+            "brick_name": "demi-brique",
+            "brick_lx": lcx,
+            "brick_ly": lcy,
+            "mesh_type": "Q4",
+            "nb_elem_x": nb_elem_x,
+            "nb_elem_y": nb_elem_y,
+            "apabh": list(apab),
+            "apabv": list(apab),
+        }
+        if colors is not None:
+            mp["colors"] = list(colors)
+        contactors = []
+        if top:
+            contactors.append({
+                "shape": "CLxxx", "color": "UPxxx", "group": "up",
+                "params": {"weights": list(apab)},
+            })
+        return project.add(Avatar(
+            avatar_type=AvatarType.MESH_DEFORMABLE,
+            center=[cx, cy],
+            material_name="stone",
+            model_name="M2D_L",
+            color="REDxx",
+            origin=AvatarOrigin.MANUAL,
+            mesh_params=mp,
+            contactors=contactors,
+        ))
+
+    brick_ids: list[str] = []
+    y = 0.0
+    n_top = len(mur) - 1
+    for j, assise in enumerate(mur):
+        x = 0.0
+        for i, kind in enumerate(assise):
+            if i == 0:
+                y += 0.5 * lcy
+            if kind == "full":
+                # full brick width 2*lcx — two half bricks
+                x += 0.5 * (2.0 * lcx)
+                # left / right colors from gen_sample
+                left_colors = ["HORIx", "REDxx", "HORIx", "VERTx"]
+                right_colors = ["HORIx", "VERTx", "HORIx", "REDxx"]
+                top = (j == n_top)
+                bl = _half_brick(x - 0.25 * (2.0 * lcx), y, left_colors, top)
+                br = _half_brick(x + 0.25 * (2.0 * lcx), y, right_colors, top)
+                brick_ids.extend([bl.avatar_id, br.avatar_id])
+                x += 0.5 * (2.0 * lcx) + ep_v
+            else:
+                # demi
+                x += 0.5 * lcx
+                top = (j == n_top)
+                b = _half_brick(x, y, None, top)
+                brick_ids.append(b.avatar_id)
+                x += 0.5 * lcx + ep_v
+        y += 0.5 * lcy + ep_h
+
+    project.group("bricks", brick_ids)
+
+    # foundation
+    floor = project.add(Avatar(
+        avatar_type=AvatarType.RIGID_JONC,
+        center=[4.5 * lcx, -0.5 * lcy],
+        material_name="TDURx",
+        model_name="rigid",
+        color="WALLx",
+        origin=AvatarOrigin.MANUAL,
+        axis={"axe1": 4.5 * lcx, "axe2": 0.5 * lcy},
+        # color WALLx → contactor JONCx already from rigidJonc (do not re-add without axe*)
+    ))
+    project.add(DOFOperation(
+        operation_type="imposeDrivenDof",
+        target_type="avatar",
+        target_value=floor.avatar_id,
+        parameters={"component": [1, 2, 3], "dofty": "vlocy", "ct": 0.0},
+    ))
+
+    # loading beam
+    beam_length = 9.0 * lcx
+    beam_height = brick_height
+    beam = project.add(Avatar(
+        avatar_type=AvatarType.RIGID_JONC,
+        center=[0.5 * beam_length, 18.0 * lcy + 0.5 * beam_height],
+        material_name="TDURx",
+        model_name="rigid",
+        color="WALLx",
+        origin=AvatarOrigin.MANUAL,
+        axis={"axe1": 0.5 * beam_length, "axe2": 0.5 * beam_height},
+    ))
+    project.add(DOFOperation(
+        operation_type="imposeDrivenDof",
+        target_type="avatar",
+        target_value=beam.avatar_id,
+        parameters={"component": [2, 3], "dofty": "vlocy", "ct": 0.0},
+    ))
+    project.add(DOFOperation(
+        operation_type="imposeDrivenDof",
+        target_type="avatar",
+        target_value=beam.avatar_id,
+        parameters={
+            "description": "evolution",
+            "component": 1,
+            "dofty": "vlocy",
+            "evolutionFile": "vx.dat",
+        },
+    ))
+    project.group("beam", [beam.avatar_id])
+    project.group("floor", [floor.avatar_id])
+
+    # laws MAL_CZM joint / brick + COUPLED_DOF
+    mu_joint = 0.75
+    kn_joint, kt_joint = 8.2e10, 3.6e10
+    sigmaMaxI_joint = 2.5e5
+    GI_joint, GII_joint = 1.8e1, 1.25e2
+    project.add(ContactLaw(
+        name="malc0",
+        law_type=ContactLawType.MAL_CZM,
+        friction=mu_joint,
+        properties={
+            "dyfr": mu_joint, "stfr": mu_joint,
+            "cn": kn_joint, "s1": sigmaMaxI_joint, "G1": GI_joint,
+            "ct": kt_joint, "s2": 1.4 * sigmaMaxI_joint, "G2": GII_joint,
+        },
+    ))
+    mu_brick = 0.0
+    kn_brick = kt_brick = 1.0e15
+    sigmaMaxI_brick = 2.5e5
+    GI_brick = 8.0e1
+    project.add(ContactLaw(
+        name="malc1",
+        law_type=ContactLawType.MAL_CZM,
+        friction=mu_brick,
+        properties={
+            "dyfr": mu_brick, "stfr": mu_brick,
+            "cn": kn_brick, "s1": sigmaMaxI_brick, "G1": GI_brick,
+            "ct": kt_brick, "s2": sigmaMaxI_brick, "G2": GI_brick,
+        },
+    ))
+    project.add(ContactLaw(
+        name="cpld0", law_type=ContactLawType.COUPLED_DOF,
+    ))
+
+    alert = 0.1 * min(lcx, lcy)
+    see_table(
+        project,
+        cand_body="MAILx", cand="CLxxx", cand_color="HORIx",
+        ant_body="MAILx", ant="ALpxx", ant_color="HORIx",
+        law="malc0", alert=alert,
+    )
+    see_table(
+        project,
+        cand_body="MAILx", cand="CLxxx", cand_color="VERTx",
+        ant_body="MAILx", ant="ALpxx", ant_color="VERTx",
+        law="malc0", alert=alert,
+    )
+    see_table(
+        project,
+        cand_body="MAILx", cand="CLxxx", cand_color="REDxx",
+        ant_body="MAILx", ant="ALpxx", ant_color="REDxx",
+        law="malc1", alert=alert,
+    )
+    see_table(
+        project,
+        cand_body="MAILx", cand="CLxxx", cand_color="HORIx",
+        ant_body="RBDY2", ant="JONCx", ant_color="WALLx",
+        law="cpld0", alert=alert,
+    )
+    see_table(
+        project,
+        cand_body="MAILx", cand="CLxxx", cand_color="UPxxx",
+        ant_body="RBDY2", ant="JONCx", ant_color="WALLx",
+        law="cpld0", alert=alert,
+    )
+
+    project.add(PostProCommand(
+        name="BODY TRACKING", step=1, target_type="group", target_value="beam",
+    ))
+    project.add(PostProCommand(
+        name="TORQUE EVOLUTION", step=1, target_type="group", target_value="beam",
+    ))
+
+    # evolution metadata (engine / command.py can emit vx.dat)
+    project.dynamic_vars["vx_evolution"] = (
+        "{'v_max':0.02,'t_rest':0.005,'t_ramp':0.01,'file':'vx.dat',"
+        "'description':'0 until 0.005, linear ramp to v_max until 0.01, then constant'}"
+    )
+    project.dynamic_vars["masonry_deformable_wall"] = (
+        f"{{'bricks':{len(brick_ids)},'lcx':{lcx},'lcy':{lcy},"
+        f"'courses':18,'source':'gen_sample.py'}}"
+    )
+
+
+
 
 SCENE_BUILDERS = {
+    "masonry_deformable_wall": masonry_deformable_wall,
     "cell_adhesion_v5": cell_adhesion_v5,
     "cell_adhesion_v4": cell_adhesion_v4,
     "cell_adhesion_v3": cell_adhesion_v3,

@@ -1,5 +1,5 @@
 """Pure demo scenes — depend only on ``Project`` / ``pre`` (no Qt, no engine)."""
-from .demos import SCENE_BUILDERS, cell_adhesion_v1, cell_adhesion_v2, cell_adhesion_v3, cell_adhesion_v4, cell_adhesion_v5
+from .demos import SCENE_BUILDERS, masonry_deformable_wall, cell_adhesion_v1, cell_adhesion_v2, cell_adhesion_v3, cell_adhesion_v4, cell_adhesion_v5
 from .demos import (
     avalanche_slope,
     ball_bearing,
@@ -27,6 +27,7 @@ from .demos import (
 )
 
 __all__ = [
+    "masonry_deformable_wall",
     "cell_adhesion_v5",
     "cell_adhesion_v4, cell_adhesion_v5",
     "cell_adhesion_v3, cell_adhesion_v4, cell_adhesion_v5",
