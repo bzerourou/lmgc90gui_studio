@@ -84,7 +84,26 @@ def materialize_project(project: Project) -> MaterializedScene:
         scene.model_by_name[m.name] = obj
 
     # --- avatars (AoS) ---
+    from .avatar_factory import expand_rigids_from_mesh2d
+
     for av in project.avatars:
+        mp = getattr(av, "mesh_params", None) or {}
+        geom = str(mp.get("geom", "") or "")
+        if geom.lower() in ("rigidsfrommesh2d", "rigids_from_mesh2d") or mp.get(
+            "source"
+        ) == "rigidsFromMesh2D":
+            many = expand_rigids_from_mesh2d(
+                av,
+                materials=scene.material_by_name,
+                models=scene.model_by_name,
+            )
+            for i, body in enumerate(many):
+                bodies.addAvatar(body)
+                scene.body_by_avatar_id[f"{av.avatar_id}_{i}"] = body
+            # keep primary id → first body for DOF targeting if needed
+            if many:
+                scene.body_by_avatar_id[av.avatar_id] = many[0]
+            continue
         body = build_avatar(
             av,
             materials=scene.material_by_name,

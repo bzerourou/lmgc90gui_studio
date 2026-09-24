@@ -35,6 +35,49 @@ def _resolve(name_or_obj, registry: dict[str, Any], kind: str):
     return name_or_obj
 
 
+
+def expand_rigids_from_mesh2d(
+    av: Avatar,
+    *,
+    materials: dict[str, Any],
+    models: dict[str, Any],
+) -> list[Any]:
+    """``pre.rigidsFromMesh2D`` — one rigid POLYG per surface element (gen_sample)."""
+    pre = _pre()
+    mp = av.mesh_params or {}
+    raw = mp.get("filepath") or mp.get("file")
+    if not raw:
+        raise MaterializationError("rigidsFromMesh2D: filepath missing")
+    dim = int(mp.get("dim", 2))
+    path = resolve_mesh_filepath(str(raw), dim=dim, mesh_size=mp.get("mesh_size"))
+    read_mesh = getattr(pre, "readMesh", None)
+    expand = getattr(pre, "rigidsFromMesh2D", None)
+    if read_mesh is None or expand is None:
+        raise MaterializationError(
+            "pylmgc90.pre needs readMesh and rigidsFromMesh2D"
+        )
+    mesh = read_mesh(path, dim)
+    mat = _resolve(av.material_name, materials, "material")
+    mod = _resolve(av.model_name, models, "model")
+    color = av.color or "BLEUx"
+    try:
+        result = expand(surfacic_mesh=mesh, model=mod, material=mat, color=color)
+    except TypeError:
+        result = expand(mesh, mod, mat, color)
+    # result may be avatars container or list
+    out: list[Any] = []
+    if result is None:
+        return out
+    if hasattr(result, "__iter__") and not hasattr(result, "contactors"):
+        try:
+            out = list(result)
+        except TypeError:
+            out = [result]
+    else:
+        out = [result]
+    return out
+
+
 def build_avatar(
     av: Avatar,
     *,

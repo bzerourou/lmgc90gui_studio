@@ -2449,8 +2449,8 @@ def cylinder_deposit_3d(project: Project) -> None:
 
     R = 7.5
     lz = 10.0
-    rmin, rmax = 0.3, 1.2
-    nb = 100
+    rmin, rmax = 0.5, 2.0
+    nb = 1000
 
     # walls first (fixed)
     floor = project.add(Avatar(
@@ -2499,6 +2499,7 @@ def cylinder_deposit_3d(project: Project) -> None:
         avatar_type="rigidSphere",
         color="BLEUx",
         group_name="grains",
+        seed=42,
         dimension=3,
     ))
 
@@ -2534,8 +2535,108 @@ def cylinder_deposit_3d(project: Project) -> None:
 
 
 
+def mesh_rigids_from_file(project: Project) -> None:
+    """Polygones rigides issus d'un maillage 2D (gen_sample: rigidsFromMesh2D).
+
+    Utilise le ``Carre.msh`` embarqué dans ``lmgc90_core/data/meshes``.
+    Vous pouvez remplacer ``filepath`` par un .msh / .brep externe (gmsh).
+    """
+    from ..entities import DOFOperation
+    from pathlib import Path
+    import importlib.resources
+
+    if not any(m.name == "TDURx" for m in project.materials):
+        project.add(Material(
+            name="TDURx", material_type=MaterialType.RIGID, density=1000.0,
+        ))
+    if not any(m.name == "PLEXx" for m in project.materials):
+        project.add(Material(
+            name="PLEXx", material_type=MaterialType.RIGID, density=100.0,
+        ))
+    if not any(m.name == "rigid" for m in project.models):
+        project.add(Model(
+            name="rigid", physics="MECAx", element="Rxx2D", dimension=2,
+        ))
+
+    # resolve packaged mesh
+    mesh_path = None
+    try:
+        ref = importlib.resources.files("lmgc90_core").joinpath("data/meshes/Carre.msh")
+        with importlib.resources.as_file(ref) as p:
+            mesh_path = str(p)
+    except Exception:
+        # fallback: relative to package source
+        root = Path(__file__).resolve().parents[1]  # lmgc90_core/
+        cand = root / "data" / "meshes" / "Carre.msh"
+        if cand.is_file():
+            mesh_path = str(cand)
+    if not mesh_path:
+        mesh_path = "Carre.msh"  # user-provided next to CWD
+
+    # placeholder avatar → expanded to many POLYG at materialize
+    # EMPTY_AVATAR: placeholder — engine expands to many rigid POLYG (not FEM)
+    mesh_av = project.add(Avatar(
+        avatar_type=AvatarType.EMPTY_AVATAR,
+        center=[0.05, 0.05],
+        material_name="PLEXx",
+        model_name="rigid",
+        color="BLEUx",
+        origin=AvatarOrigin.MANUAL,
+        mesh_params={
+            "geom": "rigidsFromMesh2D",
+            "source": "rigidsFromMesh2D",
+            "filepath": mesh_path,
+            "dim": 2,
+        },
+        wall_params={"brick_name": "from_mesh", "l": 0.1, "h": 0.1},
+    ))
+    project.group("mesh_rigids", [mesh_av.avatar_id])
+
+    floor = project.add(Avatar(
+        avatar_type=AvatarType.RIGID_JONC,
+        center=[5.0e-2, -1.0e-3],
+        material_name="TDURx",
+        model_name="rigid",
+        color="WALLx",
+        origin=AvatarOrigin.MANUAL,
+        axis={"axe1": 1.5e-1, "axe2": 1.0e-3},
+    ))
+    project.add(DOFOperation(
+        operation_type="imposeDrivenDof",
+        target_type="avatar",
+        target_value=floor.avatar_id,
+        parameters={"component": [1, 2, 3], "dofty": "vlocy", "ct": 0.0},
+    ))
+    project.group("floor", [floor.avatar_id])
+
+    project.add(ContactLaw(
+        name="iqsc0", law_type=ContactLawType.IQS_CLB, friction=0.3,
+    ))
+    project.add(ContactLaw(
+        name="iqsc1", law_type=ContactLawType.IQS_CLB, friction=0.5,
+    ))
+    alert = 5.0e-3
+    see_table(
+        project,
+        cand_body="RBDY2", cand="POLYG", cand_color="BLEUx",
+        ant_body="RBDY2", ant="POLYG", ant_color="BLEUx",
+        law="iqsc0", alert=alert,
+    )
+    see_table(
+        project,
+        cand_body="RBDY2", cand="POLYG", cand_color="BLEUx",
+        ant_body="RBDY2", ant="JONCx", ant_color="WALLx",
+        law="iqsc1", alert=alert,
+    )
+    project.dynamic_vars["mesh_rigids_from_file"] = (
+        f"{{'filepath':{mesh_path!r},'source':'gen_sample_rigidsFromMesh2D'}}"
+    )
+
+
+
 
 SCENE_BUILDERS = {
+    "mesh_rigids_from_file": mesh_rigids_from_file,
     "cylinder_deposit_3d": cylinder_deposit_3d,
     "masonry_deformable_wall": masonry_deformable_wall,
     "cell_adhesion_v5": cell_adhesion_v5,
