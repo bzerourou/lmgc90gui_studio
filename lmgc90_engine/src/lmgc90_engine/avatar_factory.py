@@ -325,6 +325,70 @@ def _build_wall_3d(pre, av: Avatar, mat, mod) -> Any:
     )
 
 
+
+def resolve_mesh_filepath(filepath: str, *, dim: int = 2, mesh_size: float | None = None) -> str:
+    """Return a path readable by ``pre.readMesh``.
+
+    * ``.msh`` / ``.vtk`` — used as-is
+    * ``.brep`` / ``.step`` / ``.iges`` — meshed with **gmsh** (optional dep) to a
+      sibling ``.msh`` file next to the CAD file
+    """
+    from pathlib import Path as _P
+    p = _P(filepath).expanduser()
+    if not p.is_file():
+        raise MaterializationError(f"mesh file not found: {filepath}")
+    suf = p.suffix.lower()
+    if suf in (".msh", ".vtk", ".vtu", ".mesh"):
+        return str(p.resolve())
+    if suf in (".brep", ".brp", ".step", ".stp", ".iges", ".igs", ".geo"):
+        out = p.with_suffix(".msh")
+        # regenerate if missing or older than CAD
+        need = (not out.is_file()) or (out.stat().st_mtime < p.stat().st_mtime)
+        if need:
+            try:
+                import gmsh  # type: ignore
+            except ImportError as exc:
+                raise MaterializationError(
+                    f"Import de {suf} nécessite le paquet Python « gmsh » "
+                    f"(pip install gmsh). Fichier: {p.name}"
+                ) from exc
+            try:
+                gmsh.initialize()
+                gmsh.model.add("lmgc90_studio")
+                try:
+                    gmsh.model.occ.importShapes(str(p))
+                    gmsh.model.occ.synchronize()
+                except Exception:
+                    # .geo or legacy
+                    gmsh.open(str(p))
+                if mesh_size is not None and float(mesh_size) > 0:
+                    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", float(mesh_size))
+                    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", float(mesh_size) * 0.2)
+                # 2D surface mesh or 3D volume
+                dim_gen = 2 if int(dim) == 2 else 3
+                gmsh.model.mesh.generate(dim_gen)
+                gmsh.write(str(out))
+            except Exception as exc:
+                try:
+                    gmsh.finalize()
+                except Exception:
+                    pass
+                raise MaterializationError(
+                    f"gmsh a échoué sur {p.name}: {exc}"
+                ) from exc
+            try:
+                gmsh.finalize()
+            except Exception:
+                pass
+        if not out.is_file():
+            raise MaterializationError(f"gmsh n'a pas produit {out.name}")
+        return str(out.resolve())
+    raise MaterializationError(
+        f"format maillage non supporté: {suf} "
+        f"(acceptés: .msh .vtk .brep .step .iges .geo)"
+    )
+
+
 def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
     """Build deformable body the pylmgc90 way: buildMesh2D → buildMeshedAvatar.
 
@@ -425,7 +489,23 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
         read_mesh = getattr(pre, "readMesh", None)
         if read_mesh is None:
             raise MaterializationError("pylmgc90.pre has no readMesh")
-        mesh = read_mesh(mp.get("filepath"), int(mp.get("dim", 2)))
+        raw_path = mp.get("filepath") or mp.get("file")
+        if not raw_path:
+            raise MaterializationError("MESH_DEFORMABLE: filepath manquant")
+        dim_m = int(mp.get("dim", getattr(av, "dimension", None) or 2))
+        # prefer project dimension if stored on mesh_params
+        mesh_size = mp.get("mesh_size") or mp.get("lc")
+        try:
+            mesh_size_f = float(mesh_size) if mesh_size is not None else None
+        except (TypeError, ValueError):
+            mesh_size_f = None
+        resolved = resolve_mesh_filepath(
+            str(raw_path), dim=dim_m, mesh_size=mesh_size_f,
+        )
+        try:
+            mesh = read_mesh(resolved, dim_m)
+        except TypeError:
+            mesh = read_mesh(resolved)
         try:
             return build_avatar(mesh=mesh, model=mod, material=mat)
         except TypeError:
@@ -439,18 +519,28 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
 def _apply_contactors(body: Any, av: Avatar) -> None:
     """Attach contactors listed on the core Avatar.
 
-    Skip incomplete POLYG (needs nb_vertices/vertices): brick2D.rigidBrick and
-    rigidPolygon already register a full POLYG contactor on the live body.
-    Re-adding a bare ``{'shape': 'POLYG'}`` triggers pylmgc
-    "Incomplete contactor".
+    Skip incomplete POLYG / JONCx / DNLYC already created by constructors.
+    Meshed contactors (CLxxx, ALpxx, …) need a coherent *group* of elements;
+    failures are swallowed so materialize / visuAvatars still succeed.
     """
+    _MESH_SHAPES = {
+        "CLXXX", "ALPXX", "CSPXX", "ASPXX", "PT2DX", "PT3DX", "CL3xx", "AS3xx",
+    }
+    _ALLOWED_MESH_KW = {
+        "group", "color", "weights", "reverse", "byrd", "shift", "quadrature",
+    }
+    _ALLOWED_RIGID_KW = {
+        "color", "byrd", "shift", "axe1", "axe2", "axe3", "nb_vertices",
+        "vertices", "r", "radius", "reverse",
+    }
+
     for c in av.contactors or []:
         shape = c.get("shape")
         if not shape:
             continue
         sh = str(shape).upper()
-        params = c.get("params") or {}
-        # POLYG without vertices: already on rigidPolygon / brick
+        params = c.get("params") if isinstance(c.get("params"), dict) else {}
+
         if sh in ("POLYG", "POLYGX", "POLY"):
             has_verts = (
                 c.get("vertices") is not None
@@ -460,7 +550,6 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
             )
             if not has_verts:
                 continue
-        # JONCx without axe1/axe2: already registered by rigidJonc(color=…)
         if sh in ("JONCX", "JONC"):
             has_axes = (
                 c.get("axe1") is not None
@@ -470,25 +559,44 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
             )
             if not has_axes:
                 continue
-        # DNLYC / CYLND without extra params: already on rigidCylinder
         if sh in ("DNLYC", "CYLND") and set(c.keys()) <= {"shape", "color", "params"}:
             if not params:
                 continue
-        # DISKx / SPHER without radius: already on rigidDisk / rigidSphere
         if sh in ("DISKX", "SPHER", "XKSID") and c.get("byrd") is None and params.get("byrd") is None:
-            # only skip pure color re-tag without geometry
             if set(c.keys()) <= {"shape", "color", "params"} and not params:
                 continue
-        kwargs = {k: v for k, v in c.items() if k not in ("shape", "params")}
-        if isinstance(c.get("params"), dict):
-            kwargs.update(c["params"])
+
+        raw = {k: v for k, v in c.items() if k not in ("shape", "params")}
+        raw.update(params)
+
+        is_mesh = sh in _MESH_SHAPES
+        if is_mesh:
+            # only keys understood by meshedContactor; drop junk that breaks element lists
+            kwargs = {k: v for k, v in raw.items() if k in _ALLOWED_MESH_KW}
+            # group required for CLxxx/ALpxx on meshed avatars
+            if "group" not in kwargs or not kwargs.get("group"):
+                # try common boundary names as last resort
+                for gname in ("up", "down", "left", "right", "top", "bottom", "all"):
+                    try:
+                        body.addContactors(shape=shape, group=gname, **{
+                            k: v for k, v in kwargs.items() if k != "group"
+                        })
+                        break
+                    except Exception:
+                        continue
+                continue
+        else:
+            kwargs = {k: v for k, v in raw.items() if k in _ALLOWED_RIGID_KW or k in raw}
+
         try:
             body.addContactors(shape=shape, **kwargs)
-        except TypeError:
+        except Exception:
             try:
-                body.addContactors(shape, **kwargs)
+                body.addContactors(shape=shape, **{
+                    k: v for k, v in kwargs.items() if k in ("group", "color")
+                })
             except Exception:
-                # do not abort materialize for optional contactor glue
+                # never abort materialize for contactor glue
                 pass
 
 

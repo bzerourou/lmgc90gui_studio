@@ -306,7 +306,7 @@ def create_mesh_wizard(controller, parent=None):
             btn.clicked.connect(self._browse)
             row.addWidget(btn)
             wrap = QWidget(); wrap.setLayout(row)
-            self.form.addRow("Fichier .msh", wrap)
+            self.form.addRow("Fichier (.msh / .brep / .step…)", wrap)
             self.form.addRow("Couleur", self.color)
             lay = QVBoxLayout(self)
             lay.addLayout(self.form)
@@ -324,7 +324,8 @@ def create_mesh_wizard(controller, parent=None):
 
         def _browse(self):
             path, _ = QFileDialog.getOpenFileName(
-                self, "Maillage", "", "Mesh (*.msh *.vtk);;All (*)"
+                self, "Maillage / CAD", "",
+                "Maillage (*.msh *.vtk);;CAD OpenCASCADE (*.brep *.brp);;STEP (*.step *.stp);;IGES (*.iges *.igs);;Gmsh geo (*.geo);;Tous (*)"
             )
             if path:
                 self.file_path.setText(path)
@@ -607,6 +608,21 @@ def create_mesh_wizard(controller, parent=None):
                         mp["filepath"] = geom_p.file_path.text().strip()
                         if not mp["filepath"]:
                             raise ValidationError("Chemin de fichier maillage requis")
+                        mp["geom"] = "Fichier externe"
+                        mp["dim"] = int(dim)
+                        # characteristic length for gmsh when converting .brep/.step
+                        try:
+                            if hasattr(ref_p, "lc") and ref_p.lc is not None:
+                                mp["mesh_size"] = float(ref_p.lc.value())
+                        except Exception:
+                            pass
+                        # fallback from nx-like controls if present
+                        if "mesh_size" not in mp and hasattr(ref_p, "nx"):
+                            try:
+                                # crude: smaller nx → coarser; use 1/nx of unit box as hint
+                                mp["mesh_size"] = max(1e-4, 1.0 / max(1, int(ref_p.nx.value())))
+                            except Exception:
+                                pass
                     av = Avatar(
                         avatar_type=AvatarType.MESH_DEFORMABLE,
                         center=center,
