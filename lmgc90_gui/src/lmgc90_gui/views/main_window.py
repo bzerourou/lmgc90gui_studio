@@ -269,6 +269,11 @@ def create_main_window(controller: Optional[ProjectController] = None):
             ex_m.addAction(act_browse)
 
             help_m = mb.addMenu(f"{MENU_ICONS['help']} &Help")
+            act_palette = QAction("🎛️ &Palette de commandes…", self)
+            act_palette.setShortcut(QKeySequence("Ctrl+K"))
+            act_palette.setToolTip("Rechercher et lancer une commande (Ctrl+K)")
+            act_palette.triggered.connect(self._on_command_palette)
+            help_m.addAction(act_palette)
             act_about = QAction(f"{MENU_ICONS['about']} &About / shortcuts", self)
             act_about.triggered.connect(self._on_about)
             help_m.addAction(act_about)
@@ -286,6 +291,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
             tb.addSeparator()
             tb.addAction(act_dyn)
             tb.addAction(act_refresh_view)
+            tb.addSeparator()
+            tb.addAction(act_palette)
 
         def _connect(self) -> None:
             self.controller.state_changed.connect(self._update_status)
@@ -562,7 +569,20 @@ def create_main_window(controller: Optional[ProjectController] = None):
                     self.controller.journal.exception("example load failed", exc)
                 except Exception:
                     pass
-
+                
+        def _on_command_palette(self) -> None:
+            """Ctrl+K — filterable command palette over menus + tabs."""
+            try:
+                from ..dialogs.command_palette_dialog import (
+                    collect_window_commands,
+                    create_command_palette,
+                )
+                cmds = collect_window_commands(self)
+                create_command_palette(self, cmds)
+            except Exception as exc:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Palette", str(exc))
+        
         def _on_about(self) -> None:
             from ..dialogs.about_dialog import create_about_dialog
             create_about_dialog(self).exec()
