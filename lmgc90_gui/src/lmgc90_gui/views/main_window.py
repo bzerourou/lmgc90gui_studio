@@ -217,12 +217,6 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_journal.triggered.connect(self._on_journal)
             comp.addAction(act_journal)
 
-            view_m = mb.addMenu(f"{MENU_ICONS['view']} &View")
-            act_refresh_view = QAction(f"{MENU_ICONS['refresh']} Refresh &viewer", self)
-            act_refresh_view.setShortcut(QKeySequence("F6"))
-            act_refresh_view.triggered.connect(self._on_refresh_viewer)
-            view_m.addAction(act_refresh_view)
-
             # ── Menu Onglets (open / close) ─────────────────────────────────
             tabs_m = mb.addMenu("📑 &Onglets")
             open_sub = tabs_m.addMenu("➕ Ouvrir")
@@ -290,7 +284,6 @@ def create_main_window(controller: Optional[ProjectController] = None):
             tb.addAction(act_datbox)
             tb.addSeparator()
             tb.addAction(act_dyn)
-            tb.addAction(act_refresh_view)
             tb.addSeparator()
             tb.addAction(act_palette)
 
@@ -569,7 +562,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
                     self.controller.journal.exception("example load failed", exc)
                 except Exception:
                     pass
-                
+
         def _on_command_palette(self) -> None:
             """Ctrl+K — filterable command palette over menus + tabs."""
             try:
