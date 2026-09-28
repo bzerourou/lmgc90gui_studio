@@ -105,7 +105,41 @@ def _safe_arith(expr: str, env: dict) -> float:
     return float(_ev(ast.parse(expr, mode="eval")))
 
 
+def for_loop_values(for_loop) -> list[float]:
+    if for_loop.step == 0:
+        raise ValueError("ForLoop step cannot be 0")
+    vals: list[float] = []
+    v = float(for_loop.start)
+    guard = 0
+    if for_loop.step > 0:
+        while v < for_loop.stop - 1e-12:
+            vals.append(v)
+            v += for_loop.step
+            guard += 1
+            if guard > 100_000:
+                raise ValueError("ForLoop too many iterations")
+    else:
+        while v > for_loop.stop + 1e-12:
+            vals.append(v)
+            v += for_loop.step
+            guard += 1
+            if guard > 100_000:
+                raise ValueError("ForLoop too many iterations")
+    return vals
+
+
+def _lmgc5_name(base: str, i: float, prefix: str = "x") -> str:
+    s = (base or prefix).strip()[:5]
+    idx = abs(int(round(i))) % 1000
+    if len(s) < 5:
+        s = (s + f"{idx:03d}")[:5]
+    if len(s) < 5:
+        s = s + ("x" * (5 - len(s)))
+    return s[:5]
+
+
 def expand_for_loop(for_loop, template: Avatar, dimension: int = 2) -> list[Avatar]:
+
     """Expand a ForLoop with safe arithmetic expressions for centre / radius."""
     import math
 

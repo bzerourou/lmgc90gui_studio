@@ -90,6 +90,17 @@ def create_granulo_tab(parent=None):
                 "Utiliser dépôt pylmgc (engine) si disponible — sinon numpy SoA"
             )
             self.pylmgc_check.setChecked(False)
+            self.distrib_only = QCheckBox(
+                "Distribution seule (rayons) — sans avatars / sans population"
+            )
+            self.distrib_only.setChecked(False)
+            self.distrib_only.setToolTip(
+                "Comme l'ancien granulo_tab : tire N rayons [rmin, rmax] "
+                "et enregistre la config, sans créer de ParticlePopulation ni d'avatars."
+            )
+            self.distrib_only.toggled.connect(
+                lambda on: self.pylmgc_check.setEnabled(not on)
+            )
 
             form.addRow("N particules", self.n_spin)
             form.addRow("Rayon min", self.rmin)
@@ -103,6 +114,7 @@ def create_granulo_tab(parent=None):
             form.addRow("Groupe (5 car.)", self.group_edit)
             form.addRow("Seed", self.seed_spin)
             form.addRow("", self.pylmgc_check)
+            form.addRow("", self.distrib_only)
             layout.addLayout(form)
 
             row = QHBoxLayout()
@@ -159,12 +171,17 @@ def create_granulo_tab(parent=None):
             self.list.clear()
             for pop in self.controller.project.populations:
                 self.list.addItem(
-                    f"{pop.population_id[:8]}…  N={len(pop)}  "
+                    f"[SoA] {pop.population_id[:8]}…  N={len(pop)}  "
                     f"{getattr(pop, 'avatar_type', '?')}  "
                     f"{getattr(pop, 'group_name', '') or ''}"
                 )
-            for g in getattr(self.controller.project, "granulo_configs", []) or []:
-                pass
+            for g in getattr(self.controller.project, "granulo", []) or []:
+                if not getattr(g, "create_avatars", True):
+                    nr = len(g.radii or [])
+                    self.list.addItem(
+                        f"[dist] N={g.nb_particles} r∈[{g.radius_min:.4g},{g.radius_max:.4g}] "
+                        f"→ {nr} rayons  ({g.container_type})"
+                    )
 
         def _on_container_changed(self, *_a) -> None:
             key = self.container.currentData()
@@ -228,17 +245,32 @@ def create_granulo_tab(parent=None):
                 group_name=group,
                 seed=seed,
                 dimension=dim,
+                create_avatars=not self.distrib_only.isChecked(),
             )
             try:
-                if self.pylmgc_check.isChecked():
+                if self.distrib_only.isChecked():
+                    self.controller.deposit(cfg)
+                    n = len(cfg.radii or [])
+                    QMessageBox.information(
+                        self, "Granulo",
+                        f"Distribution seule : {n} rayons "
+                        f"[{cfg.radius_min:.4g}, {cfg.radius_max:.4g}] "
+                        f"(aucun avatar créé).",
+                    )
+                elif self.pylmgc_check.isChecked():
                     pop = self.controller.run_granulo_pylmgc(cfg, avatar_type=atype)
+                    QMessageBox.information(
+                        self, "Granulo",
+                        f"Population {pop.population_id[:12]}… — {len(pop)} particules "
+                        f"({ctype})",
+                    )
                 else:
                     pop = self.controller.deposit(cfg)
-                QMessageBox.information(
-                    self, "Granulo",
-                    f"Population {pop.population_id[:12]}… — {len(pop)} particules "
-                    f"({ctype})",
-                )
+                    QMessageBox.information(
+                        self, "Granulo",
+                        f"Population {pop.population_id[:12]}… — {len(pop)} particules "
+                        f"({ctype})",
+                    )
             except (ValidationError, ValueError, RuntimeError) as exc:
                 QMessageBox.warning(self, "Granulo", str(exc))
             except Exception as exc:

@@ -326,17 +326,26 @@ class ProjectController(_QObject):
     def add_population(self, pop: ParticlePopulation) -> ParticlePopulation:
         return self.add(pop)
 
-    def deposit(self, config: GranuloConfig) -> ParticlePopulation:
-        """Deposit particles: **pylmgc90** when available, else core NumpyGranulo RSA.
-
-        Architecture: engine ``run_granulo`` → ``pre.depositInBox2D``; fallback
-        stays pure in ``Project.deposit`` (no pylmgc import in core).
-        """
+    def deposit(self, config: GranuloConfig):
+        """Deposit particles, or sample radii only if ``create_avatars`` is False."""
         try:
-            if self.pylmgc_available():
-                pop = self._session.run_granulo(config)
+            if not getattr(config, "create_avatars", True):
+                pop = self._project.deposit(config)
+                self._session.mark_dirty()
                 self._emit()
-                return pop
+                return pop  # None
+            if self.pylmgc_available():
+                try:
+                    pop = self._session.run_granulo(config)
+                    self._emit()
+                    return pop
+                except Exception as eng_exc:
+                    try:
+                        self.journal.warning(
+                            f"engine granulo failed ({eng_exc}); using NumpyGranulo"
+                        )
+                    except Exception:
+                        pass
             pop = self._project.deposit(config)
             self._session.mark_dirty()
             self._emit()
@@ -469,6 +478,15 @@ class ProjectController(_QObject):
         except Exception:
             pass
         return self._session.write_datbox(path)
+
+    def write_cell_dual_datbox(self, base_path: Union[str, Path]) -> dict:
+        """Export dual DATBOX_SPRD / DATBOX_STBL when project has cell_phases."""
+        try:
+            return self._session.write_cell_dual_datbox(base_path)
+        except Exception as exc:
+            self._notify_error(str(exc))
+            raise
+
 
     def export_all(self, directory: Union[str, Path], **kw) -> dict:
         return self._session.export_all(directory, **kw)

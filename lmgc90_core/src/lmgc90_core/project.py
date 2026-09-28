@@ -185,20 +185,29 @@ class Project:
 
     def remove_avatar(self, avatar_id: str) -> Avatar:
         av = self.avatar(avatar_id)
-        self._run(RemoveAvatar(av))
-        return av
-
-    def deposit(self, config: GranuloConfig) -> ParticlePopulation:
-        if config.dimension != self.dimension:
-            config.dimension = self.dimension
+    def deposit(self, config: GranuloConfig) -> ParticlePopulation | None:
+        """Place particles (SoA) or sample radii only if ``create_avatars`` is False."""
+        if not getattr(config, "create_avatars", True):
+            import numpy as np
+            if config.radius_min <= 0 or config.radius_max < config.radius_min:
+                raise ValidationError("invalid radius range")
+            if config.nb_particles <= 0:
+                raise ValidationError("nb_particles must be > 0")
+            rng = np.random.default_rng(config.seed)
+            radii = rng.uniform(
+                float(config.radius_min),
+                float(config.radius_max),
+                int(config.nb_particles),
+            )
+            config.radii = [float(x) for x in radii]
+            config.population_id = None
+            # keep one entry per distribution intent
+            self.granulo.append(config)
+            return None
         result = NumpyGranulo().deposit(config)
-        self._check_population(result.population)
-        self._run(AddPopulation(result.population, config))
-        if config.group_name:
-            pid = result.population.population_id
-            self.population_groups.setdefault(config.group_name, []).append(pid)
-            self.avatar_groups.setdefault(config.group_name, []).append(pid)
+        self._insert_population(result.population, config)
         return result.population
+
 
     def apply_loop(self, loop: Loop, template: Optional[Avatar] = None) -> list[Avatar]:
         tmpl = template or self.avatar(loop.model_avatar_id)
@@ -208,20 +217,216 @@ class Project:
         self._run(AddLoop(loop, generated))
         return generated
 
-    def apply_for_loop(self, for_loop: ForLoop, template: Optional[Avatar] = None) -> list[Avatar]:
-        tmpl = template or self.avatar(for_loop.model_avatar_id)
-        generated = expand_for_loop(for_loop, tmpl, dimension=self.dimension)
-        for av in generated:
-            self._check_avatar(av)
-        for av in generated:
-            self.avatars.append(av)
+    def apply_for_loop(self, for_loop: ForLoop, template: Optional[Avatar] = None):
+        """Expand ForLoop for avatar | material | model | dof | visibility | granulo | granulo_dist."""
+        from .generate import expand_for_loop, for_loop_values, _lmgc5_name, _safe_arith
+        from .entities import Material, Model, DOFOperation, VisibilityRule, GranuloConfig
+        import math
+
+        kind = (getattr(for_loop, "target_kind", None) or "avatar").lower().strip()
+        exprs = dict(getattr(for_loop, "expressions", None) or {})
+        values = for_loop_values(for_loop)
+        var = for_loop.var_name or "i"
+        generated_ids: list[str] = []
+        out: list = []
+
+        def env(i_val: float) -> dict:
+            return {
+                var: float(i_val), "i": float(i_val), "n": float(i_val),
+                "pi": math.pi, "e": math.e,
+                "sin": math.sin, "cos": math.cos, "tan": math.tan,
+                "sqrt": math.sqrt, "abs": abs, "min": min, "max": max,
+            }
+
+        def eval_num(expr: str | None, default: float, i_val: float) -> float:
+            if not expr:
+                return float(default)
+            return float(_safe_arith(str(expr), env(i_val)))
+
+        def eval_name(expr: str | None, default: str, i_val: float) -> str:
+            if not expr:
+                return _lmgc5_name(default, i_val)
+            try:
+                val = _safe_arith(str(expr), env(i_val))
+                return _lmgc5_name(default[:2] if default else "x", val)
+            except Exception:
+                return _lmgc5_name(str(expr), i_val)
+
+        if kind in ("avatar", "avatars"):
+            tmpl = template or self.avatar(for_loop.model_avatar_id)
+            generated = expand_for_loop(for_loop, tmpl, dimension=self.dimension)
+            for av in generated:
+                self._check_avatar(av)
+                self.avatars.append(av)
+                generated_ids.append(av.avatar_id)
+            out = generated
+            if for_loop.group_name:
+                self.avatar_groups.setdefault(for_loop.group_name, []).extend(generated_ids)
+
+        elif kind in ("material", "materials"):
+            base = next((m for m in self.materials if m.name == for_loop.template_name), None)
+            if base is None and self.materials:
+                base = self.materials[0]
+            if base is None:
+                raise ValidationError("ForLoop material: aucun matériau modèle")
+            dens_expr = exprs.get("density") or exprs.get("rho")
+            name_expr = exprs.get("name")
+            for i_val in values:
+                dens = eval_num(dens_expr, float(getattr(base, "density", 1000.0) or 1000.0), i_val)
+                name = eval_name(name_expr, base.name, i_val)
+                if any(m.name == name for m in self.materials):
+                    name = _lmgc5_name(base.name[:2], i_val)
+                mat = Material(
+                    name=name,
+                    material_type=base.material_type,
+                    density=float(dens),
+                    properties=dict(getattr(base, "properties", None) or {}),
+                )
+                self.add(mat)
+                generated_ids.append(name)
+                out.append(mat)
+
+        elif kind in ("model", "models"):
+            base = next((m for m in self.models if m.name == for_loop.template_name), None)
+            if base is None and self.models:
+                base = self.models[0]
+            if base is None:
+                raise ValidationError("ForLoop model: aucun modèle template")
+            name_expr = exprs.get("name")
+            for i_val in values:
+                name = eval_name(name_expr, base.name, i_val)
+                if any(m.name == name for m in self.models):
+                    name = _lmgc5_name(base.name[:2], i_val)
+                mod = Model(
+                    name=name,
+                    physics=base.physics,
+                    element=base.element,
+                    dimension=int(base.dimension),
+                    options=dict(getattr(base, "options", None) or {}),
+                )
+                self.add(mod)
+                generated_ids.append(name)
+                out.append(mod)
+
+        elif kind in ("dof", "dofs"):
+            idx = int(getattr(for_loop, "template_index", -1))
+            if 0 <= idx < len(self.operations):
+                base = self.operations[idx]
+            elif self.operations:
+                base = self.operations[0]
+            else:
+                raise ValidationError("ForLoop DOF: aucune opération template")
+            for i_val in values:
+                params = dict(base.parameters or {})
+                for pk, pexpr in exprs.items():
+                    if pk in ("name", "target_value"):
+                        continue
+                    try:
+                        params[pk] = eval_num(str(pexpr), float(params.get(pk, 0) or 0), i_val)
+                    except Exception:
+                        params[pk] = pexpr
+                tv = base.target_value
+                if exprs.get("target_value"):
+                    tv = eval_name(exprs.get("target_value"), str(tv), i_val)
+                op = DOFOperation(
+                    operation_type=base.operation_type,
+                    target_type=base.target_type,
+                    target_value=tv,
+                    parameters=params,
+                )
+                self.add(op)
+                generated_ids.append(str(len(generated_ids)))
+                out.append(op)
+
+        elif kind in ("visibility", "see", "see_table"):
+            idx = int(getattr(for_loop, "template_index", -1))
+            if 0 <= idx < len(self.visibility):
+                base = self.visibility[idx]
+            elif self.visibility:
+                base = self.visibility[0]
+            else:
+                raise ValidationError("ForLoop visibility: aucune see-table template")
+            for i_val in values:
+                alert = eval_num(exprs.get("alert"), float(getattr(base, "alert", 0.1) or 0.1), i_val)
+                cc = base.candidate_color
+                ac = base.antagonist_color
+                if exprs.get("candidate_color"):
+                    cc = eval_name(exprs["candidate_color"], cc, i_val)
+                if exprs.get("antagonist_color"):
+                    ac = eval_name(exprs["antagonist_color"], ac, i_val)
+                rule = VisibilityRule(
+                    candidate_body=base.candidate_body,
+                    candidate_contactor=base.candidate_contactor,
+                    candidate_color=cc,
+                    antagonist_body=base.antagonist_body,
+                    antagonist_contactor=base.antagonist_contactor,
+                    antagonist_color=ac,
+                    behavior_name=base.behavior_name,
+                    alert=float(alert),
+                )
+                self.add(rule)
+                generated_ids.append(str(len(generated_ids)))
+                out.append(rule)
+
+        elif kind in ("granulo", "granulo_dist", "distribution"):
+            base = self.granulo[0] if self.granulo else None
+            create_av = kind == "granulo"
+            for i_val in values:
+                nb = int(eval_num(
+                    exprs.get("nb_particles") or exprs.get("n"),
+                    float(base.nb_particles if base else 50),
+                    i_val,
+                ))
+                rmin = eval_num(
+                    exprs.get("radius_min") or exprs.get("rmin"),
+                    float(base.radius_min if base else 0.01),
+                    i_val,
+                )
+                rmax = eval_num(
+                    exprs.get("radius_max") or exprs.get("rmax"),
+                    float(base.radius_max if base else 0.02),
+                    i_val,
+                )
+                mat_name = (
+                    base.material_name if base
+                    else (self.materials[0].name if self.materials else "PLEXx")
+                )
+                mod_name = (
+                    base.model_name if base
+                    else (self.models[0].name if self.models else "rigid")
+                )
+                cfg = GranuloConfig(
+                    nb_particles=max(1, nb),
+                    radius_min=rmin,
+                    radius_max=max(rmin * 1.01, rmax),
+                    container_type=(base.container_type if base else ("Box2D" if self.dimension == 2 else "Box3D")),
+                    container_params=dict(base.container_params) if base else (
+                        {"lx": 1.0, "ly": 1.0} if self.dimension == 2
+                        else {"lx": 1.0, "ly": 1.0, "lz": 1.0}
+                    ),
+                    material_name=mat_name,
+                    model_name=mod_name,
+                    avatar_type=(base.avatar_type if base else ("rigidDisk" if self.dimension == 2 else "rigidSphere")),
+                    color=(base.color if base else "BLUEx"),
+                    group_name=for_loop.group_name,
+                    seed=int(round(i_val)),
+                    dimension=self.dimension,
+                    create_avatars=create_av,
+                )
+                pop = self.deposit(cfg)
+                if pop is not None:
+                    generated_ids.append(pop.population_id)
+                    out.append(pop)
+                else:
+                    generated_ids.append(f"dist{len(generated_ids)}")
+                    out.append(cfg)
+        else:
+            raise ValidationError(f"ForLoop target_kind inconnu: {kind!r}")
+
+        for_loop.generated_ids = list(generated_ids)
         self.for_loops.append(for_loop)
-        if for_loop.group_name:
-            self.avatar_groups.setdefault(for_loop.group_name, []).extend(
-                [a.avatar_id for a in generated]
-            )
-            for_loop.generated_ids = [a.avatar_id for a in generated]
-        return generated
+        return out
+
 
     def apply_masonry(self, config: MasonryConfig) -> list[Avatar]:
         # planar layout in XY; valid in 2D and 3D projects (lz / paneresse use dimension)

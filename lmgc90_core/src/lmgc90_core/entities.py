@@ -347,22 +347,24 @@ class Loop:
 
 @dataclass
 class ForLoop:
-    """Generic parametric loop — expressions evaluated with a safe arithmetic AST.
+    """Generic parametric loop — multi-target (materials, models, avatars, DOF, see, granulo).
 
-    Variable ``var_name`` takes values from ``start`` to ``stop`` (exclusive) with
-    ``step``. Expressions for centre / radius may reference the variable, e.g.
-    ``\"0.1 * i\"``, ``\"cos(i * pi / 8)\"``.
+    ``target_kind``: avatar | material | model | dof | visibility | granulo | granulo_dist
     """
 
     var_name: str = "i"
     start: float = 0.0
     stop: float = 10.0
     step: float = 1.0
+    target_kind: str = "avatar"
     model_avatar_id: str = ""
+    template_name: str = ""
+    template_index: int = -1
     expr_x: str = "i * 0.1"
     expr_y: str = "0.0"
     expr_z: str = "0.0"
-    expr_radius: Optional[str] = None  # None → keep template radius
+    expr_radius: Optional[str] = None
+    expressions: dict = field(default_factory=dict)
     group_name: Optional[str] = None
     generated_ids: list[str] = field(default_factory=list)
     loop_id: str = field(default_factory=new_avatar_id)
@@ -374,11 +376,15 @@ class ForLoop:
             "start": self.start,
             "stop": self.stop,
             "step": self.step,
+            "target_kind": self.target_kind,
             "model_avatar_id": self.model_avatar_id,
+            "template_name": self.template_name,
+            "template_index": self.template_index,
             "expr_x": self.expr_x,
             "expr_y": self.expr_y,
             "expr_z": self.expr_z,
             "expr_radius": self.expr_radius,
+            "expressions": dict(self.expressions or {}),
             "group_name": self.group_name,
             "generated_ids": list(self.generated_ids),
             "loop_id": self.loop_id,
@@ -392,11 +398,15 @@ class ForLoop:
             start=float(data.get("start", 0)),
             stop=float(data.get("stop", 10)),
             step=float(data.get("step", 1)),
+            target_kind=data.get("target_kind") or data.get("kind") or "avatar",
             model_avatar_id=data.get("model_avatar_id") or "",
+            template_name=data.get("template_name") or "",
+            template_index=int(data.get("template_index", -1)),
             expr_x=data.get("expr_x", "i * 0.1"),
             expr_y=data.get("expr_y", "0.0"),
             expr_z=data.get("expr_z", "0.0"),
             expr_radius=data.get("expr_radius"),
+            expressions=dict(data.get("expressions") or {}),
             group_name=data.get("group_name"),
             generated_ids=list(data.get("generated_ids") or []),
             loop_id=data.get("loop_id") or new_avatar_id(),
@@ -421,9 +431,12 @@ class GranuloConfig:
     seed: Optional[int] = None
     population_id: Optional[str] = None
     dimension: int = 2
+    # Legacy "distribution only": radii sample, no ParticlePopulation / avatars
+    create_avatars: bool = True
+    radii: Optional[list] = None  # filled when create_avatars is False
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "nb_particles": self.nb_particles,
             "radius_min": self.radius_min,
             "radius_max": self.radius_max,
@@ -437,15 +450,22 @@ class GranuloConfig:
             "seed": self.seed,
             "population_id": self.population_id,
             "dimension": self.dimension,
-            "use_particle_population": True,
+            "create_avatars": self.create_avatars,
+            "use_particle_population": self.create_avatars,
         }
+        if self.radii is not None and not self.create_avatars:
+            d["radii"] = list(self.radii)
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> GranuloConfig:
         params = dict(data.get("container_params") or {})
-        for key in ("lx", "ly", "lz", "r", "rint", "rext"):
+        for key in ("lx", "ly", "lz", "r", "rint", "rext", "R"):
             if key in data and key not in params:
                 params[key] = data[key]
+        create = data.get("create_avatars")
+        if create is None:
+            create = data.get("use_particle_population", True)
         return cls(
             nb_particles=int(data.get("nb_particles", 0)),
             radius_min=float(data.get("radius_min", 0.0)),
@@ -460,4 +480,6 @@ class GranuloConfig:
             seed=data.get("seed"),
             population_id=data.get("population_id"),
             dimension=int(data.get("dimension", 2)),
+            create_avatars=bool(create),
+            radii=list(data["radii"]) if data.get("radii") is not None else None,
         )
