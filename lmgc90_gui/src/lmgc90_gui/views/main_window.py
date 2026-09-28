@@ -184,9 +184,11 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_pipe.triggered.connect(self._on_pipeline)
             tools.addAction(act_pipe)
             act_mesh = QAction(f"{MENU_ICONS['mesh']} Assistant &Mesh déformable…", self)
+            act_mesh.setShortcut(QKeySequence("Ctrl+Shift+D"))
             act_mesh.triggered.connect(self._on_mesh_wizard)
             tools.addAction(act_mesh)
             act_mas = QAction(f"{MENU_ICONS['masonry']} Assistant M&açonnerie…", self)
+            act_mas.setShortcut(QKeySequence("Ctrl+Shift+M"))
             act_mas.triggered.connect(self._on_masonry_wizard)
             tools.addAction(act_mas)
             tools.addSeparator()
@@ -587,12 +589,93 @@ def create_main_window(controller: Optional[ProjectController] = None):
             except Exception as exc:
                 QMessageBox.warning(self, "Viewer", str(exc))
 
+        def _projects_start_dir(self) -> str:
+            from pathlib import Path as _P
+            d = getattr(self.controller.prefs, "projects_directory", "") or ""
+            if d and _P(d).is_dir():
+                return d
+            w = getattr(self.controller.prefs, "work_directory", "") or ""
+            if w and _P(w).is_dir():
+                return w
+            return ""
+
+        def _rebuild_recent_menu(self) -> None:
+            if not hasattr(self, "recent_menu"):
+                return
+            self.recent_menu.clear()
+            prefs = self.controller.prefs
+            paths = list(getattr(prefs, "recent_projects", None) or [])
+            if not paths:
+                empty = QAction("(aucun)", self)
+                empty.setEnabled(False)
+                self.recent_menu.addAction(empty)
+                return
+            for path in paths[: int(getattr(prefs, "recent_max", 10) or 10)]:
+                act = QAction(path, self)
+                act.triggered.connect(lambda checked=False, p=path: self._open_recent(p))
+                self.recent_menu.addAction(act)
+            self.recent_menu.addSeparator()
+            clear = QAction("Vider la liste", self)
+            clear.triggered.connect(self._clear_recent)
+            self.recent_menu.addAction(clear)
+
+        def _open_recent(self, path: str) -> None:
+            from pathlib import Path as _P
+            p = _P(path)
+            if not p.is_file():
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Récent", f"Fichier introuvable:\n{path}")
+                return
+            try:
+                self.controller.load_project(p)
+                self._remember_recent(p)
+            except Exception as exc:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.critical(self, "Ouvrir", str(exc))
+
+        def _clear_recent(self) -> None:
+            self.controller.prefs.recent_projects = []
+            self.controller.save_preferences()
+            self._rebuild_recent_menu()
+
+        def _remember_recent(self, path) -> None:
+            try:
+                self.controller.prefs.remember_project(path)
+                self.controller.save_preferences()
+                self._rebuild_recent_menu()
+            except Exception:
+                pass
+
+        def _setup_autosave_timer(self) -> None:
+            from PyQt6.QtCore import QTimer
+            if getattr(self, "_autosave_timer", None) is None:
+                self._autosave_timer = QTimer(self)
+                self._autosave_timer.timeout.connect(self._on_autosave_tick)
+            prefs = self.controller.prefs
+            if getattr(prefs, "auto_save", False):
+                mins = max(1, int(getattr(prefs, "auto_save_interval_min", 10) or 10))
+                self._autosave_timer.start(mins * 60 * 1000)
+            else:
+                self._autosave_timer.stop()
+
+        def _on_autosave_tick(self) -> None:
+            path = getattr(self.controller, "project_path", None)
+            if path is None:
+                return
+            try:
+                self.controller.save_project(path)
+                self.statusBar().showMessage(f"Auto-save → {path}", 3000)
+            except Exception:
+                pass
+
         def _on_preferences(self) -> None:
             from ..dialogs.preferences_dialog import create_preferences_dialog
             dlg = create_preferences_dialog(self.controller.prefs, self)
             if dlg.exec():
                 dlg.apply_to(self.controller.prefs)
                 self.controller.save_preferences()
+                self._setup_autosave_timer()
+                self._rebuild_recent_menu()
                 self.statusBar().showMessage("Preferences saved", 3000)
 
         def _on_journal(self) -> None:

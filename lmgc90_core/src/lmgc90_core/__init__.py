@@ -31,7 +31,7 @@ from .project import Project
 from .types import AvatarOrigin, AvatarType, ContactLawType, MaterialType, UnitSystem
 from .validate import compatible_contactors, is_shape_compatible
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __all__ = [
     "Project", "pre",
     "Material", "Model", "Avatar", "ParticlePopulation",

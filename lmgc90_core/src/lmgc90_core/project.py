@@ -224,8 +224,8 @@ class Project:
         return generated
 
     def apply_masonry(self, config: MasonryConfig) -> list[Avatar]:
-        if self.dimension != 2:
-            raise ValidationError("masonry wall generator is 2D only")
+        # planar layout in XY; valid in 2D and 3D projects (lz / paneresse use dimension)
+        config.dimension = int(self.dimension)
         generated = expand_masonry(config)
         for av in generated:
             self._check_avatar(av)

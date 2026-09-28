@@ -15,20 +15,43 @@ _PATTERN_INFO = {
     "Running Bond": "Décalage progressif d'un tiers de brique par rang.",
     "Stack Bond": "Joints parfaitement alignés (colonnes verticales).",
     "Flemish Bond": "Alternance panneresse (lx) / boutisse (lx/2).",
+    "Paneresse simple (pylmgc90)":
+        "Mur simple épaisseur — disposition paneresse/boutisse/chant (3D uniquement, comme pre.paneresse_simple).",
+    "Paneresse double (pylmgc90)":
+        "Mur double épaisseur (deux feuilles) — 3D uniquement, comme pre.paneresse_double.",
 }
+
+_PANERESSE_PATTERNS = frozenset({
+    "Paneresse simple (pylmgc90)",
+    "Paneresse double (pylmgc90)",
+})
+
+
+
+def _lmgc5(name: str, default: str = "XXXXX") -> str:
+    """Pad / truncate to exactly 5 characters (LMGC90 DATBOX convention)."""
+    s = (name or "").strip()
+    if not s:
+        s = default
+    # uppercase for materials/models/laws/colors is conventional but not mandatory
+    if len(s) > 5:
+        s = s[:5]
+    if len(s) < 5:
+        s = s + ("x" * (5 - len(s)))
+    return s
 
 
 def create_masonry_wizard(controller, parent=None):
     from PyQt6.QtWidgets import (
         QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
         QHBoxLayout, QLabel, QLineEdit, QMessageBox, QRadioButton, QSpinBox,
-        QTextEdit, QVBoxLayout, QWizard, QWizardPage,
+        QScrollArea, QTextEdit, QVBoxLayout, QWidget, QWizard, QWizardPage,
     )
 
     class MasonryIntroPage(QWizardPage):
         def __init__(self):
             super().__init__()
-            self.setTitle("Assistant de maçonnerie")
+            self.setTitle("0 · Introduction")
             self.setSubTitle("Génération de murs en briques (rigidPolygon)")
             lay = QVBoxLayout(self)
             lay.addWidget(QLabel(
@@ -42,7 +65,7 @@ def create_masonry_wizard(controller, parent=None):
                 "<li>Transformations (translate / copies)</li>"
                 "<li>Résumé et génération</li>"
                 "</ol>"
-                "<p>Appareils : Standard, Running Bond, Stack Bond, Flemish Bond.</p>"
+                "<p>Appareils : Standard, Running, Stack, Flemish, <b>Paneresse simple / double</b> (3D).</p>"
                 "<p>Les briques sont des <code>rigidPolygon</code> dans "
                 "<code>lmgc90_core.Project</code> (pas d'injection pylmgc directe).</p>"
             ))
@@ -51,10 +74,11 @@ def create_masonry_wizard(controller, parent=None):
     class MasonryDimensionPage(QWizardPage):
         def __init__(self):
             super().__init__()
-            self.setTitle("Dimension")
+            self.setTitle("1 · Dimension")
+            self.setSubTitle("Choisissez 2D (Rxx2D) ou 3D (Rxx3D / paneresse)")
             lay = QVBoxLayout(self)
             self.dim_2d = QRadioButton("2D (plan)")
-            self.dim_3d = QRadioButton("3D (métadonnées lz — géométrie encore 2D)")
+            self.dim_3d = QRadioButton("3D (Rxx3D / RBDY3 — layout XY + profondeur lz)")
             self.dim_2d.setChecked(True)
             lay.addWidget(self.dim_2d)
             lay.addWidget(self.dim_3d)
@@ -65,7 +89,9 @@ def create_masonry_wizard(controller, parent=None):
         def initializePage(self):
             d = self.wizard().controller.project.dimension
             (self.dim_3d if d == 3 else self.dim_2d).setChecked(True)
-            self.hint.setText(f"Dimension projet : {d}D — le générateur core est 2D.")
+            self.hint.setText(
+                f"Dimension projet : {d}D — layout polygonal dans le plan XY (lz / paneresse en 3D)."
+            )
 
         def dimension(self) -> int:
             return 2 if self.dim_2d.isChecked() else 3
@@ -73,7 +99,8 @@ def create_masonry_wizard(controller, parent=None):
     class MasonryMaterialPage(QWizardPage):
         def __init__(self):
             super().__init__()
-            self.setTitle("Matériau")
+            self.setTitle("2 · Matériau")
+            self.setSubTitle("Matériau RIGID pour les briques")
             lay = QVBoxLayout(self)
             self.create_mat = QCheckBox("Créer un nouveau matériau RIGID")
             self.create_mat.setChecked(True)
@@ -111,7 +138,8 @@ def create_masonry_wizard(controller, parent=None):
     class MasonryModelPage(QWizardPage):
         def __init__(self):
             super().__init__()
-            self.setTitle("Modèle")
+            self.setTitle("3 · Modèle")
+            self.setSubTitle("Rxx2D en 2D · Rxx3D en 3D (nom 5 caractères max)")
             lay = QVBoxLayout(self)
             self.create_mod = QCheckBox("Créer un nouveau modèle rigide")
             self.create_mod.setChecked(True)
@@ -133,10 +161,12 @@ def create_masonry_wizard(controller, parent=None):
             el = "Rxx2D" if dim == 2 else "Rxx3D"
             mods = [
                 m.name for m in self.wizard().controller.project.models
-                if m.element in ("Rxx2D", "Rxx3D")
+                if int(m.dimension) == dim and m.element in ("Rxx2D", "Rxx3D", el)
             ]
             self.existing.clear()
             self.existing.addItems(mods or [f"(Aucun modèle {el})"])
+            if self.create_mod.isChecked():
+                self.mod_name.setText("rigid" if dim == 2 else "rig3D")
             self.mod_name.setToolTip(f"Élément forcé : {el}")
 
         def model_name(self) -> str:
@@ -147,9 +177,12 @@ def create_masonry_wizard(controller, parent=None):
     class BrickDimensionsPage(QWizardPage):
         def __init__(self):
             super().__init__()
-            self.setTitle("Dimensions de la brique")
+            self.setTitle("4 · Dimensions de la brique")
+            self.setSubTitle("lx longueur · ly hauteur · lz profondeur (3D)")
             form = QFormLayout(self)
-            self.brick_name = QLineEdit("std")
+            self.brick_name = QLineEdit("stdxx")
+            self.brick_name.setMaxLength(5)
+            self.brick_name.setPlaceholderText("5 car. LMGC90")
             self.lx = QDoubleSpinBox(); self.ly = QDoubleSpinBox(); self.lz = QDoubleSpinBox()
             self.lx.setRange(1e-4, 10); self.lx.setDecimals(4); self.lx.setValue(0.20)
             self.ly.setRange(1e-4, 10); self.ly.setDecimals(4); self.ly.setValue(0.065)
@@ -163,13 +196,27 @@ def create_masonry_wizard(controller, parent=None):
     class LayoutPage(QWizardPage):
         def __init__(self):
             super().__init__()
-            self.setTitle("Appareil / layout")
-            lay = QVBoxLayout(self)
+            self.setTitle("5 · Appareil et disposition")
+            self.setSubTitle("Pattern, courses, joints, offsets, options paneresse")
+
+            outer = QVBoxLayout(self)
+            outer.setContentsMargins(0, 0, 0, 0)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            from PyQt6.QtCore import Qt as _Qt
+            scroll.setHorizontalScrollBarPolicy(_Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            scroll.setVerticalScrollBarPolicy(_Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            body = QWidget()
+            lay = QVBoxLayout(body)
+            lay.setContentsMargins(8, 8, 8, 8)
+
             form = QFormLayout()
             self.pattern = QComboBox()
             self.pattern.addItems(list(_PATTERN_INFO.keys()))
             self.pattern_info = QLabel(_PATTERN_INFO["Standard"])
             self.pattern_info.setWordWrap(True)
+            self.pattern_info.setStyleSheet("padding:4px;")
             self.rows = QSpinBox(); self.rows.setRange(1, 500); self.rows.setValue(8)
             self.cols = QSpinBox(); self.cols.setRange(1, 500); self.cols.setValue(5)
             self.joint = QDoubleSpinBox(); self.joint.setRange(0, 0.5); self.joint.setDecimals(4)
@@ -178,13 +225,17 @@ def create_masonry_wizard(controller, parent=None):
             for s in (self.ox, self.oy, self.oz):
                 s.setRange(-1e4, 1e4); s.setDecimals(4)
             self.color = QLineEdit("REEDx")
+            self.color.setMaxLength(5)
+            self.color.setPlaceholderText("5 car. LMGC90")
             self.store_group = QCheckBox("Enregistrer le groupe")
             self.store_group.setChecked(True)
             self.group_name = QLineEdit("mason")
+            self.group_name.setMaxLength(5)
+            self.group_name.setPlaceholderText("5 car. LMGC90")
             self.fill_ends = QCheckBox("Demi-briques aux extrémités (Standard)")
-            self.add_law = QCheckBox("Ajouter loi IQS_CLB + see POLYG/POLYG")
+            self.add_law = QCheckBox("Ajouter loi IQS_CLB + see-table (POLYG 2D / POLYR 3D)")
             self.add_law.setChecked(True)
-            self.law_name = QLineEdit("IQS")
+            self.law_name = QLineEdit("IQSxx")
             self.law_name.setMaxLength(5)
             self.fric = QDoubleSpinBox(); self.fric.setRange(0, 2); self.fric.setValue(0.6)
             self.fric.setDecimals(3)
@@ -207,14 +258,60 @@ def create_masonry_wizard(controller, parent=None):
             lay.addWidget(self.fill_ends)
             lay.addWidget(self.store_group)
             lay.addWidget(self.add_law)
-            self.pattern.currentTextChanged.connect(
-                lambda t: self.pattern_info.setText(_PATTERN_INFO.get(t, ""))
-            )
+
+            self.pan_group = QGroupBox("Options paneresse (3D uniquement — pre.paneresse_*)")
+            pan_form = QFormLayout(self.pan_group)
+            self.disposition = QComboBox()
+            self.disposition.addItems(["paneresse", "boutisse", "chant"])
+            self.first_brick = QComboBox()
+            self.first_brick.addItems(["full", "half"])
+            self.pan_size_mode = QComboBox()
+            self.pan_size_mode.addItems([
+                "Par nombre de briques (colonnes)",
+                "Par longueur totale",
+            ])
+            self.pan_length = QDoubleSpinBox()
+            self.pan_length.setRange(1e-4, 1e6)
+            self.pan_length.setDecimals(6)
+            self.pan_length.setValue(1.0)
+            self.pan_no_half = QCheckBox("Sans demi-briques (buildRigidWallWithoutHalfBricks)")
+            pan_form.addRow("Disposition", self.disposition)
+            pan_form.addRow("Première brique", self.first_brick)
+            pan_form.addRow("1re rangée", self.pan_size_mode)
+            pan_form.addRow("Longueur totale (m)", self.pan_length)
+            pan_form.addRow("", self.pan_no_half)
+            self.pan_group.setVisible(False)
+            lay.addWidget(self.pan_group)
+            lay.addStretch()
+
+            scroll.setWidget(body)
+            outer.addWidget(scroll)
+
+            self.pattern.currentTextChanged.connect(self._on_pattern_changed)
+            self._on_pattern_changed(self.pattern.currentText())
+
+
+        def _on_pattern_changed(self, text: str) -> None:
+            self.pattern_info.setText(_PATTERN_INFO.get(text, ""))
+            is_pan = text in _PANERESSE_PATTERNS
+            self.pan_group.setVisible(is_pan)
+            self.fill_ends.setEnabled(not is_pan)
+
+        def initializePage(self) -> None:
+            # show/hide paneresse if dimension page says 3D
+            try:
+                dim = self.wizard().page(MasonryWizard.PAGE_DIMENSION).dimension()
+            except Exception:
+                dim = 2
+            # keep paneresse in the list always; validate on generate
+            self._project_dim = dim
+            self._on_pattern_changed(self.pattern.currentText())
+
 
     class TransformPage(QWizardPage):
         def __init__(self):
             super().__init__()
-            self.setTitle("Transformations")
+            self.setTitle("6 · Transformations")
             self.setSubTitle("Appliquées après placement des briques")
             lay = QVBoxLayout(self)
             self.translate = QCheckBox("Translation globale")
@@ -245,7 +342,8 @@ def create_masonry_wizard(controller, parent=None):
     class MasonrySummaryPage(QWizardPage):
         def __init__(self):
             super().__init__()
-            self.setTitle("Résumé")
+            self.setTitle("7 · Résumé et génération")
+            self.setSubTitle("Vérifiez les paramètres puis cliquez sur Générer")
             lay = QVBoxLayout(self)
             self.text = QTextEdit()
             self.text.setReadOnly(True)
@@ -260,7 +358,7 @@ def create_masonry_wizard(controller, parent=None):
             lay_p = w.page(MasonryWizard.PAGE_LAYOUT)
             tf_p = w.page(MasonryWizard.PAGE_TRANSFORM)
             lines = [
-                f"Dimension UI : {dim_p.dimension()}D (générateur core = 2D)",
+                f"Dimension UI / projet : {dim_p.dimension()}D",
                 f"Matériau : {mat_p.material_name()}",
                 f"Modèle : {mod_p.model_name()}",
                 f"Brique : {br_p.brick_name.text()}  "
@@ -295,7 +393,8 @@ def create_masonry_wizard(controller, parent=None):
             self.controller = controller
             self.setWindowTitle("Assistant de Maçonnerie")
             self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
-            self.resize(780, 600)
+            self.resize(820, 640)
+            self.setMinimumSize(640, 480)
             self.addPage(MasonryIntroPage())
             self.addPage(MasonryDimensionPage())
             self.addPage(MasonryMaterialPage())
@@ -330,28 +429,39 @@ def create_masonry_wizard(controller, parent=None):
             ctrl = self.controller
             dim = dim_p.dimension()
 
-            if ctrl.project.dimension != 2 and not ctrl.project.avatars:
-                ctrl.project.dimension = 2
-            if ctrl.project.dimension != 2:
-                raise ValidationError(
-                    "Le générateur de maçonnerie core est 2D. "
-                    "Passez le projet en 2D (File → New) ou videz les avatars 3D."
-                )
-
-            mat_name = mat_p.material_name()
-            mod_name = mod_p.model_name()
+            mat_name = _lmgc5(mat_p.material_name(), "brick")
+            mod_name = _lmgc5(mod_p.model_name(), "rigid" if int(dim_p.dimension()) == 2 else "rig3D")
             if not mat_name or mat_name.startswith("("):
-                raise ValidationError("Matériau invalide")
+                raise ValidationError("Matériau invalide (nom 5 caractères LMGC90)")
             if not mod_name or mod_name.startswith("("):
-                raise ValidationError("Modèle invalide")
+                raise ValidationError("Modèle invalide (nom 5 caractères LMGC90)")
 
+            pattern_label = lay_p.pattern.currentText()
             bond_map = {
                 "Standard": "standard",
                 "Running Bond": "running",
                 "Stack Bond": "stack",
                 "Flemish Bond": "flemish",
+                "Paneresse simple (pylmgc90)": "paneresse_simple",
+                "Paneresse double (pylmgc90)": "paneresse_double",
             }
-            bond = bond_map.get(lay_p.pattern.currentText(), "standard")
+            bond = bond_map.get(pattern_label, "standard")
+            dim = int(dim_p.dimension())
+
+            # Align project dimension with wizard choice
+            if not ctrl.project.avatars:
+                ctrl.project.dimension = dim
+            if bond in ("paneresse_simple", "paneresse_double"):
+                if dim != 3 or int(ctrl.project.dimension) != 3:
+                    raise ValidationError(
+                        "Paneresse simple / double : 3D uniquement "
+                        "(cochez 3D dans l'assistant et un projet 3D)."
+                    )
+            elif int(ctrl.project.dimension) != 2 and bond not in (
+                "paneresse_simple", "paneresse_double"
+            ):
+                # classic bonds: pure expand is planar XY (ok on 3D project too)
+                pass
 
             translate = None
             if tf_p.translate.isChecked():
@@ -375,13 +485,19 @@ def create_masonry_wizard(controller, parent=None):
                 origin_z=lay_p.oz.value(),
                 material_name=mat_name,
                 model_name=mod_name,
-                color=lay_p.color.text().strip() or "REEDx",
+                color=_lmgc5(lay_p.color.text(), "REEDx"),
                 group_name=(
-                    lay_p.group_name.text().strip() or None
+                    _lmgc5(lay_p.group_name.text(), "mason")
                     if lay_p.store_group.isChecked() else None
                 ),
-                brick_name=br_p.brick_name.text().strip() or "std",
+                brick_name=_lmgc5(br_p.brick_name.text(), "stdxx"),
                 fill_ends=lay_p.fill_ends.isChecked(),
+                disposition=lay_p.disposition.currentText(),
+                first_brick_type=lay_p.first_brick.currentText(),
+                pan_use_length=(lay_p.pan_size_mode.currentIndex() == 1),
+                pan_length=float(lay_p.pan_length.value()),
+                pan_no_half=lay_p.pan_no_half.isChecked(),
+                dimension=dim,
                 translate=translate,
                 copy_offset=copy_offset,
                 n_copies=n_copies,
@@ -396,32 +512,51 @@ def create_masonry_wizard(controller, parent=None):
                         material_type=MaterialType.RIGID,
                         density=mat_p.density.value(),
                     ))
-                if mod_p.create_mod.isChecked() and not any(
-                    m.name == mod_name for m in ctrl.project.models
-                ):
-                    ctrl.add_model(Model(
-                        name=mod_name,
-                        physics="MECAx",
-                        element="Rxx2D",
-                        dimension=2,
-                    ))
+                if mod_p.create_mod.isChecked():
+                    el = "Rxx2D" if dim == 2 else "Rxx3D"
+                    existing = next(
+                        (m for m in ctrl.project.models if m.name == mod_name),
+                        None,
+                    )
+                    if existing is None:
+                        ctrl.add_model(Model(
+                            name=mod_name,
+                            physics="MECAx",
+                            element=el,
+                            dimension=dim,
+                        ))
+                    elif int(existing.dimension) != dim or existing.element != el:
+                        # name taken by wrong-dimension model → create dim-specific name
+                        alt = "rig3D" if dim == 3 else "rigid"
+                        if not any(m.name == alt for m in ctrl.project.models):
+                            ctrl.add_model(Model(
+                                name=alt,
+                                physics="MECAx",
+                                element=el,
+                                dimension=dim,
+                            ))
+                        mod_name = alt
+                        cfg.model_name = alt
 
                 bricks = ctrl.apply_masonry(cfg)
 
                 if lay_p.add_law.isChecked():
-                    law_name = lay_p.law_name.text().strip() or "IQS"
+                    law_name = _lmgc5(lay_p.law_name.text(), "IQSxx")
                     if not any(l.name == law_name for l in ctrl.project.laws):
                         ctrl.add_law(pre.tact_behav(
                             name=law_name, law="IQS_CLB", fric=lay_p.fric.value(),
                         ))
-                    color = lay_p.color.text().strip() or "REEDx"
+                    color = _lmgc5(lay_p.color.text(), "REEDx")
                     if not any(
                         r.candidate_color == color and r.antagonist_color == color
                         for r in ctrl.project.visibility
                     ):
+                        body = "RBDY3" if dim == 3 else "RBDY2"
+                        # 2D: POLYG · 3D rigid polyhedron: POLYR (not POLYG)
+                        shape = "POLYR" if dim == 3 else "POLYG"
                         ctrl.add_visibility(pre.see_table(
-                            CorpsCandidat="RBDY2", candidat="POLYG", colorCandidat=color,
-                            CorpsAntagoniste="RBDY2", antagoniste="POLYG",
+                            CorpsCandidat=body, candidat=shape, colorCandidat=color,
+                            CorpsAntagoniste=body, antagoniste=shape,
                             colorAntagoniste=color,
                             behav=law_name, alert=0.02,
                         ))

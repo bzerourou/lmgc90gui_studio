@@ -193,11 +193,48 @@ def build_avatar(
             )
         elif t == AvatarType.RIGID_POLYHEDRON:
             kwargs = dict(center=center, model=mod, material=mat, color=color)
-            if av.vertices is not None:
-                kwargs["vertices"] = av.vertices
-            if av.radius is not None:
-                kwargs["radius"] = float(av.radius)
-            body = pre.rigidPolyhedron(**kwargs)
+            verts = av.vertices
+            if verts is not None:
+                import numpy as _np
+                arr = _np.asarray(verts, dtype=float)
+                n = int(arr.shape[0])
+                if n <= 4:
+                    raise MaterializationError(
+                        f"rigidPolyhedron needs > 4 vertices, got {n} "
+                        f"(avatar_id={av.avatar_id})"
+                    )
+                # pylmgc requires nb_vertices > 4 and a valid generation_type
+                try:
+                    body = pre.rigidPolyhedron(
+                        center=center, model=mod, material=mat, color=color,
+                        generation_type="vertices",
+                        vertices=arr,
+                        nb_vertices=n,
+                    )
+                except TypeError:
+                    try:
+                        body = pre.rigidPolyhedron(
+                            vertices=arr, nb_vertices=n, **kwargs
+                        )
+                    except Exception:
+                        body = pre.rigidPolyhedron(
+                            generation_type="regular",
+                            nb_vertices=max(n, 5),
+                            radius=float(av.radius or max(abs(arr).max(), 1e-3)),
+                            **kwargs,
+                        )
+            elif av.nb_vertices and av.radius is not None:
+                body = pre.rigidPolyhedron(
+                    generation_type="regular",
+                    nb_vertices=int(av.nb_vertices),
+                    radius=float(av.radius),
+                    **kwargs,
+                )
+            else:
+                raise MaterializationError(
+                    f"rigidPolyhedron needs vertices (>4) or regular "
+                    f"nb_vertices+radius (avatar_id={av.avatar_id})"
+                )
         elif t in (
             AvatarType.SMOOTH_WALL, AvatarType.FINE_WALL, AvatarType.ROUGH_WALL,
             AvatarType.GRANULO_WALL,
@@ -583,6 +620,15 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
             continue
         sh = str(shape).upper()
         params = c.get("params") if isinstance(c.get("params"), dict) else {}
+        # RBDY3 cannot carry POLYG — promote to POLYR
+        if sh in ("POLYG", "POLYGX", "POLY"):
+            try:
+                dim = int(getattr(av, "dimension", None) or len(av.center or []))
+            except Exception:
+                dim = 2
+            if dim >= 3 or str(getattr(av.avatar_type, "value", av.avatar_type)).lower().find("polyhedron") >= 0:
+                shape = "POLYR"
+                sh = "POLYR"
 
         if sh in ("POLYG", "POLYGX", "POLY"):
             has_verts = (
