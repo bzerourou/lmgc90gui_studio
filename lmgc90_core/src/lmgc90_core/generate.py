@@ -260,6 +260,17 @@ class NumpyGranulo:
                 rr * sinth * np.sin(phi),
                 rr * costh,
             ])
+        if kind == "Cylinder3D":
+            R = float(p.get("r", p.get("R", 1.0)))
+            lz = float(p.get("lz", 1.0))
+            theta = rng.uniform(0, 2 * math.pi, n)
+            rr = R * np.sqrt(rng.uniform(0, 1, n))
+            z = rng.uniform(0.0, lz, n)
+            return np.column_stack([
+                rr * np.cos(theta),
+                rr * np.sin(theta),
+                z,
+            ])
         raise ValueError(f"unsupported container {kind!r}")
 
     def _inside(self, centers, radii, cfg: GranuloConfig) -> np.ndarray:
@@ -286,6 +297,11 @@ class NumpyGranulo:
             )
         if kind == "Sphere3D":
             return np.linalg.norm(centers, axis=1) + r <= p["r"]
+        if kind == "Cylinder3D":
+            R = float(p.get("r", p.get("R", 1.0)))
+            lz = float(p.get("lz", 1.0))
+            radial = np.linalg.norm(centers[:, :2], axis=1)
+            return (radial + r <= R) & (centers[:, 2] - r >= 0.0) & (centers[:, 2] + r <= lz)
         return np.ones(len(centers), dtype=bool)
 
     @staticmethod
