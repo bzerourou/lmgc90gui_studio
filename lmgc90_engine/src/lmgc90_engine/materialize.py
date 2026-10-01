@@ -148,24 +148,159 @@ def materialize_project(project: Project) -> MaterializedScene:
     return scene
 
 
+def _lmgc5(name: str, default: str = "XXXXX") -> str:
+    s = (name or default).strip()
+    if len(s) > 5:
+        s = s[:5]
+    if len(s) < 5:
+        s = s + ("x" * (5 - len(s)))
+    return s
+
+
+# pylmgc90.pre.material option aliases (GUI / schema → Fortran name)
+_MATERIAL_PROP_ALIASES: dict[str, dict[str, str]] = {
+    "ELAS_DILA": {"alpha": "dilatation"},
+    "ELAS_PLAS": {"sigc": "iso_hard", "hard": "isoh_coeff"},
+    "THERMO_ELAS": {"alpha": "dilatation", "capacity": "specific_capacity"},
+    "PORO_ELAS": {
+        "biot": "hydro_cpl",
+        "permeability": "conductivity",
+        "capacity": "specific_capacity",
+    },
+}
+
+_ORTHOTROPIC_FIELDS = (
+    "young1", "young2", "young3",
+    "nu12", "nu13", "nu23",
+    "G12", "G13", "G23",
+)
+
+_MATERIAL_OPTIONS = {
+    "RIGID": {"density"},
+    "ELAS": {"density", "elas", "anisotropy", "young", "nu", "G"},
+    "ELAS_DILA": {
+        "density", "elas", "anisotropy", "young", "nu", "dilatation", "T_ref_meca",
+    },
+    "VISCO_ELAS": {
+        "density", "elas", "anisotropy", "young", "nu", "viscous_model",
+        "viscous_young", "viscous_nu",
+    },
+    "ELAS_PLAS": {
+        "density", "elas", "anisotropy", "young", "nu", "critere", "isoh",
+        "iso_hard", "isoh_coeff", "cinh", "visc",
+    },
+    "THERMO_ELAS": {
+        "density", "elas", "anisotropy", "young", "nu", "dilatation", "T_ref_meca",
+        "conductivity", "specific_capacity", "therm_cpl",
+    },
+    "PORO_ELAS": {
+        "density", "elas", "anisotropy", "young", "nu", "hydro_cpl", "conductivity",
+        "specific_capacity",
+    },
+    "DISCRETE": {"masses", "stiffnesses", "viscosities"},
+    "USER_MAT": {"density", "file_mat"},
+    "EXTERNAL": set(),
+}
+
+_STALE_VISCOUS_OPTIONS = (
+    "eta", "viscosity",
+)
+
+
 def _make_material(pre, m: Material) -> Any:
-    kwargs = dict(
-        name=m.name,
-        materialType=m.material_type.value,
-        density=float(m.density),
+    mtype = m.material_type.value
+    allowed = _MATERIAL_OPTIONS.get(mtype, set())
+    kwargs: dict[str, Any] = dict(
+        name=_lmgc5(m.name),
+        materialType=mtype,
     )
-    kwargs.update(m.properties or {})
+    if "density" in allowed:
+        kwargs["density"] = float(m.density)
+    props = dict(m.properties or {})
+    aliases = _MATERIAL_PROP_ALIASES.get(mtype, {})
+
+    def _rename(src: dict) -> dict:
+        out = {}
+        for k, v in src.items():
+            key = aliases.get(k, k)
+            if k in aliases and key in src:
+                continue
+            if key in allowed:
+                out[key] = v
+        return out
+
+    aniso = str(props.get("anisotropy", "isotropic")).lower()
+    if mtype == "ELAS" and aniso in ("orthotropic", "ortho", "orthotrop"):
+        y1 = props.pop("young1", props.get("young", 2.1e11))
+        y2 = props.pop("young2", y1)
+        y3 = props.pop("young3", None)
+        n12 = props.pop("nu12", props.get("nu", 0.3))
+        n13 = props.pop("nu13", n12)
+        n23 = props.pop("nu23", n12)
+        g12 = props.pop("G12", props.pop("G", None))
+        g13 = props.pop("G13", g12)
+        g23 = props.pop("G23", g12)
+        props.pop("young", None)
+        props.pop("nu", None)
+        props.pop("G", None)
+        if y3 is not None:
+            kwargs["young"] = [float(y1), float(y2), float(y3)]
+            kwargs["nu"] = [float(n12), float(n13), float(n23)]
+            if g12 is not None:
+                kwargs["G"] = [float(g12), float(g13), float(g23)]
+        else:
+            kwargs["young"] = [float(y1), float(y2)]
+            kwargs["nu"] = [float(n12)]
+            if g12 is not None:
+                kwargs["G"] = [float(g12)]
+        kwargs["anisotropy"] = "orthotropic"
+        rest = {k: v for k, v in props.items() if k not in _ORTHOTROPIC_FIELDS and k != "anisotropy"}
+        kwargs.update(_rename(rest))
+    else:
+        for k in _ORTHOTROPIC_FIELDS:
+            props.pop(k, None)
+        if mtype != "ELAS":
+            for k in _STALE_VISCOUS_OPTIONS:
+                props.pop(k, None)
+            if "anisotropy" in allowed:
+                props["anisotropy"] = "isotropic"
+        elif "anisotropy" in props:
+            value = str(props["anisotropy"]).lower()
+            props["anisotropy"] = value if value in ("isotropic", "orthotropic") else "isotropic"
+        if props.get("elas") not in (None, "", "standard"):
+            if props.get("elas") not in ("Hookean", "HartSmith"):
+                props["elas"] = "standard"
+        kwargs.update(_rename(props))
+
+    if mtype == "DISCRETE":
+        for key in ("masses", "stiffnesses", "viscosities"):
+            value = kwargs.get(key)
+            if isinstance(value, str):
+                kwargs[key] = [float(part.strip()) for part in value.replace(";", ",").split(",") if part.strip()]
+
+    if mtype == "ELAS_DILA" and "dilatation" not in kwargs:
+        kwargs["dilatation"] = 1e-5
+
     return pre.material(**kwargs)
 
 
 def _make_model(pre, m: Model) -> Any:
-    kwargs = dict(
-        name=m.name,
+    dim = int(m.dimension)
+    if dim not in (2, 3):
+        raise MaterializationError(
+            f"model {m.name!r}: spatial dimension must be 2 or 3, got {dim!r}"
+        )
+    kwargs: dict[str, Any] = dict(
+        name=_lmgc5(m.name),
         physics=m.physics,
         element=m.element,
-        dimension=int(m.dimension),
+        dimension=dim,
     )
-    kwargs.update(m.options or {})
+    opts = dict(m.options or {})
+    # never let options overwrite dimension with a bad value
+    opts.pop("dimension", None)
+    kwargs.update(opts)
+    kwargs["dimension"] = dim
     return pre.model(**kwargs)
 
 

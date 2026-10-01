@@ -137,6 +137,8 @@ ELEMENTS_BY_PHYSICS = {
 }
 
 # Material-type → extra property fields (name, default, kind)
+# Base isotropic elastic keys + orthotropic extras (shown dynamically in GUI).
+# When anisotropy == "orthotropic", materialize packs young/nu/G as lists for pylmgc90.
 MATERIAL_PROPERTY_SCHEMA: dict[str, tuple[tuple[str, object, str], ...]] = {
     "RIGID": (),
     "ELAS": (
@@ -144,46 +146,92 @@ MATERIAL_PROPERTY_SCHEMA: dict[str, tuple[tuple[str, object, str], ...]] = {
         ("anisotropy", "isotropic", "str"),
         ("young", 2.1e11, "float"),
         ("nu", 0.3, "float"),
+        ("G", 8.076923e10, "float"),
+        ("young1", 2.1e11, "float"),
+        ("young2", 2.1e11, "float"),
+        ("young3", 2.1e11, "float"),
+        ("nu12", 0.3, "float"),
+        ("nu13", 0.3, "float"),
+        ("nu23", 0.3, "float"),
+        ("G12", 8.076923e10, "float"),
+        ("G13", 8.076923e10, "float"),
+        ("G23", 8.076923e10, "float"),
     ),
     "ELAS_DILA": (
         ("elas", "standard", "str"),
         ("anisotropy", "isotropic", "str"),
         ("young", 2.1e11, "float"),
         ("nu", 0.3, "float"),
-        ("alpha", 1e-5, "float"),
+        ("dilatation", 1e-5, "float"),
+        ("T_ref_meca", 20.0, "float"),
     ),
     "VISCO_ELAS": (
         ("elas", "standard", "str"),
+        ("anisotropy", "isotropic", "str"),
         ("young", 2.1e11, "float"),
         ("nu", 0.3, "float"),
-        ("eta", 1e6, "float"),
+        ("viscous_model", "KelvinVoigt", "str"),
+        ("viscous_young", 1e6, "float"),
+        ("viscous_nu", 0.3, "float"),
     ),
     "ELAS_PLAS": (
         ("elas", "standard", "str"),
+        ("anisotropy", "isotropic", "str"),
         ("young", 2.1e11, "float"),
         ("nu", 0.3, "float"),
-        ("sigc", 3e8, "float"),
-        ("hard", 0.0, "float"),
+        ("critere", "Von-Mises", "str"),
+        ("isoh", "linear", "str"),
+        ("iso_hard", 2.5e8, "float"),
+        ("isoh_coeff", 1e9, "float"),
+        ("cinh", "none", "str"),
+        ("visc", "none", "str"),
     ),
     "THERMO_ELAS": (
         ("elas", "standard", "str"),
+        ("anisotropy", "isotropic", "str"),
         ("young", 2.1e11, "float"),
         ("nu", 0.3, "float"),
-        ("alpha", 1e-5, "float"),
+        ("dilatation", 1e-5, "float"),
+        ("T_ref_meca", 20.0, "float"),
         ("conductivity", 50.0, "float"),
-        ("capacity", 500.0, "float"),
+        ("specific_capacity", 500.0, "float_or_field"),
     ),
     "PORO_ELAS": (
         ("elas", "standard", "str"),
+        ("anisotropy", "isotropic", "str"),
         ("young", 2.1e11, "float"),
         ("nu", 0.3, "float"),
-        ("permeability", 1e-12, "float"),
-        ("biot", 1.0, "float"),
+        ("hydro_cpl", 0.8, "float"),
+        ("conductivity", 1e-8, "float_or_field"),
+        ("specific_capacity", 1e-10, "float_or_field"),
     ),
-    "DISCRETE": (),
-    "USER_MAT": (),
+    "DISCRETE": (
+        ("masses", (1.0, 1.0, 1.0), "vector"),
+        ("stiffnesses", (1e5, 1e5, 1e5), "vector"),
+        ("viscosities", (0.0, 0.0, 0.0), "vector"),
+    ),
+    "USER_MAT": (("file_mat", "", "str"),),
     "EXTERNAL": (),
 }
+
+MATERIAL_PROPERTY_CHOICES: dict[str, tuple[str, ...]] = {
+    "elas": ("standard",),
+    "anisotropy": ("isotropic", "orthotropic"),
+    "viscous_model": ("none", "KelvinVoigt"),
+    "critere": ("Von-Mises", "none"),
+    "isoh": ("none", "Swift", "Hollomon", "linear"),
+    "cinh": ("none", "linear"),
+    "visc": ("none", "power_law"),
+}
+
+# Fields only relevant when anisotropy is orthotropic
+ORTHOTROPIC_FIELDS_2D = ("young1", "young2", "nu12", "G12")
+ORTHOTROPIC_FIELDS_3D = (
+    "young1", "young2", "young3",
+    "nu12", "nu13", "nu23",
+    "G12", "G13", "G23",
+)
+ISOTROPIC_FIELDS = ("young", "nu", "G")
 
 # Contact-law type → extra kwargs beyond name / law / fric
 CONTACT_LAW_PROPERTY_SCHEMA: dict[str, tuple[tuple[str, object, str], ...]] = {

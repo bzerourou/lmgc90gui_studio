@@ -320,12 +320,21 @@ def create_avatar_tab(parent=None):
         def _on_remove(self) -> None:
             if self.controller is None:
                 return
-            aid = self.tree.selected_payload() or getattr(self, "_editing_id", None)
+            aid = getattr(self, "_editing_id", None) or self.tree.selected_payload()
             if not aid:
+                QMessageBox.information(
+                    self, "Avatar",
+                    "Sélectionnez un avatar dans la liste avant de supprimer.",
+                )
                 return
             try:
-                self.controller.remove_avatar(aid)
+                self.controller.remove_avatar(str(aid))
                 self._editing_id = None
+                # clear form fields if helper exists
+                if hasattr(self, "_clear_form"):
+                    self._clear_form()
+                elif hasattr(self, "tree"):
+                    self.tree.clearSelection()
             except Exception as exc:
                 QMessageBox.warning(self, "Avatar", str(exc))
 

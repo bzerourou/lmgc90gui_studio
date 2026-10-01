@@ -245,7 +245,7 @@ def build_avatar(
         elif t == AvatarType.MESH_DEFORMABLE:
             body = _build_mesh(pre, av, mat, mod)
         elif t == AvatarType.EMPTY_AVATAR:
-            body = _build_empty_or_brick(pre, av, mat, mod)
+            body = _build_empty_avatar(pre, av, mat, mod)
         else:
             raise MaterializationError(f"unsupported avatar type: {t}")
     except MaterializationError:
@@ -259,88 +259,179 @@ def build_avatar(
     return body
 
 
-def _build_empty_or_brick(pre, av: Avatar, mat, mod) -> Any:
-    """Brick via ``pre.brick2D(...).rigidBrick`` (MVC), never bare emptyAvatar.
+def _build_empty_avatar(pre, av: Avatar, mat, mod) -> Any:
+    """Materialize ``emptyAvatar``.
 
-    ``pylmgc90.pre`` often has **no** ``emptyAvatar`` attribute — bricks must go
-    through brick2D. Falls back to a rectangular ``rigidPolygon`` if brick2D
-    is unavailable.
+    * **Brick path** only when ``wall_params`` has ``brick_name`` + size (masonry).
+    * **Otherwise** a real empty rigid shell (pylmgc ``emptyAvatar`` / ``avatar``),
+      then contactors are attached by ``_apply_contactors`` — never force brick2D.
     """
-    import numpy as np
+    wp = dict(av.wall_params or {})
+    has_brick = bool(wp.get("brick_name")) and (
+        wp.get("l") is not None
+        or wp.get("lx") is not None
+        or wp.get("h") is not None
+        or wp.get("ly") is not None
+    )
+    if has_brick:
+        return _build_brick2d(pre, av, mat, mod, wp)
 
-    wp = av.wall_params or {}
-    lx = wp.get("l") if wp.get("l") is not None else wp.get("lx")
-    ly = wp.get("h") if wp.get("h") is not None else wp.get("ly")
-    brick_name = str(wp.get("brick_name", "std"))
-    center = list(av.center)
-    color = av.color
+    center = list(av.center or [0.0, 0.0])
+    color = av.color or "BLUEx"
+    dim = 3 if len(center) >= 3 else 2
 
-    def _resolve_brick2d():
-        for obj in (pre, getattr(pre, "avatars", None), getattr(pre, "rigid", None)):
-            if obj is None:
+    # 1) native emptyAvatar if present
+    fn = getattr(pre, "emptyAvatar", None)
+    if callable(fn):
+        for kwargs in (
+            dict(center=center, model=mod, material=mat, color=color),
+            dict(model=mod, material=mat, color=color, center=center),
+            dict(model=mod, material=mat, color=color),
+            dict(model=mod, material=mat),
+        ):
+            try:
+                body = fn(**kwargs)
+                if body is not None:
+                    _try_translate(body, center)
+                    return body
+            except TypeError:
                 continue
-            fn = getattr(obj, "brick2D", None)
-            if callable(fn):
-                return fn
-        # some installs export brick2D at package root
+            except Exception:
+                break
+
+    # 2) pre.avatar(dimension, model) — classic composite rigid shell
+    avatar_fn = getattr(pre, "avatar", None)
+    if callable(avatar_fn):
+        body = None
+        for call in (
+            lambda: avatar_fn(dim, mod),
+            lambda: avatar_fn(dimension=dim, model=mod),
+            lambda: avatar_fn(mod),
+        ):
+            try:
+                body = call()
+                if body is not None:
+                    break
+            except TypeError:
+                continue
+            except Exception:
+                body = None
+                break
+        if body is not None:
+            for meth_name in ("defineMaterial", "addMaterial", "setMaterial"):
+                meth = getattr(body, meth_name, None)
+                if callable(meth):
+                    try:
+                        meth(mat)
+                        break
+                    except Exception:
+                        pass
+            _try_translate(body, center)
+            return body
+
+    # 3) rigidAvatar helpers
+    for name in ("rigidAvatar", "RigidAvatar"):
+        fn2 = getattr(pre, name, None)
+        if not callable(fn2):
+            continue
+        for kwargs in (
+            dict(model=mod, material=mat, dimension=dim, color=color),
+            dict(model=mod, material=mat, dimension=dim),
+            dict(mod, mat),
+        ):
+            try:
+                if isinstance(kwargs, dict):
+                    body = fn2(**kwargs)
+                else:
+                    body = fn2(*kwargs)
+                if body is not None:
+                    _try_translate(body, center)
+                    return body
+            except TypeError:
+                continue
+            except Exception:
+                break
+
+    raise MaterializationError(
+        f"emptyAvatar: pylmgc90.pre has no emptyAvatar/avatar factory "
+        f"(avatar_id={av.avatar_id}). Contactors alone cannot create a body."
+    )
+
+
+def _try_translate(body, center) -> None:
+    if not center or not hasattr(body, "translate"):
+        return
+    try:
+        body.translate(list(center))
+    except TypeError:
         try:
-            import pylmgc90.pre as pre_mod  # type: ignore
-            fn = getattr(pre_mod, "brick2D", None)
-            if callable(fn):
-                return fn
+            c = list(center)
+            if len(c) == 2:
+                c = c + [0.0]
+            body.translate(c)
         except Exception:
             pass
-        return None
+    except Exception:
+        pass
 
-    if lx is not None and ly is not None:
-        lx, ly = float(lx), float(ly)
-        brick2d = _resolve_brick2d()
-        if brick2d is not None:
-            brick = brick2d(brick_name, lx, ly)
-            rigid = getattr(brick, "rigidBrick", None)
-            if rigid is None:
-                raise MaterializationError(
-                    "brick2D object has no rigidBrick() — check pylmgc90 version"
-                )
-            try:
-                return rigid(center=center, model=mod, material=mat, color=color)
-            except TypeError:
-                return rigid(center, mod, mat, color)
 
-        # Fallback: rectangular polygon (still POLYG-capable)
-        hx, hy = lx / 2.0, ly / 2.0
-        cx, cy = float(center[0]), float(center[1])
-        verts = np.array([
-            [cx - hx, cy - hy],
-            [cx + hx, cy - hy],
-            [cx + hx, cy + hy],
-            [cx - hx, cy + hy],
-        ], dtype=float)
-        try:
-            return pre.rigidPolygon(
-                center=center, model=mod, material=mat, color=color, vertices=verts,
-            )
-        except TypeError:
-            return pre.rigidPolygon(
-                center=center, model=mod, material=mat, color=color,
-                generation_type="full", vertices=verts,
-            )
+def _build_brick2d(pre, av: Avatar, mat, mod, wp: dict) -> Any:
+    """Explicit masonry brick via pre.brick2D(...).rigidBrick — not generic emptyAvatar."""
+    import numpy as np
 
-    # Generic empty body if API exists
-    for name in ("emptyAvatar", "EmptyAvatar", "avatar"):
-        fn = getattr(pre, name, None)
+    lx = wp.get("l") if wp.get("l") is not None else wp.get("lx")
+    ly = wp.get("h") if wp.get("h") is not None else wp.get("ly")
+    if lx is None or ly is None:
+        raise MaterializationError("brick wall_params need l/h or lx/ly")
+    lx, ly = float(lx), float(ly)
+    brick_name = str(wp.get("brick_name", "std"))
+    center = list(av.center or [0.0, 0.0])
+    color = av.color or "BLUEx"
+
+    brick2d = None
+    for obj in (pre, getattr(pre, "avatars", None), getattr(pre, "rigid", None)):
+        if obj is None:
+            continue
+        fn = getattr(obj, "brick2D", None)
         if callable(fn):
-            try:
-                return fn(model=mod, material=mat)
-            except TypeError:
-                try:
-                    return fn(mod, mat)
-                except Exception:
-                    continue
-    raise MaterializationError(
-        "cannot build EMPTY_AVATAR: no brick2D/rigidBrick and no emptyAvatar in pylmgc90.pre; "
-        "set wall_params l/h (brick size) for masonry bricks"
-    )
+            brick2d = fn
+            break
+    if brick2d is None:
+        try:
+            import pylmgc90.pre as pre_mod  # type: ignore
+            brick2d = getattr(pre_mod, "brick2D", None)
+        except Exception:
+            brick2d = None
+
+    if callable(brick2d):
+        brick = brick2d(brick_name, lx, ly)
+        rigid = getattr(brick, "rigidBrick", None)
+        if rigid is None:
+            raise MaterializationError("brick2D object has no rigidBrick()")
+        try:
+            return rigid(center=center, model=mod, material=mat, color=color)
+        except TypeError:
+            return rigid(center, mod, mat, color)
+
+    # Fallback rectangle as rigidPolygon (still not emptyAvatar semantics)
+    hx, hy = lx / 2.0, ly / 2.0
+    cx, cy = float(center[0]), float(center[1])
+    verts = np.array([
+        [cx - hx, cy - hy],
+        [cx + hx, cy - hy],
+        [cx + hx, cy + hy],
+        [cx - hx, cy + hy],
+    ], dtype=float)
+    try:
+        return pre.rigidPolygon(
+            center=center, model=mod, material=mat, color=color, vertices=verts,
+        )
+    except TypeError:
+        return pre.rigidPolygon(
+            center=center, model=mod, material=mat, color=color,
+            generation_type="full", vertices=verts,
+        )
+
 
 
 

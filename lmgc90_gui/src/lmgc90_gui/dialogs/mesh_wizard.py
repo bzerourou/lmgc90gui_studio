@@ -38,11 +38,11 @@ _MAT_DEFAULTS = {
     "ELAS": {"elas": "standard", "young": 70e9, "nu": 0.3, "anisotropy": "isotropic"},
     "ELAS_DILA": {
         "elas": "standard", "young": 70e9, "nu": 0.3, "anisotropy": "isotropic",
-        "alpha": 1e-5,
+        "dilatation": 1e-5,
     },
     "VISCO_ELAS": {
         "elas": "standard", "young": 1.17e11, "nu": 0.35, "anisotropy": "isotropic",
-        "eta": 1e6,
+        "viscosity": 1e6,
     },
     "ELAS_PLAS": {
         "elas": "standard", "young": 1.17e11, "nu": 0.35, "anisotropy": "isotropic",
@@ -50,7 +50,7 @@ _MAT_DEFAULTS = {
     },
     "THERMO_ELAS": {
         "elas": "standard", "young": 70e9, "nu": 0.3, "anisotropy": "isotropic",
-        "alpha": 1e-5, "conductivity": 50.0, "capacity": 500.0,
+        "dilatation": 1e-5, "conductivity": 50.0, "capacity": 500.0,
     },
     "PORO_ELAS": {
         "elas": "standard", "young": 70e9, "nu": 0.3, "anisotropy": "isotropic",

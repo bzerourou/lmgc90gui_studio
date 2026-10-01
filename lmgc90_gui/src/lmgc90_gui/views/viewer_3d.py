@@ -512,7 +512,7 @@ def _mesh_empty_avatar(av: Avatar) -> pv.PolyData:
     wp = av.wall_params or {}
 
     # ── Brique maçonnerie ────────────────────────────────────────────────────
-    if wp and 'brick_name' in wp or (wp and not av.contactors):
+    if wp and wp.get('brick_name') and (wp.get('l') is not None or wp.get('lx') is not None or wp.get('h') is not None or wp.get('ly') is not None):
         lx = float(wp.get('lx', wp.get('l', 0.20)))
         ly = float(wp.get('ly', wp.get('h', 0.065)))
         lz = float(wp.get('lz', ly))

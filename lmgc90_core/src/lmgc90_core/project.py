@@ -185,6 +185,9 @@ class Project:
 
     def remove_avatar(self, avatar_id: str) -> Avatar:
         av = self.avatar(avatar_id)
+        self._run(RemoveAvatar(av))
+        return av
+
     def deposit(self, config: GranuloConfig) -> ParticlePopulation | None:
         """Place particles (SoA) or sample radii only if ``create_avatars`` is False."""
         if not getattr(config, "create_avatars", True):
