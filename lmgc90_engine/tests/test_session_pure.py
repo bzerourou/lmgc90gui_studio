@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -78,3 +79,33 @@ def test_materialize_raises_without_pylmgc():
 def test_available_bool():
     s = EngineSession(_tiny_project())
     assert isinstance(s.available(), bool)
+
+
+def test_visu_avatars_skips_bodies_without_drawable_geometry(monkeypatch):
+    no_node_body = SimpleNamespace(nodes={}, atype="RBDY2", contactors=[])
+    empty_rigid_body = SimpleNamespace(nodes={1: object()}, atype="RBDY2", contactors=[])
+    drawable_body = SimpleNamespace(
+        nodes={1: object()}, atype="RBDY2", contactors=[object()],
+    )
+    scene = SimpleNamespace(
+        bodies_container=[no_node_body, empty_rigid_body, drawable_body],
+    )
+    session = EngineSession(Project(name="visu"))
+    monkeypatch.setattr(session, "materialize", lambda *, force=False: scene)
+
+    calls = []
+
+    class FakePre:
+        def visuAvatars(self, bodies):
+            calls.append(list(bodies))
+
+    monkeypatch.setattr("lmgc90_engine.materialize._pre", lambda: FakePre())
+
+    assert session.visu_avatars() == 2
+    assert calls == [[drawable_body]]
+
+    session.materialize = lambda *, force=False: SimpleNamespace(
+        bodies_container=[empty_rigid_body],
+    )
+    assert session.visu_avatars() == 1
+    assert calls == [[drawable_body]]

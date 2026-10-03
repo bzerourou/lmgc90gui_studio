@@ -96,11 +96,13 @@ class EngineSession:
         self._dirty = True
 
     # ------------------------------------------------------------------ I/O
-    def visu_avatars(self, *, force: bool = True) -> None:
+    def visu_avatars(self, *, force: bool = True) -> int:
         """Materialize live pylmgc bodies and call ``pre.visuAvatars(bodies)``.
 
-        Opens the native pylmgc90 / VTK-style viewer (same as legacy GUI).
-        Requires an interactive display and ``pylmgc90`` installed.
+        Opens the native pylmgc90 / VTK-style viewer and requires an interactive
+        display with ``pylmgc90`` installed.
+        Bodies without nodes or without drawable rigid contactors are omitted.
+        Returns the number of omitted bodies.
         """
         scene = self.materialize(force=force)
         from .materialize import _pre
@@ -108,16 +110,31 @@ class EngineSession:
         bodies = scene.bodies_container
         if bodies is None:
             raise RuntimeError("no bodies container after materialize")
+        body_list = list(bodies)
+        drawable_bodies = [
+            body for body in body_list
+            if len(body.nodes) > 0
+            and (
+                body.atype not in ("RBDY2", "RBDY3")
+                or len(body.contactors) > 0
+            )
+        ]
+        skipped_count = len(body_list) - len(drawable_bodies)
+        if not drawable_bodies:
+            return skipped_count
         # API: pre.visuAvatars(avatars) — container or list
         try:
-            pre.visuAvatars(bodies)
+            pre.visuAvatars(bodies if skipped_count == 0 else drawable_bodies)
         except TypeError:
-            # some builds expect a list
-            try:
-                lst = list(bodies)
-            except TypeError:
-                lst = [scene.body_by_avatar_id[k] for k in scene.body_by_avatar_id]
-            pre.visuAvatars(lst)
+            if skipped_count == 0:
+                pre.visuAvatars(body_list)
+            else:
+                # Some builds require the pylmgc avatars container rather than a list.
+                filtered_bodies = pre.avatars()
+                for body in drawable_bodies:
+                    filtered_bodies.addAvatar(body)
+                pre.visuAvatars(filtered_bodies)
+        return skipped_count
 
     def write_datbox(self, path: Union[str, Path]) -> Path:
         """Materialize if needed, then pre.writeDatbox."""

@@ -256,6 +256,10 @@ def build_avatar(
         ) from exc
 
     _apply_contactors(body, av)
+    if t == AvatarType.EMPTY_AVATAR and av.contactors:
+        compute_properties = getattr(body, "computeRigidProperties", None)
+        if callable(compute_properties):
+            compute_properties()
     return body
 
 
@@ -304,9 +308,8 @@ def _build_empty_avatar(pre, av: Avatar, mat, mod) -> Any:
     if callable(avatar_fn):
         body = None
         for call in (
-            lambda: avatar_fn(dim, mod),
-            lambda: avatar_fn(dimension=dim, model=mod),
-            lambda: avatar_fn(mod),
+            lambda: avatar_fn(dim),
+            lambda: avatar_fn(dimension=dim),
         ):
             try:
                 body = call()
@@ -318,15 +321,19 @@ def _build_empty_avatar(pre, av: Avatar, mat, mod) -> Any:
                 body = None
                 break
         if body is not None:
-            for meth_name in ("defineMaterial", "addMaterial", "setMaterial"):
-                meth = getattr(body, meth_name, None)
-                if callable(meth):
-                    try:
-                        meth(mat)
-                        break
-                    except Exception:
-                        pass
-            _try_translate(body, center)
+            import numpy as np
+
+            bulk_factory = getattr(pre, "rigid2d" if dim == 2 else "rigid3d", None)
+            if not callable(bulk_factory):
+                raise MaterializationError(
+                    f"emptyAvatar: pylmgc90.pre has no rigid{dim}d bulk factory "
+                    f"(avatar_id={av.avatar_id})"
+                )
+            body.addBulk(bulk_factory())
+            body.addNode(pre.node(coor=np.asarray(center, dtype=float), number=1))
+            body.defineGroups()
+            body.defineModel(model=mod)
+            body.defineMaterial(material=mat)
             return body
 
     # 3) rigidAvatar helpers
@@ -449,8 +456,8 @@ def _build_wall_2d(pre, av: Avatar, mat, mod) -> Any:
         )
     if t == AvatarType.FINE_WALL:
         return pre.fineWall(
-            l=float(wp.get("l", 1.0)), h=float(wp.get("h", 0.1)),
-            rmin=float(wp.get("rmin", 0.01)), rmax=float(wp.get("rmax", 0.02)),
+            l=float(wp.get("l", 1.0)), r=float(wp.get("r", 0.02)),
+            nb_vertex=int(wp.get("nb_vertex", 10)),
             **common,
         )
     if t == AvatarType.ROUGH_WALL:
@@ -466,8 +473,9 @@ def _build_wall_2d(pre, av: Avatar, mat, mod) -> Any:
     if fn is None:
         raise MaterializationError("pylmgc90 has no granuloRoughWall")
     return fn(
-        l=float(wp.get("l", 1.0)), h=float(wp.get("h", 0.1)),
+        l=float(wp.get("l", 1.0)),
         rmin=float(wp.get("rmin", 0.01)), rmax=float(wp.get("rmax", 0.02)),
+        nb_vertex=int(wp.get("nb_vertex", 10)),
         **common,
     )
 
@@ -690,9 +698,7 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
 def _apply_contactors(body: Any, av: Avatar) -> None:
     """Attach contactors listed on the core Avatar.
 
-    Skip incomplete POLYG / JONCx / DNLYC already created by constructors.
-    Meshed contactors (CLxxx, ALpxx, …) need a coherent *group* of elements;
-    failures are swallowed so materialize / visuAvatars still succeed.
+    Meshed contactors (CLxxx, ALpxx, …) need a coherent *group* of elements.
     """
     _MESH_SHAPES = {
         "CLXXX", "ALPXX", "CSPXX", "ASPXX", "PT2DX", "PT3DX", "CL3xx", "AS3xx",
@@ -702,7 +708,8 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
     }
     _ALLOWED_RIGID_KW = {
         "color", "byrd", "shift", "axe1", "axe2", "axe3", "nb_vertices",
-        "vertices", "r", "radius", "reverse",
+        "nb_faces", "connectivity", "vertices", "r", "radius", "High",
+        "reverse", "area", "volume", "I", "frame",
     }
 
     for c in av.contactors or []:
@@ -710,7 +717,7 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
         if not shape:
             continue
         sh = str(shape).upper()
-        params = c.get("params") if isinstance(c.get("params"), dict) else {}
+        params = dict(c.get("params")) if isinstance(c.get("params"), dict) else {}
         # RBDY3 cannot carry POLYG — promote to POLYR
         if sh in ("POLYG", "POLYGX", "POLY"):
             try:
@@ -721,33 +728,24 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
                 shape = "POLYR"
                 sh = "POLYR"
 
-        if sh in ("POLYG", "POLYGX", "POLY"):
-            has_verts = (
-                c.get("vertices") is not None
-                or params.get("vertices") is not None
-                or c.get("nb_vertices") is not None
-                or params.get("nb_vertices") is not None
-            )
-            if not has_verts:
-                continue
-        if sh in ("JONCX", "JONC"):
-            has_axes = (
-                c.get("axe1") is not None
-                or params.get("axe1") is not None
-                or c.get("axe2") is not None
-                or params.get("axe2") is not None
-            )
-            if not has_axes:
-                continue
-        if sh in ("DNLYC", "CYLND") and set(c.keys()) <= {"shape", "color", "params"}:
-            if not params:
-                continue
-        if sh in ("DISKX", "SPHER", "XKSID") and c.get("byrd") is None and params.get("byrd") is None:
-            if set(c.keys()) <= {"shape", "color", "params"} and not params:
-                continue
-
         raw = {k: v for k, v in c.items() if k not in ("shape", "params")}
         raw.update(params)
+        raw = _resolve_polygon_contactors(shape, sh, raw, av)
+
+        required_options = {
+            "DISKX": ("byrd",), "XKSID": ("byrd",), "SPHER": ("byrd",),
+            "JONCX": ("axe1", "axe2"), "JONC": ("axe1", "axe2"),
+            "POLYG": ("nb_vertices", "vertices"),
+            "POLYR": ("nb_vertices", "vertices", "nb_faces", "connectivity"),
+            "CYLND": ("High", "byrd"), "DNLYC": ("High", "byrd"),
+            "PLANX": ("axe1", "axe2", "axe3"),
+        }
+        missing = [key for key in required_options.get(sh, ()) if raw.get(key) is None]
+        if missing:
+            raise MaterializationError(
+                f"{shape} contactor needs {', '.join(missing)} "
+                f"(avatar_id={av.avatar_id})"
+            )
 
         is_mesh = sh in _MESH_SHAPES
         if is_mesh:
@@ -756,28 +754,125 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
             # group required for CLxxx/ALpxx on meshed avatars
             if "group" not in kwargs or not kwargs.get("group"):
                 # try common boundary names as last resort
+                added = False
+                last_error = None
                 for gname in ("up", "down", "left", "right", "top", "bottom", "all"):
                     try:
                         body.addContactors(shape=shape, group=gname, **{
                             k: v for k, v in kwargs.items() if k != "group"
                         })
+                        added = True
                         break
-                    except Exception:
+                    except Exception as exc:
+                        last_error = exc
                         continue
+                if not added:
+                    raise MaterializationError(
+                        f"could not add {shape} contactor to avatar_id={av.avatar_id}: "
+                        f"{last_error}"
+                    ) from last_error
                 continue
         else:
-            kwargs = {k: v for k, v in raw.items() if k in _ALLOWED_RIGID_KW or k in raw}
+            kwargs = {k: v for k, v in raw.items() if k in _ALLOWED_RIGID_KW}
 
         try:
             body.addContactors(shape=shape, **kwargs)
-        except Exception:
+        except Exception as exc:
+            raise MaterializationError(
+                f"could not add {shape} contactor to avatar_id={av.avatar_id}: {exc}"
+            ) from exc
+
+
+def _resolve_polygon_contactors(shape, shape_key: str, options: dict, av: Avatar) -> dict:
+    """Translate the GUI's regular/full polygon choices to contactorFactory options."""
+    generation_type = options.pop("generation_type", None)
+    if shape_key == "POLYG":
+        if generation_type == "regular":
+            import math
+
+            count = int(options.get("nb_vertices", 0))
+            radius = float(options.get("radius", 0.0))
+            if count < 3 or radius <= 0:
+                raise MaterializationError(
+                    f"regular POLYG needs nb_vertices >= 3 and radius > 0 "
+                    f"(avatar_id={av.avatar_id})"
+                )
+            options["vertices"] = [
+                [
+                    radius * math.cos(2 * math.pi * index / count),
+                    radius * math.sin(2 * math.pi * index / count),
+                ]
+                for index in range(count)
+            ]
+            options.pop("radius", None)
+        elif generation_type == "full":
+            vertices = options.get("vertices")
+            if vertices is None or len(vertices) < 3:
+                raise MaterializationError(
+                    f"full POLYG needs at least 3 vertices (avatar_id={av.avatar_id})"
+                )
+            options["nb_vertices"] = len(vertices)
+        if shape_key == "POLYG":
+            _offset_contactor_vertices(options, 2)
+            options.pop("generation_type", None)
+
+    elif shape_key == "POLYR":
+        if generation_type == "regular":
+            count = int(options.get("nb_vertices", 0))
+            radius = float(options.get("radius", 0.0))
+            if count < 4 or radius <= 0:
+                raise MaterializationError(
+                    f"regular POLYR needs nb_vertices >= 4 and radius > 0 "
+                    f"(avatar_id={av.avatar_id})"
+                )
             try:
-                body.addContactors(shape=shape, **{
-                    k: v for k, v in kwargs.items() if k in ("group", "color")
-                })
-            except Exception:
-                # never abort materialize for contactor glue
-                pass
+                from pylmgc90 import pre
+
+                vertices = pre.getRegularPolyhedronVertices(count, radius)
+                faces, vertices = pre.buildPolyhedronConnectivity(vertices)
+            except Exception as exc:
+                raise MaterializationError(
+                    f"could not generate regular POLYR contactor "
+                    f"(avatar_id={av.avatar_id}): {exc}"
+                ) from exc
+            options["vertices"] = vertices
+            options["nb_vertices"] = len(vertices)
+            options["connectivity"] = faces
+            options["nb_faces"] = len(faces)
+            options.pop("radius", None)
+        elif generation_type == "full":
+            vertices = options.get("vertices")
+            connectivity = options.get("connectivity")
+            if vertices is None or len(vertices) < 4:
+                raise MaterializationError(
+                    f"full POLYR needs at least 4 vertices (avatar_id={av.avatar_id})"
+                )
+            if not connectivity:
+                raise MaterializationError(
+                    f"full POLYR needs triangular connectivity (avatar_id={av.avatar_id})"
+                )
+            options["nb_vertices"] = len(vertices)
+            options["nb_faces"] = len(connectivity)
+        if shape_key == "POLYR":
+            _offset_contactor_vertices(options, 3)
+            options.pop("generation_type", None)
+    return options
+
+
+def _offset_contactor_vertices(options: dict, dimension: int) -> None:
+    """Apply the user shift to vertices; LMGC90 computes a polygon's own centroid."""
+    shift = options.pop("shift", None)
+    vertices = options.get("vertices")
+    if shift is None or vertices is None:
+        return
+    if len(shift) != dimension:
+        raise MaterializationError(
+            f"polygon shift must contain {dimension} coordinates"
+        )
+    options["vertices"] = [
+        [float(coordinate) + float(shift[axis]) for axis, coordinate in enumerate(vertex)]
+        for vertex in vertices
+    ]
 
 
 def build_population_bodies(

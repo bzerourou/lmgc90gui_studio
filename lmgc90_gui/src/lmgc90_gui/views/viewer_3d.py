@@ -316,7 +316,7 @@ def _mesh_rigid_cluster(av: Avatar) -> pv.PolyData:
     meshes = []
     for cont in (av.contactors or []):
         shape = cont.get('shape', '').upper()
-        if shape.startswith('DISK') or shape.startswith('CLxx'):
+        if shape.startswith('DISK') or shape.startswith('XKSID') or shape.startswith('CLXX'):
             cc = _as3(cont.get('center', av.center))
             r  = float(cont.get('radius', av.radius or 0.05))
             d  = pv.Circle(radius=r, resolution=32)
@@ -528,37 +528,91 @@ def _mesh_empty_avatar(av: Avatar) -> pv.PolyData:
     meshes = []
     for cont in (av.contactors or []):
         shape = cont.get('shape', '').upper()
-        cc    = _as3(cont.get('center', c))
+        params = cont.get('params') if isinstance(cont.get('params'), dict) else cont
+        cc = _as3(cont.get('center', c))
+        shift = params.get('shift', cont.get('shift'))
+        if shift is not None:
+            shift3 = _as3(shift)
+            cc = [cc[i] + shift3[i] for i in range(3)]
 
         if shape.startswith('DISK') or shape.startswith('CLxx'):
-            r = float(cont.get('radius', 0.05))
+            r = float(params.get('byrd', params.get('r', params.get('radius', 0.05))))
             d = pv.Circle(radius=r, resolution=32)
             d.points += np.array(cc)
             meshes.append(_extrude(d, _extrude_h(r)))
 
-        elif shape.startswith('POLYR') or shape.startswith('CLALp') or shape.startswith('POLYG'):
-            verts = cont.get('vertices', [])
+        elif shape.startswith('POLYG'):
+            verts = params.get('vertices', [])
+            if params.get('generation_type') == 'regular':
+                count = int(params.get('nb_vertices', 0))
+                radius = float(params.get('radius', 0.0))
+                if count >= 3 and radius > 0:
+                    angles = np.linspace(0.0, 2 * math.pi, count, endpoint=False)
+                    verts = [
+                        [radius * math.cos(angle), radius * math.sin(angle)]
+                        for angle in angles
+                    ]
             if len(verts) >= 3:
-                pts  = np.array([_as3(v, cc[2]) for v in verts])
+                pts = np.array([
+                    [cc[0] + float(v[0]), cc[1] + float(v[1]), cc[2]]
+                    for v in verts
+                ])
                 poly = pv.PolyData(pts, _polygon_face(len(pts)))
                 meshes.append(_extrude(poly, _extrude_h(0.1)))
 
+        elif shape.startswith('POLYR'):
+            verts = params.get('vertices', [])
+            connectivity = params.get('connectivity', [])
+            if params.get('generation_type') == 'regular':
+                try:
+                    from pylmgc90 import pre
+                except ImportError:
+                    count = int(params.get('nb_vertices', 8))
+                    radius = float(params.get('radius', 0.1))
+                    meshes.append(pv.Sphere(
+                        center=cc, radius=radius,
+                        theta_resolution=max(4, min(count, 24)),
+                        phi_resolution=max(4, min(count // 2, 16)),
+                    ))
+                    continue
+                count = int(params.get('nb_vertices', 0))
+                radius = float(params.get('radius', 0.0))
+                if count >= 4 and radius > 0:
+                    verts = pre.getRegularPolyhedronVertices(count, radius)
+                    connectivity, verts = pre.buildPolyhedronConnectivity(verts)
+            if len(verts) >= 4 and len(connectivity) > 0:
+                pts = np.array([_as3(v) for v in verts]) + np.array(cc)
+                faces = []
+                for face in connectivity:
+                    faces.extend([len(face), *(int(index) - 1 for index in face)])
+                meshes.append(pv.PolyData(pts, np.asarray(faces, dtype=np.int64)).extract_surface())
+
         elif shape.startswith('SPHER'):
-            r = float(cont.get('radius', 0.05))
+            r = float(params.get('byrd', params.get('r', params.get('radius', 0.05))))
             meshes.append(pv.Sphere(center=cc, radius=r,
                                     theta_resolution=16, phi_resolution=16))
 
-        elif shape.startswith('CYLND'):
-            r = float(cont.get('radius', 0.05))
-            h = float(cont.get('height', r * 2))
+        elif shape.startswith('CYLND') or shape.startswith('DNLYC'):
+            r = float(params.get('byrd', params.get('r', params.get('radius', 0.05))))
+            h = float(params.get('height', 2 * params.get('High', r)))
             meshes.append(pv.Cylinder(center=cc, radius=r, height=h,
                                       direction=(0, 0, 1)))
 
         elif shape.startswith('JONCx') or shape.startswith('JONC'):
-            a = float(cont.get('axe1', 0.1))
-            b = float(cont.get('axe2', 0.05))
+            a = float(params.get('axe1', cont.get('axe1', 0.1)))
+            b = float(params.get('axe2', cont.get('axe2', 0.05)))
             meshes.append(_extrude(_ellipse_poly(cc[0], cc[1], cc[2], a, b),
                                    _extrude_h(max(a, b))))
+
+        elif shape.startswith('PLAN'):
+            a1 = float(params.get('axe1', 0.5))
+            a2 = float(params.get('axe2', 0.5))
+            a3 = float(params.get('axe3', 0.05))
+            meshes.append(pv.Box(bounds=[
+                cc[0] - a1, cc[0] + a1,
+                cc[1] - a2, cc[1] + a2,
+                cc[2] - a3, cc[2] + a3,
+            ]))
 
         elif shape.startswith('PT2D') or shape.startswith('PT3D') or shape.startswith('NODE'):
             # Point contacteur : petite sphère
@@ -1716,12 +1770,16 @@ class Viewer3D(QWidget):
             self.actors[index]       = surf_actor
             self._orig_colors[index] = color
 
-            # Afficher les groupes de contacteurs si disponibles
+            # Mark boundaries associated with contactors from either supported
+            # project representation.
             mp = avatar.mesh_params or {}
-            for cont in mp.get('contactors', []):
+            mesh_contactors = list(avatar.contactors or []) + list(
+                mp.get('contactors', []) or []
+            )
+            if mesh_contactors:
+                cont = mesh_contactors[0]
                 cont_color = _lmgc_color(cont.get('color', 'GREEx'))
                 try:
-                    # Sélectionner les faces de bord
                     edges_mesh = mesh.extract_feature_edges(
                         feature_angle=30, boundary_edges=True,
                         non_manifold_edges=False, feature_edges=False,

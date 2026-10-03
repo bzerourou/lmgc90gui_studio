@@ -34,6 +34,27 @@ def test_scene_geometry_avatars_and_pop():
     assert any(s.label == "smoothWall" for s in geom.segments)
 
 
+def test_empty_avatar_contactor_uses_lmgc_radius_and_shift():
+    ctrl = ProjectController()
+    ctrl.new_project("empty-contactor", dimension=2)
+    ctrl.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    ctrl.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    avatar = pre.emptyAvatar(
+        center=[0.0, 0.0], model="rigid", material="STEEL", color="BLUEx",
+    )
+    avatar.contactors.append({
+        "shape": "DISKx",
+        "color": "BLUEx",
+        "params": {"byrd": 0.25, "shift": [0.5, 0.0]},
+    })
+    ctrl.add(avatar)
+
+    geometry = build_scene_geometry(ctrl.project)
+    contact_disc = next(d for d in geometry.discs if d.label.endswith("/DISKX"))
+    assert contact_disc.radius == 0.25
+    assert contact_disc.center == (0.5, 0.0)
+
+
 def test_history_describe_stack():
     ctrl = ProjectController()
     ctrl.new_project("h", dimension=2)

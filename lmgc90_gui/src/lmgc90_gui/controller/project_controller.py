@@ -465,8 +465,14 @@ class ProjectController(_QObject):
     def visu_avatars(self, *, force: bool = True) -> None:
         """Materialize pylmgc bodies then ``pre.visuAvatars(bodies)`` (native viewer)."""
         try:
-            self._session.visu_avatars(force=force)
-            self.journal.info("visuAvatars opened")
+            skipped = self._session.visu_avatars(force=force)
+            if skipped:
+                self.journal.warning(
+                    f"visuAvatars omitted {skipped} avatar(s) without drawable geometry; "
+                    "add at least one contactor to make an empty avatar visible"
+                )
+            else:
+                self.journal.info("visuAvatars opened")
         except Exception as exc:
             self._notify_error(str(exc))
             self.journal.exception("visuAvatars failed", exc)

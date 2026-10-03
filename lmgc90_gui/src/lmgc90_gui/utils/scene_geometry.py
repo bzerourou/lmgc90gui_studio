@@ -188,24 +188,49 @@ def avatar_to_geoms(
         discs.append(DiscGeom(c, mark * 0.35, col, label, "avatar", aid))
         for ct in (av.contactors or []):
             shape = (ct.get("shape") or ct.get("type") or "").upper()
-            params = ct.get("params") or ct
+            params = ct.get("params") if isinstance(ct.get("params"), dict) else ct
+            contact_center = list(c)
+            shift = params.get("shift", ct.get("shift"))
+            if shift is not None:
+                for axis, offset in enumerate(shift[:dim]):
+                    contact_center[axis] += float(offset)
+            contact_center = _as_tuple(contact_center, dim)
             ccol = color_rgb(ct.get("color") or av.color)
-            if shape in ("DISKX", "DISKx", "SPHER"):
-                rr = float(params.get("r") or params.get("radius") or 0.05)
-                discs.append(DiscGeom(c, rr, ccol, f"{label}/{shape}", "avatar", aid))
+            if shape in ("DISKX", "XKSID", "SPHER"):
+                rr = float(
+                    params.get("byrd") or params.get("r")
+                    or params.get("radius") or 0.05
+                )
+                discs.append(DiscGeom(
+                    contact_center, rr, ccol, f"{label}/{shape}", "avatar", aid,
+                ))
             elif shape in ("JONCX", "JONCx"):
                 a1 = float(params.get("axe1") or 0.1)
                 a2 = float(params.get("axe2") or 0.02)
-                z = (c[2],) if dim >= 3 and len(c) > 2 else ()
+                cc = list(contact_center) + [0.0] * (3 - dim)
+                z = (cc[2],) if dim >= 3 else ()
                 corners = [
-                    (c[0] - a1, c[1] - a2) + z,
-                    (c[0] + a1, c[1] - a2) + z,
-                    (c[0] + a1, c[1] + a2) + z,
-                    (c[0] - a1, c[1] + a2) + z,
+                    (cc[0] - a1, cc[1] - a2) + z,
+                    (cc[0] + a1, cc[1] - a2) + z,
+                    (cc[0] + a1, cc[1] + a2) + z,
+                    (cc[0] - a1, cc[1] + a2) + z,
                 ]
                 polys.append(PolygonGeom(
                     [_as_tuple(p, dim) for p in corners], ccol, f"{label}/{shape}", aid, False,
                 ))
+            elif shape == "POLYG":
+                vertices = params.get("vertices") or []
+                if len(vertices) >= 3:
+                    points = [
+                        _as_tuple(
+                            [contact_center[i] + float(vertex[i]) for i in range(dim)],
+                            dim,
+                        )
+                        for vertex in vertices
+                    ]
+                    polys.append(PolygonGeom(
+                        points, ccol, f"{label}/{shape}", aid, False,
+                    ))
     else:
         discs.append(DiscGeom(c, max(r, 0.02), col, label, "avatar", aid))
     return discs, segs, polys

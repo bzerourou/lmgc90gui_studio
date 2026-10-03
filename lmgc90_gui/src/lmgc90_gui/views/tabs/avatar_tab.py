@@ -20,6 +20,16 @@ def create_avatar_tab(parent=None):
         def __init__(self, parent=None):
             super().__init__(parent)
             self._param_widgets: dict = {}
+            self._param_type_key: str | None = None
+            self._rendered_generation_type: str | None = None
+            self._generation_mode_by_type = {
+                "rigidPolygon": "regular",
+                "rigidPolyhedron": "regular",
+            }
+            self._generation_param_values: dict[
+                tuple[str, str], dict[str, object]
+            ] = {}
+            self._generation_checkbox = None
             layout = QVBoxLayout(self)
             layout.addWidget(__import__("PyQt6.QtWidgets", fromlist=["QLabel"]).QLabel("Avatars — sélectionnez pour modifier"))
             self.tree = create_entity_tree(
@@ -92,12 +102,40 @@ def create_avatar_tab(parent=None):
             self._rebuild_params()
 
         def _rebuild_params(self, *_a) -> None:
+            self._save_generation_param_values()
             clear_layout(self.params_form)
             self._param_widgets.clear()
             atype = self.type_combo.currentData()
             key = atype.value if atype else "rigidDisk"
             schema = AVATAR_PARAM_SCHEMA.get(key, ())
+
+            generation_type = self._generation_mode_by_type.get(key)
+            if generation_type is not None:
+                self._generation_checkbox = QCheckBox("Regular generation")
+                self._generation_checkbox.setChecked(generation_type == "regular")
+                self._generation_checkbox.toggled.connect(
+                    lambda checked, selected_key=key:
+                    self._on_generation_toggled(selected_key, checked)
+                )
+                self.params_form.addRow("Generation", self._generation_checkbox)
+                fields = (
+                    {"nb_vertices", "radius"}
+                    if generation_type == "regular"
+                    else {"vertices"}
+                )
+                schema = tuple(
+                    field for field in schema if field[0] in fields
+                )
+                self._rendered_generation_type = generation_type
+            else:
+                self._generation_checkbox = None
+                self._rendered_generation_type = None
+
             for name, default, kind in schema:
+                if generation_type is not None:
+                    default = self._generation_param_values.get(
+                        (key, generation_type), {}
+                    ).get(name, default)
                 if kind == "float":
                     w = QLineEdit(str(default))
                     w.setPlaceholderText("number or expression")
@@ -111,7 +149,30 @@ def create_avatar_tab(parent=None):
                         w.setPlaceholderText("x1,y1; x2,y2; …")
                 self.params_form.addRow(name, w)
                 self._param_widgets[name] = (w, kind)
-            self.params_box.setVisible(bool(schema))
+            self._param_type_key = key
+            self.params_box.setVisible(bool(schema) or generation_type is not None)
+
+        def _save_generation_param_values(self) -> None:
+            key = self._param_type_key
+            generation_type = self._rendered_generation_type
+            if key is None or generation_type is None:
+                return
+            values: dict[str, object] = {}
+            for name, (widget, kind) in self._param_widgets.items():
+                if kind == "bool":
+                    values[name] = bool(widget.isChecked())
+                elif hasattr(widget, "text"):
+                    values[name] = widget.text()
+                elif hasattr(widget, "value"):
+                    values[name] = widget.value()
+            self._generation_param_values[(key, generation_type)] = values
+
+        def _on_generation_toggled(self, key: str, regular: bool) -> None:
+            self._save_generation_param_values()
+            self._generation_mode_by_type[key] = (
+                "regular" if regular else "full"
+            )
+            self._rebuild_params()
 
         def on_state_changed(self) -> None:
             if self.controller is None:
@@ -163,6 +224,8 @@ def create_avatar_tab(parent=None):
                     out[name] = bool(w.isChecked())
                 else:
                     out[name] = w.text().strip()
+            if self._rendered_generation_type is not None:
+                out["generation_type"] = self._rendered_generation_type
             return out
 
         def _read_num(self, w):
@@ -209,7 +272,20 @@ def create_avatar_tab(parent=None):
             if t == AvatarType.RIGID_JONC:
                 return pre.rigidJonc(axe1=p["axe1"], axe2=p["axe2"], center=center, model=mod, material=mat, color=color)
             if t == AvatarType.RIGID_POLYGON:
-                return pre.rigidPolygon(center=center, model=mod, material=mat, color=color, generation_type=p.get("generation_type") or "regular", nb_vertices=int(p.get("nb_vertices") or 6), radius=float(p["radius"]) if p.get("radius") not in (None, "") else None, vertices=parse_vertices(p.get("vertices") or ""))
+                if p.get("generation_type", "regular") == "regular":
+                    return pre.rigidPolygon(
+                        center=center, model=mod, material=mat, color=color,
+                        generation_type="regular",
+                        nb_vertices=int(p.get("nb_vertices") or 6),
+                        radius=float(p.get("radius") or 0.1),
+                    )
+                vertices = parse_vertices(p.get("vertices") or "")
+                if vertices is None:
+                    raise ValueError("At least 3 vertices are required")
+                return pre.rigidPolygon(
+                    center=center, model=mod, material=mat, color=color,
+                    generation_type="full", vertices=vertices,
+                )
             if t == AvatarType.RIGID_OVOID:
                 return pre.rigidOvoidPolygon(center=center, model=mod, material=mat, color=color, radius=p.get("radius"), vertices=parse_vertices(p.get("vertices") or ""))
             if t == AvatarType.RIGID_CLUSTER:
@@ -219,7 +295,20 @@ def create_avatar_tab(parent=None):
             if t == AvatarType.RIGID_PLAN:
                 return pre.rigidPlan(center=center, model=mod, material=mat, color=color, axe1=p["axe1"], axe2=p["axe2"], axe3=p["axe3"])
             if t == AvatarType.RIGID_POLYHEDRON:
-                return pre.rigidPolyhedron(center=center, model=mod, material=mat, color=color, generation_type=p.get("generation_type") or "regular", nb_vertices=int(p.get("nb_vertices") or 8), radius=float(p["radius"]) if p.get("radius") not in (None, "") else None, vertices=parse_vertices(p.get("vertices") or ""))
+                if p.get("generation_type", "regular") == "regular":
+                    return pre.rigidPolyhedron(
+                        center=center, model=mod, material=mat, color=color,
+                        generation_type="regular",
+                        nb_vertices=int(p.get("nb_vertices") or 8),
+                        radius=float(p.get("radius") or 0.1),
+                    )
+                vertices = parse_vertices(p.get("vertices") or "")
+                if vertices is None:
+                    raise ValueError("At least 5 vertices are required")
+                return pre.rigidPolyhedron(
+                    center=center, model=mod, material=mat, color=color,
+                    generation_type="full", vertices=vertices,
+                )
             if t == AvatarType.SMOOTH_WALL:
                 return pre.smoothWall(l=p["l"], h=p["h"], center=center, model=mod, material=mat, color=color, nb_polyg=int(p.get("nb_polyg", 16)))
             if t == AvatarType.ROUGH_WALL:
@@ -264,9 +353,24 @@ def create_avatar_tab(parent=None):
                 self.mod_combo.setCurrentIndex(i)
             self.color_edit.setText(av.color or "BLUEx")
             self._rebuild_params()
+            if av.avatar_type in (
+                AvatarType.RIGID_POLYGON, AvatarType.RIGID_POLYHEDRON,
+            ):
+                key = av.avatar_type.value
+                generation_type = (
+                    "regular" if av.generation_type == "regular" else "full"
+                )
+                self._generation_mode_by_type[key] = generation_type
+                self._rebuild_params()
             # fill known params from avatar attributes
             mapping = {
                 "r": av.radius, "radius": av.radius,
+                "nb_vertices": av.nb_vertices,
+                "vertices": (
+                    "; ".join(", ".join(str(value) for value in row)
+                              for row in av.vertices)
+                    if av.vertices else None
+                ),
                 "h": (av.wall_params or {}).get("h"),
                 "l": (av.wall_params or {}).get("l"),
             }

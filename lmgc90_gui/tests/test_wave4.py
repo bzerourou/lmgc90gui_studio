@@ -4,8 +4,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from lmgc90_core import Pipeline, pre, render_sbatch
+from lmgc90_core.types import AvatarType
 from lmgc90_core.validate import compatible_contactors
 from lmgc90_gui import ProjectController
+from lmgc90_gui.views.tabs.contactors_tab import (
+    _CONTACTOR_PARAMS,
+    _read_contactor_params,
+)
 
 
 def _scene(ctrl: ProjectController) -> None:
@@ -41,6 +46,76 @@ def test_contactors_on_empty_avatar():
     text = ctrl.emit_pre_script()
     # mesh/empty contactors appear when present
     assert shape in text or "emptyAvatar" in text or "avatar" in text.lower()
+
+
+def test_contactor_form_parses_shape_specific_options():
+    for dimension in (2, 3):
+        assert set(compatible_contactors(AvatarType.EMPTY_AVATAR, dimension)) <= set(
+            _CONTACTOR_PARAMS
+        )
+
+    disk = _read_contactor_params("DISKx", {"byrd": "0.25"})
+    assert disk == {"byrd": 0.25}
+
+    jonc = _read_contactor_params("JONCx", {"axe1": "0.3", "axe2": "0.04"})
+    assert jonc == {"axe1": 0.3, "axe2": 0.04}
+
+    polygon = _read_contactor_params(
+        "POLYG",
+        {
+            "generation_type": "full",
+            "vertices": "0,0; 1,0; 0,1",
+            "shift": "0.25, -0.5",
+        },
+    )
+    assert polygon == {
+        "generation_type": "full",
+        "nb_vertices": 3,
+        "vertices": [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
+        "shift": [0.25, -0.5],
+    }
+
+    regular_polygon = _read_contactor_params(
+        "POLYG",
+        {
+            "generation_type": "regular",
+            "nb_vertices": "6",
+            "radius": "0.25",
+            "shift": "0.1, 0.2",
+        },
+    )
+    assert regular_polygon == {
+        "generation_type": "regular",
+        "nb_vertices": 6,
+        "radius": 0.25,
+        "shift": [0.1, 0.2],
+    }
+
+    polyhedron = _read_contactor_params(
+        "POLYR",
+        {
+            "generation_type": "full",
+            "vertices": "1,1,1; -1,-1,1; -1,1,-1; 1,-1,-1",
+            "connectivity": "[[1,2,3],[1,4,2],[2,4,3],[3,4,1]]",
+            "shift": "0.1, 0.2, 0.3",
+        },
+        dimension=3,
+    )
+    assert len(polyhedron["vertices"]) == 4
+    assert len(polyhedron["connectivity"]) == 4
+    assert polyhedron["generation_type"] == "full"
+    assert polyhedron["shift"] == [0.1, 0.2, 0.3]
+
+    regular_polyhedron = _read_contactor_params(
+        "POLYR",
+        {"generation_type": "regular", "nb_vertices": "8", "radius": "0.4"},
+        dimension=3,
+    )
+    assert regular_polyhedron == {
+        "generation_type": "regular",
+        "nb_vertices": 8,
+        "radius": 0.4,
+    }
 
 
 def test_pipeline_sbatch_export(tmp_path: Path):
