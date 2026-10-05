@@ -2,6 +2,8 @@
 
 Les variables dynamiques enregistrent des expressions réutilisables dans les champs numériques de l’interface qui prennent en charge les expressions. Le dialogue affiche leur expression, leur valeur résolue et leur type.
 
+![](../captures/variables.png)
+
 ## Ajouter une variable
 
 1. Ouvrez **Tools → Variables dynamiques…** (`Ctrl+V`).
@@ -35,4 +37,4 @@ Exemples d’expressions :
 | `diametre / 2` | Rayon dérivé d’une dimension définie auparavant. |
 | `largeur + joint` | Distance composée de paramètres du projet. |
 
-Le dialogue utilise un évaluateur restreint pour les expressions autorisées. Ce n’est pas un interpréteur Python général : ne comptez pas sur l’accès à tous les modules Python ou à toutes les méthodes d’objets.
+>**Remarque** : Le dialogue utilise un évaluateur restreint pour les expressions autorisées. Ce n’est pas un interpréteur Python général : ne comptez pas sur l’accès à tous les modules Python ou à toutes les méthodes d’objets.

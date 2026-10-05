@@ -40,6 +40,6 @@ Bienvenue dans la documentation officielle de l’interface graphique LMGC90_GUI
 
 ## Documentation technique et historique
 
-Les fichiers [Populations de particules](particle_population.md), [Guide développeur](dev.md) et [Diagrammes d’architecture](LMG90_GUI_MVC_Diagrammes.md) sont des références techniques, non des guides d’utilisation graphique.
+Les fichiers [Populations de particules](particle_population.md), [Guide développeur](dev.md) et [Diagrammes d’architecture](LMGC90_GUI_diagrammes.md) sont des références techniques, non des guides d’utilisation graphique.
 
 Les anciens chapitres consacrés à des écrans retirés ne sont pas présentés comme des fonctions disponibles. L’onglet **Templates** et l’assistant général de configuration de projet des anciennes versions ne font pas partie des parcours actuels.

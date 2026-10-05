@@ -2,6 +2,8 @@
 
 L’onglet **ForLoop** répète une opération à partir d’une plage de valeurs et d’expressions. Contrairement à **Loops**, qui place des clones d’avatars selon une forme géométrique, ForLoop accepte différentes cibles : avatars, matériaux, modèles, opérations DOF, tables de visibilité, dépôts granulométriques ou distributions de rayons.
 
+![](../captures/for_loops.png)
+
 ## Préparer la boucle
 
 1. Créez les objets de base dont la cible dépend. Par exemple, une boucle d’avatars nécessite un avatar modèle ; une boucle de matériaux nécessite un matériau existant.
@@ -14,6 +16,10 @@ L’onglet **ForLoop** répète une opération à partir d’une plage de valeur
 8. Cliquez sur **Appliquer la boucle**. L’application affiche le nombre d’éléments produits ou un message indiquant la valeur invalide.
 
 `stop` est exclu. Avec `start=0`, `stop=5` et `step=1`, la variable parcourt `0, 1, 2, 3, 4` : cinq répétitions.
+
+## Supprimer une boucle
+
+Sélectionnez la boucle dans la liste, puis cliquez sur **Supprimer la boucle sélectionnée** et confirmez. La boucle et les éléments qu’elle a générés sont supprimés, sans toucher aux autres objets du projet. La suppression peut être annulée ou rétablie avec **Undo** et **Redo**.
 
 ## Cibles et expressions
 

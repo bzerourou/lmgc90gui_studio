@@ -2,6 +2,8 @@
 
 L’onglet **Post-pro** ajoute des commandes d’extraction au calcul. Il configure ce que le calcul doit écrire ; il ne sert pas à ouvrir ou analyser les fichiers de résultats après exécution.
 
+![](../captures/postpro.png)
+
 ## Ajouter une commande
 
 1. Ouvrez **Onglets → Ouvrir → Post-pro**.

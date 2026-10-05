@@ -2,6 +2,8 @@
 
 LMGC90_GUI propose deux voies pour inspecter le modèle : le **visualiseur 3D intégré** (PyVista) et le visualiseur natif de pylmgc90 lancé avec **pre.visuAvatars**. Ces outils montrent la scène préparée ; ils ne remplacent pas un outil d’analyse des résultats de calcul.
 
+![](../captures/viewer_3d.png)
+
 ## Ouvrir et actualiser le visualiseur intégré
 
 1. Ouvrez **Onglets → Ouvrir → Visualisation 3D**.

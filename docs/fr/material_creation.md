@@ -2,6 +2,12 @@
 
 L’onglet **Materials** contient la liste des matériaux du projet et un formulaire de création/modification. Les propriétés affichées changent en fonction du type sélectionné ; il ne s’agit pas d’un champ texte libre.
 
+Tous les onglets dans LMGC90_studio sont composés de deux sections  :
+ * _Liste_ : liste tous vos éléments crées;
+ * _Formulaire_ : Renseignez les paramètres de vos éléments à travers des zones de textes, des listes déroulantes ou des cases à cocher.
+
+![](../captures/onglet_sections.png)
+
 ## Ajouter un matériau
 
 1. Ouvrez **Onglets → Ouvrir → Materials** (`Ctrl+1`).
@@ -18,7 +24,9 @@ Les valeurs initiales servent de point de départ, pas de caractérisation autom
 
 ## Paramètres proposés par type
 
-Les champs exacts reflètent les options acceptées par pylmgc90 dans l’environnement courant.
+LMGC90_GUI propose **10 types** de matériaux, correspondant aux types acceptés par `pre.material(materialType=…)` dans pylmgc90.
+ 
+> **Note :** les types marqués _(avancé)_ — `DISCRETE`, `USER_MAT`, `EXTERNAL` — ne disposent pas de suggestion automatique dans l'interface. Leurs paramètres doivent être renseignés manuellement.
 
 | Type | Champs principaux de l’interface | Notes |
 |---|---|---|
@@ -33,9 +41,24 @@ Les champs exacts reflètent les options acceptées par pylmgc90 dans l’enviro
 | `USER_MAT` | `file_mat` | Indiquer le chemin/nom de la loi matériau selon la configuration LMGC90. |
 | `EXTERNAL` | Aucun champ de propriété | Le champ densité est désactivé ; le comportement est géré à l’extérieur. |
 
+### Tableau des usages typiques
+ 
+| Type | Applications typiques | Exemples concrets | Domaines |
+|------|-----------------------|-------------------|----------|
+| `RIGID` | Méthode des éléments discrets (DEM) | Empilements de grains, écoulements granulaires, assemblages de particules | Génie civil, pharmacie, agroalimentaire |
+| `ELAS` | Structures en régime élastique | Bâtiments, ponts, pièces mécaniques, structures métalliques | Génie civil, mécanique |
+| `ELAS_DILA` | Contraintes thermiques unilatérales | Structures soumises à des variations de température, dilatation différentielle | Bâtiment, mécanique, électronique |
+| `VISCO_ELAS` | Matériaux à comportement visqueux | Polymères, asphalte, matériaux amortissants, joints d'étanchéité | Routes, automobile, aéronautique |
+| `ELAS_PLAS` | Déformations plastiques permanentes | Formage des métaux, impact, endommagement, usinage | Métallurgie, automobile, aéronautique |
+| `THERMO_ELAS` | Couplage thermo-mécanique complet | Dissipation thermique, chocs thermiques, freinage | Électronique, automobile, nucléaire |
+| `PORO_ELAS` | Milieux poreux saturés | Consolidation de sols, réservoirs pétroliers, aquifères, stockage CO₂ | Géotechnique, hydrogéologie, pétrole |
+| `DISCRETE` | Systèmes masse-ressort-amortisseur | Isolateurs sismiques, suspensions, liaisons élastiques discrètes | Génie parasismique, automobile |
+| `USER_MAT` | Lois de comportement sur mesure | Matériaux spécifiques, lois issues de l'expérience | Recherche, matériaux innovants |
+| `EXTERNAL` | Couplage avec un code externe | Interface avec d'autres logiciels de simulation | Simulation multi-physique |
+
 ### Élastique isotrope et orthotrope
 
-Pour `ELAS`, choisissez `isotropic` pour renseigner **Young** et **Poisson** ; `G` est également proposé. Pour une loi orthotrope, choisissez `orthotropic` : les propriétés isotropes sont remplacées par celles des axes matériels.
+Pour `ELAS`, choisissez `isotropic` pour renseigner **Young** et **Poisson**. Pour une loi orthotrope, choisissez `orthotropic` : les propriétés isotropes seront remplacées; `G` est également proposé.
 
 - En 2D : `young1`, `young2`, `nu12`, `G12`.
 - En 3D : `young1`, `young2`, `young3`, `nu12`, `nu13`, `nu23`, `G12`, `G13`, `G23`.
@@ -69,9 +92,9 @@ Pour `VISCO_ELAS`, utilisez `viscous_model` (`none` ou `KelvinVoigt`) puis les p
 
 ## Mise à jour et suppression
 
-Sélectionnez le matériau dans la liste avant de cliquer sur **Update**. Vérifiez le nom : si vous saisissez un nom déjà utilisé, ajoutez un nouveau matériau avec **Add** ou mettez à jour explicitement l’entrée sélectionnée.
+Sélectionnez le matériau dans la liste avant de cliquer sur **Update**, cela chargéra toutes les informations de votre matériau dans le formulaire. Vérifiez le nom : si vous saisissez un nom déjà utilisé, ajoutez un nouveau matériau avec **Add** ou mettez à jour explicitement l’entrée sélectionnée.
 
-La suppression n’est pas un moyen de renommer ou de remplacer automatiquement toutes les références. Réassignez d’abord les avatars concernés à un autre matériau si l’application signale une dépendance.
+>**Remarque** : La suppression n’est pas un moyen de renommer ou de remplacer automatiquement toutes les références. Réassignez d’abord les avatars concernés à un autre matériau si l’application signale une dépendance.
 
 ## Variables dynamiques
 

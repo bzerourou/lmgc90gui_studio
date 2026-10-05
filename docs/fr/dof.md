@@ -2,6 +2,8 @@
 
 L’onglet **DOF** enregistre des opérations cinématiques qui seront appliquées aux corps ciblés lors du calcul. Une opération est définie par une loi, une cible et une chaîne de paramètres.
 
+![](../captures/DOF.png)
+
 ## Ajouter une opération
 
 1. Créez les avatars concernés. Pour viser plusieurs corps ensemble, créez un groupe dans **Groups**.

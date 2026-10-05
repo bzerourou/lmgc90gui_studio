@@ -2,19 +2,33 @@
 
 L’assistant **Maçonnerie** construit un assemblage de briques polygonales et peut créer le groupe, la loi de contact et la table de visibilité associés. Ouvrez-le depuis **Tools → Assistant Maçonnerie…** (`Ctrl+Shift+M`) ou depuis l’onglet **Masonry**.
 
+![](../captures/maçon_page1.png)
+
 ## Suivre l’assistant
 
 1. Dans **Introduction**, cliquez sur **Suivant**.
 2. **Dimension** : choisissez 2D ou 3D. Les motifs paneresse sont réservés à la 3D.
+
+![](../captures/maçon_page2.png)
+
 3. **Matériau** : créez un matériau `RIGID` avec sa densité ou sélectionnez un matériau existant.
+![](../captures/maçon_page3.png)
+
 4. **Modèle** : créez un modèle rigide ou réutilisez-en un de dimension compatible (`Rxx2D` en 2D, `Rxx3D` en 3D).
+![](../captures/maçon_page4.png)
+
 5. **Dimensions de la brique** : indiquez le nom (cinq caractères maximum), `lx`, `ly` et la profondeur `lz` en 3D.
+![](../captures/maçon_page5.png)
+
 6. **Appareil et disposition** : choisissez le motif, les courses, les colonnes, la largeur du joint, les offsets et la couleur.
 7. Choisissez si vous souhaitez enregistrer un **groupe** et définissez son nom.
 8. L’option **Ajouter loi IQS_CLB + see-table** est cochée par défaut. Ajustez le nom de loi et la friction, ou décochez-la si vous configurerez les interactions vous-même.
 9. **Transformations** : activez **Translation globale** et renseignez `tx`, `ty`, `tz` si nécessaire. Pour dupliquer l’assemblage, activez **Copies additionnelles**, saisissez le nombre de copies et leur décalage `dx`, `dy`, `dz`.
+![](../captures/maçon_page6.png)
+
 10. **Résumé et génération** : vérifiez dimensions, matériau, modèle, motif, taille de l’assemblage, groupe, loi et transformations.
 11. Cliquez sur **Générer**. Une confirmation indique le nombre de briques créées.
+![](../captures/maçon_page7.png)
 
 Les boutons **Retour**, **Suivant** et **Annuler** permettent de naviguer dans l’assistant avant la validation finale.
 

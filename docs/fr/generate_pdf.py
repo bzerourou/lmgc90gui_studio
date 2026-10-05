@@ -22,8 +22,8 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
 # ══════════════════════════════════════════════════════════════════════════════
 #  la configuration de base du générateur PDF
 # ══════════════════════════════════════════════════════════════════════════════
-MD_DIR       = Path("docs/fr")                     
-CAPTURES_DIR = Path("docs/captures")            
+MD_DIR       = Path("./")                     
+CAPTURES_DIR = Path("../captures")            
 OUT_PDF      = Path("LMGC90_GUI_Documentation.pdf")
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -500,7 +500,7 @@ def on_page(canvas, doc):
     canvas.setFillColor(colors.white)
     canvas.setFont('Helvetica', 7.5)
     canvas.drawString(1.5*cm, 0.33*cm,
-                      "LMGC90_GUI — Documentation officielle v0.4.0")
+                      "LMGC90_GUI — Documentation officielle v0.6.0")
     canvas.drawRightString(w - 1.5*cm, 0.33*cm, f"Page {doc.page}")
     # top rule
     canvas.setStrokeColor(colors.HexColor('#1A3A5C'))
@@ -517,7 +517,7 @@ def build_cover():
     s.append(SP(0.5))
     s.append(P("Documentation Officielle", ST['cov_s']))
     s.append(SP(0.3))
-    s.append(P("Version 0.4.5", ST['cov_v']))
+    s.append(P("Version 0.6.0", ST['cov_v']))
     s.append(SP(1.0))
     s.append(P("© 2026 LMGC90_GUI", ST['cov_v']))
     s.append(SP(0.3))
@@ -540,22 +540,21 @@ def build_cover():
 # ─── Table of contents ─────────────────────────────────────────────────────────
 CHAPTERS = [
     ("1",  "Découverte de l’interface",        "interface.md"),
-    ("2",  "Assistant de configuration",         "project_wizard.md"),
-    ("3",  "Matériaux",                          "material_creation.md"),
-    ("4",  "Modèles",                            "model_creation.md"),
-    ("5",  "Avatars — Corps rigides",            "avatar_creation.md"),
-    ("6",  "Avatar Vide",                        "empty_avatar.md"),
-    ("7",  "Bibliothèque",                       "templates.md"),
-    ("8",  "Boucles paramétriques",              "loops.md"),
-    ("9",  "Granulométrie",                      "granulometry.md"),
-    ("10", "Conditions aux limites (DOF)",       "dof.md"),
-    ("11", "Lois de contact",                    "contact_laws.md"),
-    ("12", "Tables de visibilité",               "visibility.md"),
+    ("2",  "Organisation d'un projet",         "project_wizard.md"),
+    ("3",  "Exemples",                          "examples.md"),
+    ("4",  "Matériaux",                          "material_creation.md"),
+    ("5", "Variables dynamiques",               "dynam_variables.md"),
+    ("6",  "Modèles",                            "model_creation.md"),
+    ("7",  "Avatars — Corps rigides",            "avatar_creation.md"),
+    ("8",  "Avatar Vide",                        "empty_avatar.md"),
+    ("9",  "Boucles paramétriques",              "loops.md"),
+    ("10", "Granulométrie",                      "granulometry.md"),
+    ("11", "Conditions aux limites (DOF)",       "dof.md"),
+    ("12", "Lois de contact",                    "contact_laws.md"),
     ("13", "Assistant de maçonnerie",            "masonry.md"),
     ("14", "Corps déformables (EF)",             "meshed.md"),
     ("15", "Calcul (chipy)",                     "calculs.md"),
     ("16", "Post-traitement",                    "postpro.md"),
-    ("17", "Variables dynamiques",               "dynam_variables.md"),
     ("18", "Visualisation",                      "visualisation.md"),
     ("19", "Architecture & Guide développeur",   "dev.md"),
 ]
@@ -594,7 +593,7 @@ def main():
         str(OUT_PDF), pagesize=A4,
         leftMargin=2*cm, rightMargin=2*cm,
         topMargin=2.4*cm, bottomMargin=1.8*cm,
-        title="LMGC90_GUI — Documentation Officielle v0.4.0",
+        title="LMGC90_GUI — Documentation Officielle v0.6.0",
         author="LMGC90_GUI",
         subject="Documentation technique complète",
     )

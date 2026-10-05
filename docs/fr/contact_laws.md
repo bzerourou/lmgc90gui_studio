@@ -2,6 +2,8 @@
 
 Une loi de contact décrit la réponse mécanique d’une paire de contacteurs. La table de visibilité associe ensuite les formes et couleurs qui peuvent interagir à une loi nommée.
 
+![](../captures/contacts.png)
+
 ## Créer une loi
 
 1. Ouvrez **Onglets → Ouvrir → Contact** (`Ctrl+7`).

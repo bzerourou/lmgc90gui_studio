@@ -2,6 +2,8 @@
 
 L’onglet **Loops** clone un avatar modèle et répartit ses copies selon une géométrie régulière. Ces boucles sont distinctes des boucles paramétriques multi-cibles de l’onglet [ForLoop](for_loop.md).
 
+![](../captures/loops.png)
+
 ## Préparer le modèle
 
 1. Créez un avatar dans **Avatars** avec son matériau, son modèle, sa couleur et ses paramètres géométriques.
@@ -22,6 +24,10 @@ L’onglet **Loops** clone un avatar modèle et répartit ses copies selon une g
 6. Renseignez **Group** pour enregistrer les avatars générés dans un groupe.
 7. Cliquez sur **Apply loop**.
 8. Lisez la confirmation du nombre de corps créés et vérifiez le résultat dans **Avatars** ou le visualiseur 3D après **Rafraîchir la scène**.
+
+## Supprimer une boucle
+
+Sélectionnez la boucle dans la liste, puis cliquez sur **Delete selected loop** et confirmez. La boucle et les avatars qu’elle a générés sont retirés ; les autres avatars du projet restent en place. Cette action peut être annulée ou rétablie avec les commandes **Undo** et **Redo**.
 
 ## Résultat et répétition
 

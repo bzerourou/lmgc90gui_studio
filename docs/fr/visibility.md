@@ -2,6 +2,8 @@
 
 Une table de visibilité (see-table) déclare une paire de contacteurs susceptible d’interagir, les couleurs à considérer, la loi de contact à utiliser et la distance d’alerte. Elle ne crée ni avatar, ni contacteur, ni loi.
 
+![](../captures/visibility.png)
+
 ## Créer une table
 
 1. Créez d’abord les avatars et populations qui doivent interagir.

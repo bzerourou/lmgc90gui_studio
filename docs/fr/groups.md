@@ -2,6 +2,8 @@
 
 L’onglet **Groups** permet de réunir plusieurs avatars sous un même nom. Un groupe peut servir de cible pour les opérations DOF, les extractions de post-traitement et le filtre de la visualisation 3D.
 
+![](../captures/groups.png)
+
 ## Créer un groupe
 
 1. Ouvrez **Onglets → Ouvrir → Groups**.
