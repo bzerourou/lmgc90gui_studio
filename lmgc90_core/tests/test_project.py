@@ -1,5 +1,6 @@
 from lmgc90_core import (
-    DOFOperation, GranuloConfig, HistoryError, Loop, Project, ValidationError, pre,
+    DOFOperation, ForLoop, GranuloConfig, HistoryError, Loop, Project,
+    ValidationError, pre,
 )
 
 
@@ -59,6 +60,100 @@ def test_loop_is_one_undo_step():
     p.undo()
     assert p.n_bodies == 1
     assert "ring" not in p.avatar_groups or p.avatars_in("ring") == []
+
+
+def test_remove_loop_removes_generated_avatars_and_is_undoable():
+    p = _empty()
+    proto = p.add(pre.rigidDisk(r=0.04, center=[0, 0], model="rigid", material="STEEL"))
+    p.group("ring", [proto.avatar_id])
+    generated = p.apply_loop(
+        Loop("circle", proto.avatar_id, count=4, radius=1.0, group_name="ring")
+    )
+    p.add(DOFOperation(
+        "imposeDrivenDof", "avatar", generated[0].avatar_id,
+        {"component": [1, 2, 3], "dofty": "vlocy", "ct": 0.0},
+    ))
+    loop_id = p.loops[0].loop_id
+
+    p.remove_loop(loop_id)
+    assert p.loops == []
+    assert [avatar.avatar_id for avatar in p.avatars] == [proto.avatar_id]
+    assert p.avatars_in("ring") == [proto]
+    assert p.operations == []
+
+    p.undo()
+    assert len(p.loops) == 1
+    assert {avatar.avatar_id for avatar in p.avatars} == {
+        proto.avatar_id, *(avatar.avatar_id for avatar in generated)
+    }
+    assert len(p.avatars_in("ring")) == 5
+    assert len(p.operations) == 1
+
+    p.redo()
+    assert p.loops == []
+    assert [avatar.avatar_id for avatar in p.avatars] == [proto.avatar_id]
+    assert p.avatars_in("ring") == [proto]
+    assert p.operations == []
+
+
+def test_remove_for_loop_removes_generated_avatars_and_is_undoable():
+    p = _empty()
+    proto = p.add(pre.rigidDisk(r=0.04, center=[0, 0], model="rigid", material="STEEL"))
+    loop = ForLoop(
+        var_name="i",
+        start=0,
+        stop=4,
+        step=1,
+        target_kind="avatar",
+        model_avatar_id=proto.avatar_id,
+        expr_x="i * 0.2",
+        group_name="forlp",
+    )
+    generated = p.apply_for_loop(loop)
+    p.add(DOFOperation(
+        "imposeDrivenDof", "avatar", generated[0].avatar_id,
+        {"component": [1, 2, 3], "dofty": "vlocy", "ct": 0.0},
+    ))
+
+    p.remove_for_loop(loop.loop_id)
+    assert p.for_loops == []
+    assert [avatar.avatar_id for avatar in p.avatars] == [proto.avatar_id]
+    assert p.avatar_groups == {}
+    assert p.operations == []
+
+    p.undo()
+    assert p.for_loops == [loop]
+    assert {avatar.avatar_id for avatar in p.avatars} == {
+        proto.avatar_id, *(avatar.avatar_id for avatar in generated)
+    }
+    assert len(p.operations) == 1
+
+    p.redo()
+    assert p.for_loops == []
+    assert [avatar.avatar_id for avatar in p.avatars] == [proto.avatar_id]
+    assert p.operations == []
+
+
+def test_remove_for_loop_removes_generated_materials():
+    p = _empty()
+    loop = ForLoop(
+        start=0,
+        stop=3,
+        target_kind="material",
+        template_name="STEEL",
+        expressions={"density": "1000 + i"},
+    )
+    generated = p.apply_for_loop(loop)
+    assert len(generated) == 3
+    assert len(p.materials) == 4
+
+    p.remove_for_loop(loop.loop_id)
+    assert p.for_loops == []
+    assert [material.name for material in p.materials] == ["STEEL"]
+
+    p.undo()
+    assert len(p.materials) == 4
+    assert p.for_loops == [loop]
 
 
 def test_deposit_is_soa_and_one_undo():

@@ -11,7 +11,8 @@ from typing import Any, Iterable, Optional, Union
 
 from .commands import (
     AddAvatar, AddDOF, AddLaw, AddLoop, AddMaterial, AddModel, AddPopulation,
-    AddPostPro, AddSeeTable, CommandHistory, RemoveAvatar, SetGroup,
+    AddPostPro, AddSeeTable, CommandHistory, RemoveAvatar, RemoveForLoop,
+    RemoveLoop, SetGroup,
 )
 from .entities import (
     Avatar, ContactLaw, DOFOperation, ForLoop, GranuloConfig, Loop, Material, Model,
@@ -220,6 +221,18 @@ class Project:
         self._run(AddLoop(loop, generated))
         return generated
 
+    def remove_loop(self, loop_id: str) -> Loop:
+        loop = next((item for item in self.loops if item.loop_id == loop_id), None)
+        if loop is None:
+            raise UnknownReferenceError(f"loop {loop_id!r}")
+        generated_ids = set(loop.generated_ids)
+        generated = [
+            avatar for avatar in self.avatars
+            if avatar.avatar_id in generated_ids
+        ]
+        self._run(RemoveLoop(loop, generated))
+        return loop
+
     def apply_for_loop(self, for_loop: ForLoop, template: Optional[Avatar] = None):
         """Expand ForLoop for avatar | material | model | dof | visibility | granulo | granulo_dist."""
         from .generate import expand_for_loop, for_loop_values, _lmgc5_name, _safe_arith
@@ -427,8 +440,18 @@ class Project:
             raise ValidationError(f"ForLoop target_kind inconnu: {kind!r}")
 
         for_loop.generated_ids = list(generated_ids)
+        for_loop._generated_items = list(out)
         self.for_loops.append(for_loop)
         return out
+
+    def remove_for_loop(self, loop_id: str) -> ForLoop:
+        for_loop = next(
+            (item for item in self.for_loops if item.loop_id == loop_id), None
+        )
+        if for_loop is None:
+            raise UnknownReferenceError(f"ForLoop {loop_id!r}")
+        self._run(RemoveForLoop(for_loop))
+        return for_loop
 
 
     def apply_masonry(self, config: MasonryConfig) -> list[Avatar]:

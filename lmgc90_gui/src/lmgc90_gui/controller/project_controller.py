@@ -380,12 +380,32 @@ class ProjectController(_QObject):
             self._notify_error(str(exc))
             raise
 
+    def remove_loop(self, loop_id: str) -> Loop:
+        try:
+            loop = self._project.remove_loop(loop_id)
+            self._session.mark_dirty()
+            self._emit()
+            return loop
+        except (ValidationError, LMGC90Error) as exc:
+            self._notify_error(str(exc))
+            raise
+
     def apply_for_loop(self, for_loop: ForLoop, template: Optional[Avatar] = None) -> list[Avatar]:
         try:
             generated = self._project.apply_for_loop(for_loop, template)
             self._session.mark_dirty()
             self._emit()
             return generated
+        except (ValidationError, LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
+
+    def remove_for_loop(self, loop_id: str) -> ForLoop:
+        try:
+            for_loop = self._project.remove_for_loop(loop_id)
+            self._session.mark_dirty()
+            self._emit()
+            return for_loop
         except (ValidationError, LMGC90Error, ValueError) as exc:
             self._notify_error(str(exc))
             raise
@@ -464,6 +484,9 @@ class ProjectController(_QObject):
 
     def visu_avatars(self, *, force: bool = True) -> None:
         """Materialize pylmgc bodies then ``pre.visuAvatars(bodies)`` (native viewer)."""
+        if self.project.n_bodies == 0:
+            self.journal.info("visuAvatars skipped: no avatars or particles to display")
+            return
         try:
             skipped = self._session.visu_avatars(force=force)
             if skipped:

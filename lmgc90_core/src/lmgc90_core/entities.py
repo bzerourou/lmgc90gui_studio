@@ -369,6 +369,7 @@ class ForLoop:
     generated_ids: list[str] = field(default_factory=list)
     loop_id: str = field(default_factory=new_avatar_id)
     use_soa: bool = False
+    _generated_items: list[Any] = field(default_factory=list, repr=False, compare=False)
 
     def to_dict(self) -> dict:
         return {

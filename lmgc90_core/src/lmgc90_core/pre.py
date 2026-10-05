@@ -116,10 +116,22 @@ def roughWall(*, l, r, center, model, material, color="BLUEx", nb_vertex=10) -> 
     )
 
 
-def fineWall(*, l, r, center, model, material, color="BLUEx", nb_vertex=10) -> Avatar:
+def fineWall(*, l, r=None, h=None, center, model, material, color="BLUEx",
+             nb_vertex=10) -> Avatar:
+    if h is not None:
+        height = float(h)
+        radius = height / 2.0
+    elif r is not None:
+        radius = float(r)
+        height = 2.0 * radius
+    else:
+        raise ValueError("fineWall requires h (or legacy r)")
     return _avatar(
         AvatarType.FINE_WALL, center, material, model, color,
-        wall_params={"l": float(l), "r": float(r), "nb_vertex": int(nb_vertex)},
+        wall_params={
+            "l": float(l), "h": height, "r": radius,
+            "nb_vertex": int(nb_vertex),
+        },
     )
 
 
@@ -186,12 +198,18 @@ def rigidOvoidPolygon(*, center, model, material, color="BLUEx",
     )
 
 
-def granuloRoughWall(*, l, rmin, rmax, center, model, material, color="BLUEx",
-                     nb_vertex=10) -> Avatar:
+def granuloRoughWall(*, l, rmin, rmax=None, h=None, center, model, material,
+                     color="BLUEx", nb_vertex=10) -> Avatar:
+    max_radius = float(h) / 2.0 if h is not None else rmax
+    if max_radius is None:
+        raise ValueError("granuloRoughWall requires h (or legacy rmax)")
     return _avatar(
         AvatarType.GRANULO_WALL, center, material, model, color,
-        wall_params={"l": float(l), "rmin": float(rmin), "rmax": float(rmax),
-                     "nb_vertex": int(nb_vertex)},
+        wall_params={
+            "l": float(l), "h": float(h) if h is not None else 2.0 * float(max_radius),
+            "rmin": float(rmin), "rmax": float(max_radius),
+            "nb_vertex": int(nb_vertex),
+        },
     )
 
 

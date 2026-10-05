@@ -21,9 +21,11 @@ _TARGETS = [
 
 
 def create_for_loop_tab(parent=None):
+    from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import (
         QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
-        QLineEdit, QListWidget, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+        QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+        QVBoxLayout, QWidget,
     )
 
     class ForLoopTab(QWidget, BaseTab):
@@ -36,6 +38,7 @@ def create_for_loop_tab(parent=None):
             ))
             self.list = QListWidget()
             layout.addWidget(self.list)
+            self.list.currentItemChanged.connect(self._update_remove_button)
 
             form = QFormLayout()
             self.kind = QComboBox()
@@ -88,9 +91,16 @@ def create_for_loop_tab(parent=None):
             btn = QPushButton("Appliquer la boucle")
             btn.clicked.connect(self._on_apply)
             row.addWidget(btn)
+            self.btn_remove = QPushButton("Supprimer la boucle sélectionnée")
+            self.btn_remove.setEnabled(False)
+            self.btn_remove.clicked.connect(self._on_remove)
+            row.addWidget(self.btn_remove)
             layout.addLayout(row)
             layout.addStretch()
             self._on_kind_changed()
+
+        def _update_remove_button(self, current, _previous) -> None:
+            self.btn_remove.setEnabled(current is not None)
 
         def _kind_key(self) -> str:
             return self.kind.currentData() or "avatar"
@@ -164,10 +174,13 @@ def create_for_loop_tab(parent=None):
             self.list.clear()
             for fl in getattr(p, "for_loops", []):
                 kind = getattr(fl, "target_kind", "avatar")
-                self.list.addItem(
+                item = QListWidgetItem(
                     f"[{kind}] {fl.var_name}=[{fl.start}:{fl.stop}:{fl.step}]  "
                     f"n≈{len(fl.generated_ids)}"
                 )
+                item.setData(Qt.ItemDataRole.UserRole, fl.loop_id)
+                self.list.addItem(item)
+            self._update_remove_button(self.list.currentItem(), None)
             self._refill_templates()
             existing = list(p.avatar_groups.keys())
             suggested = suggest_group_name("forlp", existing)
@@ -225,6 +238,29 @@ def create_for_loop_tab(parent=None):
                     self, "ForLoop",
                     f"Cible [{k}] — {n} élément(s) généré(s).",
                 )
+            except (ValidationError, ValueError) as exc:
+                QMessageBox.warning(self, "ForLoop", str(exc))
+            except Exception as exc:
+                QMessageBox.critical(self, "ForLoop", str(exc))
+
+        def _on_remove(self) -> None:
+            if self.controller is None:
+                return
+            item = self.list.currentItem()
+            if item is None:
+                return
+            loop_id = item.data(Qt.ItemDataRole.UserRole)
+            answer = QMessageBox.question(
+                self,
+                "ForLoop",
+                "Supprimer cette boucle et tous les éléments qu’elle a générés ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                self.controller.remove_for_loop(loop_id)
             except (ValidationError, ValueError) as exc:
                 QMessageBox.warning(self, "ForLoop", str(exc))
             except Exception as exc:

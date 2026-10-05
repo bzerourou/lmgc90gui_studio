@@ -29,7 +29,7 @@ class _WallPre:
 def test_fine_wall_factory_uses_supported_parameters(monkeypatch):
     monkeypatch.setattr("lmgc90_engine.avatar_factory._pre", _WallPre)
     avatar = pre.fineWall(
-        l=2.0, r=0.04, nb_vertex=16, center=[0.0, 0.0],
+        l=2.0, h=0.08, nb_vertex=16, center=[0.0, 0.0],
         model="rigid", material="WALL",
     )
 
@@ -44,7 +44,7 @@ def test_fine_wall_factory_uses_supported_parameters(monkeypatch):
 def test_granulo_rough_wall_factory_uses_supported_parameters(monkeypatch):
     monkeypatch.setattr("lmgc90_engine.avatar_factory._pre", _WallPre)
     avatar = pre.granuloRoughWall(
-        l=2.0, rmin=0.01, rmax=0.03, nb_vertex=18, center=[0.0, 0.0],
+        l=2.0, h=0.06, rmin=0.01, nb_vertex=18, center=[0.0, 0.0],
         model="rigid", material="WALL",
     )
 

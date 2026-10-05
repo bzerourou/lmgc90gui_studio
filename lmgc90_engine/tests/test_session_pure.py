@@ -90,7 +90,7 @@ def test_visu_avatars_skips_bodies_without_drawable_geometry(monkeypatch):
     scene = SimpleNamespace(
         bodies_container=[no_node_body, empty_rigid_body, drawable_body],
     )
-    session = EngineSession(Project(name="visu"))
+    session = EngineSession(_tiny_project())
     monkeypatch.setattr(session, "materialize", lambda *, force=False: scene)
 
     calls = []
@@ -109,3 +109,19 @@ def test_visu_avatars_skips_bodies_without_drawable_geometry(monkeypatch):
     )
     assert session.visu_avatars() == 1
     assert calls == [[drawable_body]]
+
+
+def test_visu_avatars_does_not_materialize_project_without_bodies(monkeypatch):
+    project = Project(name="model-only")
+    project.add(pre.model(
+        name="rigid", physics="MECAx", element="Rxx2D", dimension=2,
+    ))
+    session = EngineSession(project)
+
+    def fail_if_materialized(*, force=False):
+        raise AssertionError("model-only project must not be materialized for display")
+
+    monkeypatch.setattr(session, "materialize", fail_if_materialized)
+
+    assert session.visu_avatars() == 0
+    assert session.is_materialized is False

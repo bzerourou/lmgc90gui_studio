@@ -103,21 +103,32 @@ def _check_geometry(avatar: Avatar, dim: int) -> None:
         _need_radius(avatar, "rigidCluster")
         if not avatar.nb_vertices or avatar.nb_vertices < 2:
             raise ValidationError("nb_disk >= 2 required for rigidCluster")
-    elif atype in (AvatarType.ROUGH_WALL, AvatarType.FINE_WALL):
+    elif atype == AvatarType.ROUGH_WALL:
         if "l" not in wp or "r" not in wp:
             raise ValidationError(f"l and r required for {atype.value}")
         if wp["l"] <= 0 or wp["r"] <= 0:
             raise ValidationError("l and r must be positive")
+    elif atype == AvatarType.FINE_WALL:
+        if "l" not in wp or ("h" not in wp and "r" not in wp):
+            raise ValidationError("l and h required for fineWall")
+        if wp["l"] <= 0 or wp.get("h", 2.0 * wp.get("r", 0.0)) <= 0:
+            raise ValidationError("l and h must be positive")
     elif atype == AvatarType.SMOOTH_WALL:
         if "l" not in wp or "h" not in wp:
             raise ValidationError("l and h required for smoothWall")
         if wp["l"] <= 0 or wp["h"] <= 0:
             raise ValidationError("l and h must be positive")
     elif atype == AvatarType.GRANULO_WALL:
-        for k in ("l", "rmin", "rmax"):
+        for k in ("l", "rmin"):
             if k not in wp:
                 raise ValidationError(f"{k} required for granuloRoughWall")
-        if wp["rmin"] > wp["rmax"]:
+        if "h" not in wp and "rmax" not in wp:
+            raise ValidationError("h required for granuloRoughWall")
+        height = wp.get("h", 2.0 * wp.get("rmax", 0.0))
+        if wp["l"] <= 0 or wp["rmin"] <= 0 or height <= 0:
+            raise ValidationError("l, h and rmin must be positive")
+        rmax = height / 2.0
+        if wp["rmin"] > rmax:
             raise ValidationError("rmin must be <= rmax")
     elif atype == AvatarType.RIGID_PLAN:
         if not avatar.axis or any(k not in avatar.axis for k in ("axe1", "axe2", "axe3")):

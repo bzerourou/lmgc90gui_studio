@@ -304,19 +304,19 @@ def create_avatar_tab(parent=None):
                     )
                 vertices = parse_vertices(p.get("vertices") or "")
                 if vertices is None:
-                    raise ValueError("At least 5 vertices are required")
+                    raise ValueError("At least 4 vertices are required")
                 return pre.rigidPolyhedron(
                     center=center, model=mod, material=mat, color=color,
-                    generation_type="full", vertices=vertices,
+                    generation_type="vertices", vertices=vertices,
                 )
             if t == AvatarType.SMOOTH_WALL:
                 return pre.smoothWall(l=p["l"], h=p["h"], center=center, model=mod, material=mat, color=color, nb_polyg=int(p.get("nb_polyg", 16)))
             if t == AvatarType.ROUGH_WALL:
                 return pre.roughWall(l=p["l"], r=p["r"], center=center, model=mod, material=mat, color=color, nb_vertex=int(p.get("nb_vertex", 10)))
             if t == AvatarType.FINE_WALL:
-                return pre.fineWall(l=p["l"], r=p["r"], center=center, model=mod, material=mat, color=color, nb_vertex=int(p.get("nb_vertex", 10)))
+                return pre.fineWall(l=p["l"], h=p["h"], center=center, model=mod, material=mat, color=color, nb_vertex=int(p.get("nb_vertex", 10)))
             if t == AvatarType.GRANULO_WALL:
-                return pre.granuloRoughWall(l=p["l"], rmin=p["rmin"], rmax=p["rmax"], center=center, model=mod, material=mat, color=color, nb_vertex=int(p.get("nb_vertex", 10)))
+                return pre.granuloRoughWall(l=p["l"], h=p["h"], rmin=p["rmin"], center=center, model=mod, material=mat, color=color, nb_vertex=int(p.get("nb_vertex", 10)))
             if t == AvatarType.ROUGH_WALL_3D:
                 return pre.roughWall3D(lx=p["lx"], ly=p["ly"], lz=p["lz"], center=center, model=mod, material=mat, color=color)
             if t == AvatarType.GRANULO_ROUGH_WALL_3D:
@@ -374,6 +374,7 @@ def create_avatar_tab(parent=None):
                 "h": (av.wall_params or {}).get("h"),
                 "l": (av.wall_params or {}).get("l"),
             }
+            mapping.update(av.wall_params or {})
             if av.axis:
                 mapping.update(av.axis)
             if av.mesh_params:

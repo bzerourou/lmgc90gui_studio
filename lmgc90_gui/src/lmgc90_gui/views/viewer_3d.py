@@ -351,8 +351,8 @@ def _wall_box_2d(av: Avatar) -> pv.PolyData:
     wp = av.wall_params or {}
     # Longueur : lx (nouveau) | l (ancien) | radius | 1.0
     lx = float(wp.get('lx', wp.get('l', av.radius or 1.0)))
-    # Épaisseur : ly (nouveau) | r (ancien roughWall) | h (smoothWall) | 0.05
-    ly = float(wp.get('ly', wp.get('r', wp.get('h', 0.05))))
+    # h is the wall thickness; legacy rough/fine radii represent half-thickness.
+    ly = float(wp.get('ly', wp.get('h', 2.0 * wp.get('r', 0.025))))
     poly = _rect_poly(c[0], c[1], c[2], lx, ly)
     return _extrude(poly, _extrude_h(lx))
 

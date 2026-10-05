@@ -79,9 +79,9 @@ AVATAR_PARAM_SCHEMA: dict[str, tuple[tuple[str, object, str], ...]] = {
     ),
     "smoothWall": (("l", 1.0, "float"), ("h", 0.1, "float"), ("nb_polyg", 16, "int")),
     "roughWall": (("l", 1.0, "float"), ("r", 0.02, "float"), ("nb_vertex", 10, "int")),
-    "fineWall": (("l", 1.0, "float"), ("r", 0.02, "float"), ("nb_vertex", 10, "int")),
+    "fineWall": (("l", 1.0, "float"), ("h", 0.04, "float"), ("nb_vertex", 10, "int")),
     "granuloRoughWall": (
-        ("l", 1.0, "float"), ("rmin", 0.01, "float"), ("rmax", 0.03, "float"),
+        ("l", 1.0, "float"), ("h", 0.06, "float"), ("rmin", 0.01, "float"),
         ("nb_vertex", 10, "int"),
     ),
     "roughWall3D": (("lx", 1.0, "float"), ("ly", 1.0, "float"), ("lz", 0.1, "float")),

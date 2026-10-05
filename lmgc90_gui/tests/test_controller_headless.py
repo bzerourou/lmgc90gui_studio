@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lmgc90_core import MaterialType, ValidationError, pre
+from lmgc90_core import ForLoop, Loop, MaterialType, ValidationError, pre
 from lmgc90_gui import ProjectController
 
 
@@ -62,6 +62,42 @@ def test_remove_avatar_by_id():
     ctrl.add_avatar(a)
     ctrl.remove_avatar(a.avatar_id)
     assert ctrl.project.avatars == []
+
+
+def test_remove_loop_via_controller():
+    ctrl = ProjectController()
+    ctrl.new_project("loop", dimension=2)
+    ctrl.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    ctrl.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    prototype = pre.rigidDisk(r=0.1, center=[0, 0], model="rigid", material="STEEL")
+    ctrl.add_avatar(prototype)
+    ctrl.apply_loop(Loop("circle", prototype.avatar_id, count=3, radius=1.0))
+    loop_id = ctrl.project.loops[0].loop_id
+
+    ctrl.remove_loop(loop_id)
+    assert ctrl.project.loops == []
+    assert [avatar.avatar_id for avatar in ctrl.project.avatars] == [prototype.avatar_id]
+
+
+def test_remove_for_loop_via_controller():
+    ctrl = ProjectController()
+    ctrl.new_project("for-loop", dimension=2)
+    ctrl.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    ctrl.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    prototype = pre.rigidDisk(r=0.1, center=[0, 0], model="rigid", material="STEEL")
+    ctrl.add_avatar(prototype)
+    loop = ForLoop(
+        start=0,
+        stop=3,
+        target_kind="avatar",
+        model_avatar_id=prototype.avatar_id,
+        group_name="generated",
+    )
+    ctrl.apply_for_loop(loop)
+
+    ctrl.remove_for_loop(loop.loop_id)
+    assert ctrl.project.for_loops == []
+    assert [avatar.avatar_id for avatar in ctrl.project.avatars] == [prototype.avatar_id]
 
 
 def test_deposit_numpy():

@@ -198,9 +198,9 @@ def build_avatar(
                 import numpy as _np
                 arr = _np.asarray(verts, dtype=float)
                 n = int(arr.shape[0])
-                if n <= 4:
+                if n < 4:
                     raise MaterializationError(
-                        f"rigidPolyhedron needs > 4 vertices, got {n} "
+                        f"rigidPolyhedron needs at least 4 vertices, got {n} "
                         f"(avatar_id={av.avatar_id})"
                     )
                 # pylmgc requires nb_vertices > 4 and a valid generation_type
@@ -455,8 +455,11 @@ def _build_wall_2d(pre, av: Avatar, mat, mod) -> Any:
             nb_polyg=int(wp.get("nb_polyg", 24)), **common,
         )
     if t == AvatarType.FINE_WALL:
+        height = wp.get("h")
         return pre.fineWall(
-            l=float(wp.get("l", 1.0)), r=float(wp.get("r", 0.02)),
+            l=float(wp.get("l", 1.0)),
+            r=float(height) / 2.0 if height is not None
+            else float(wp.get("r", 0.02)),
             nb_vertex=int(wp.get("nb_vertex", 10)),
             **common,
         )
@@ -472,9 +475,12 @@ def _build_wall_2d(pre, av: Avatar, mat, mod) -> Any:
     fn = getattr(pre, "granuloRoughWall", None)
     if fn is None:
         raise MaterializationError("pylmgc90 has no granuloRoughWall")
+    height = wp.get("h")
     return fn(
         l=float(wp.get("l", 1.0)),
-        rmin=float(wp.get("rmin", 0.01)), rmax=float(wp.get("rmax", 0.02)),
+        rmin=float(wp.get("rmin", 0.01)),
+        rmax=float(height) / 2.0 if height is not None
+        else float(wp.get("rmax", 0.02)),
         nb_vertex=int(wp.get("nb_vertex", 10)),
         **common,
     )

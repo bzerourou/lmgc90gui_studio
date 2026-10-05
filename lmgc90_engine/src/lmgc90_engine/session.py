@@ -102,8 +102,11 @@ class EngineSession:
         Opens the native pylmgc90 / VTK-style viewer and requires an interactive
         display with ``pylmgc90`` installed.
         Bodies without nodes or without drawable rigid contactors are omitted.
+        Returns immediately when the project has no bodies to display.
         Returns the number of omitted bodies.
         """
+        if self.project.n_bodies == 0:
+            return 0
         scene = self.materialize(force=force)
         from .materialize import _pre
         pre = _pre()

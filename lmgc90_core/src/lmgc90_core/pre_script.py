@@ -183,8 +183,18 @@ def _emit_avatar(av: Avatar) -> str:
         )
     if t == AvatarType.FINE_WALL:
         wp = av.wall_params or {}
+        radius = wp.get("h", 2.0 * wp.get("r", 0.02)) / 2.0
         return (
-            f"av_{ident} = pre.fineWall(l={wp.get('l')}, r={wp.get('r')}, "
+            f"av_{ident} = pre.fineWall(l={wp.get('l')}, r={radius}, "
+            f"center={c}, model={mod}, material={mat}, color={color!r}, "
+            f"nb_vertex={wp.get('nb_vertex', 10)})"
+        )
+    if t == AvatarType.GRANULO_WALL:
+        wp = av.wall_params or {}
+        max_radius = wp.get("h", 2.0 * wp.get("rmax", 0.03)) / 2.0
+        return (
+            f"av_{ident} = pre.granuloRoughWall(l={wp.get('l')}, "
+            f"rmin={wp.get('rmin')}, rmax={max_radius}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
             f"nb_vertex={wp.get('nb_vertex', 10)})"
         )
@@ -217,6 +227,18 @@ def _emit_avatar(av: Avatar) -> str:
             f"av_{ident} = pre.rigidPolygon(model={mod}, material={mat}, center={c}, "
             f"color={color!r}, generation_type={av.generation_type!r}, "
             f"vertices=np.array({av.vertices}), radius={av.radius})"
+        )
+    if t == AvatarType.RIGID_POLYHEDRON:
+        if av.generation_type == "regular":
+            return (
+                f"av_{ident} = pre.rigidPolyhedron(model={mod}, material={mat}, "
+                f"center={c}, color={color!r}, generation_type='regular', "
+                f"nb_vertices={av.nb_vertices}, radius={av.radius})"
+            )
+        return (
+            f"av_{ident} = pre.rigidPolyhedron(model={mod}, material={mat}, "
+            f"center={c}, color={color!r}, generation_type='vertices', "
+            f"vertices=np.array({av.vertices}))"
         )
     if t == AvatarType.MESH_DEFORMABLE:
         mp = av.mesh_params or {}

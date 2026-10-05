@@ -148,7 +148,12 @@ def avatar_to_geoms(
     ):
         wp = av.wall_params or {}
         L = float(wp.get("l", 1.0))
-        h = float(wp.get("h", wp.get("r", 0.05)))
+        if wp.get("h") is not None:
+            h = float(wp["h"])
+        elif wp.get("r") is not None:
+            h = 2.0 * float(wp["r"])
+        else:
+            h = 2.0 * float(wp.get("rmax", 0.025))
         p0 = list(c); p1 = list(c)
         p0[0] -= L / 2; p1[0] += L / 2
         segs.append(SegmentGeom(tuple(p0), tuple(p1), col, label, aid))

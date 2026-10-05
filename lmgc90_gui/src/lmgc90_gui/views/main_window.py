@@ -43,7 +43,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def __init__(self, controller: Optional[ProjectController] = None):
             super().__init__()
             self.controller = controller or ProjectController()
-            self.setWindowTitle(f"LMGC90_GUI v0.6.2 — {self.controller.project.name}")
+            self.setWindowTitle(f"LMGC90_GUI v0.6.3 — {self.controller.project.name}")
             self.resize(1280, 860)
             apply_app_style(self)
             self._build_ui()
@@ -302,10 +302,10 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 f"𝑥 vars={n_vars}  ·  "
                 f"pylmgc={'✅' if self.controller.pylmgc_available() else '—'}"
             )
-            self.setWindowTitle(f"LMGC90_GUI v0.6.2 — {p.name}")
+            self.setWindowTitle(f"LMGC90_GUI v0.6.3 — {p.name}")
 
         def _on_error(self, msg: str) -> None:
-            QMessageBox.warning(self, "LMGC90_GUI v0.6.2", msg)
+            QMessageBox.warning(self, "LMGC90_GUI v0.6.3", msg)
 
         def _on_loaded(self) -> None:
             self._update_status()

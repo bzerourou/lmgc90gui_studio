@@ -10,7 +10,15 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from lmgc90_core import Avatar, Material, MaterialType, Model, ValidationError, pre
-from lmgc90_core.types import AvatarOrigin, AvatarType, MATERIAL_PROPERTY_SCHEMA
+from lmgc90_core.types import (
+    AvatarOrigin,
+    AvatarType,
+    ISOTROPIC_FIELDS,
+    MATERIAL_PROPERTY_CHOICES,
+    MATERIAL_PROPERTY_SCHEMA,
+    ORTHOTROPIC_FIELDS_2D,
+    ORTHOTROPIC_FIELDS_3D,
+)
 
 # ---------------------------------------------------------------------------
 _ELEMENTS_2D = ["T3xxx", "Q4xxx", "T6xxx", "Q8xxx", "Q9xxx"]
@@ -78,15 +86,15 @@ def create_mesh_wizard(controller, parent=None):
             self.setSubTitle("Création guidée d'un avatar maillé MAILx")
             lay = QVBoxLayout(self)
             lay.addWidget(QLabel(
-                "<p>Cet assistant reprend le flux de <b>mesh_wiz_def</b> :</p>"
+                "<p>📋 Étapes :</p>"
                 "<ol>"
-                "<li>Dimension (2D / 3D)</li>"
-                "<li>Matériau élastique (ELAS…)</li>"
-                "<li>Modèle éléments finis</li>"
-                "<li>Géométrie</li>"
-                "<li>Raffinement du maillage</li>"
-                "<li>Contacteurs de bord</li>"
-                "<li>Résumé et génération</li>"
+                "<li>✅Dimension (2D / 3D)</li>"
+                "<li>✅Matériau élastique (ELAS…)</li>"
+                "<li>✅Modèle éléments finis</li>"
+                "<li>✅Géométrie</li>"
+                "<li>✅Raffinement du maillage</li>"
+                "<li>✅Contacteurs de bord</li>"
+                "<li>✅Résumé et génération</li>"
                 "</ol>"
                 "<p>Les données sont enregistrées dans <code>lmgc90_core.Project</code> "
                 "(Avatar MESH_DEFORMABLE + mesh_params). "
@@ -165,6 +173,7 @@ def create_mesh_wizard(controller, parent=None):
                 self.existing.addItems(mats)
             else:
                 self.existing.addItem("(Aucun matériau élastique)")
+            self._apply_anisotropy_visibility()
 
         def _toggle(self, on: bool):
             self.mat_name.setEnabled(on)
@@ -182,25 +191,83 @@ def create_mesh_wizard(controller, parent=None):
             key = self.mat_type.currentText()
             defaults = dict(_MAT_DEFAULTS.get(key, {}))
             schema = MATERIAL_PROPERTY_SCHEMA.get(key, ())
-            # prefer schema order
-            names = [n for n, _, _ in schema] if schema else list(defaults.keys())
-            for name in names:
-                default = defaults.get(name, 0.0)
-                if isinstance(default, (int, float)):
+            for name, schema_default, kind in schema:
+                default = defaults.get(name, schema_default)
+                choices = MATERIAL_PROPERTY_CHOICES.get(name)
+                if name == "anisotropy" and key != "ELAS":
+                    choices = ("isotropic",)
+                if choices:
+                    w = QComboBox()
+                    w.addItems(list(choices))
+                    index = w.findText(str(default))
+                    if index >= 0:
+                        w.setCurrentIndex(index)
+                    w.currentTextChanged.connect(
+                        self._apply_anisotropy_visibility
+                    )
+                elif kind == "float":
                     w = QDoubleSpinBox()
                     w.setRange(-1e30, 1e30)
                     w.setDecimals(6)
+                    if name.startswith(("young", "G", "sigc")):
+                        w.setDecimals(4)
                     w.setValue(float(default))
                 else:
                     w = QLineEdit(str(default))
                 self.prop_form.addRow(name, w)
                 self._prop_widgets[name] = w
 
+            self._apply_anisotropy_visibility()
+
+        def _dimension(self) -> int:
+            wizard = self.wizard()
+            if wizard is None:
+                return int(controller.project.dimension)
+            return wizard.page(MeshWizard.PAGE_DIM).dimension()
+
+        def _apply_anisotropy_visibility(self, *_a):
+            anisotropy = self._prop_widgets.get("anisotropy")
+            orthotropic = (
+                anisotropy.currentText().strip().lower() in ("orthotropic", "ortho")
+                if anisotropy is not None else False
+            )
+            dimension_fields = set(
+                ORTHOTROPIC_FIELDS_3D
+                if self._dimension() == 3
+                else ORTHOTROPIC_FIELDS_2D
+            )
+            all_orthotropic_fields = set(ORTHOTROPIC_FIELDS_3D)
+
+            for name, widget in self._prop_widgets.items():
+                if name == "anisotropy":
+                    visible = True
+                elif name in ISOTROPIC_FIELDS:
+                    visible = not orthotropic
+                elif name in all_orthotropic_fields:
+                    visible = orthotropic and name in dimension_fields
+                else:
+                    visible = True
+                widget.setVisible(visible)
+                widget.setEnabled(visible)
+                for role in (
+                    QFormLayout.ItemRole.LabelRole,
+                    QFormLayout.ItemRole.FieldRole,
+                ):
+                    item = self.prop_form.itemAt(
+                        self.prop_form.getWidgetPosition(widget)[0], role
+                    )
+                    if item is not None and item.widget() is not None:
+                        item.widget().setVisible(visible)
+
         def collect_props(self) -> dict:
             out = {}
             for k, w in self._prop_widgets.items():
+                if not w.isEnabled():
+                    continue
                 if isinstance(w, QDoubleSpinBox):
                     out[k] = float(w.value())
+                elif isinstance(w, QComboBox):
+                    out[k] = w.currentText().strip()
                 else:
                     out[k] = w.text().strip()
             return out
