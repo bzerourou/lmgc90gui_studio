@@ -273,6 +273,11 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_about = QAction(f"{MENU_ICONS['about']} &About / shortcuts", self)
             act_about.triggered.connect(self._on_about)
             help_m.addAction(act_about)
+            help_m.addSeparator()
+            act_docs = QAction("📖 French documentation ", self)
+            act_docs.triggered.connect(self._open_docs)
+            help_m.addAction(act_docs)
+
 
             tb = QToolBar("Main")
             tb.setMovable(False)
@@ -581,6 +586,11 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def _on_about(self) -> None:
             from ..dialogs.about_dialog import create_about_dialog
             create_about_dialog(self).exec()
+
+        def _open_docs(self) -> None:
+            # vers un lien externe (docs en ligne)
+            import webbrowser
+            webbrowser.open("https://github.com/bzerourou/lmgc90gui_studio/blob/main/docs/fr/overview.md")
 
         def _on_refresh_viewer(self) -> None:
             try:
