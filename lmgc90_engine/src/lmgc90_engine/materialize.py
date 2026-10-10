@@ -127,7 +127,9 @@ def materialize_project(project: Project) -> MaterializedScene:
     for law in project.laws:
         obj = _make_law(pre, law)
         tacts.addBehav(obj)
+        # index under both original and 5-char LMGC name
         scene.law_by_name[law.name] = obj
+        scene.law_by_name[_lmgc5(law.name)] = obj
 
     # --- see tables ---
     for rule in project.visibility:
@@ -149,6 +151,7 @@ def materialize_project(project: Project) -> MaterializedScene:
 
 
 def _lmgc5(name: str, default: str = "XXXXX") -> str:
+    """LMGC90 Fortran identifiers are fixed-width 5 characters."""
     s = (name or default).strip()
     if len(s) > 5:
         s = s[:5]
@@ -305,7 +308,8 @@ def _make_model(pre, m: Model) -> Any:
 
 
 def _make_law(pre, law: ContactLaw) -> Any:
-    kwargs: dict[str, Any] = dict(name=law.name, law=law.law_type.value)
+    # pylmgc90.pre.tact_behav requires name to be exactly 5 characters
+    kwargs: dict[str, Any] = dict(name=_lmgc5(law.name), law=law.law_type.value)
     if law.friction is not None:
         kwargs["fric"] = float(law.friction)
     kwargs.update(law.properties or {})
@@ -320,7 +324,7 @@ def _make_see(pre, rule: VisibilityRule) -> Any:
         CorpsAntagoniste=rule.antagonist_body,
         antagoniste=rule.antagonist_contactor,
         colorAntagoniste=rule.antagonist_color,
-        behav=rule.behavior_name,
+        behav=_lmgc5(rule.behavior_name),
         alert=float(rule.alert),
     )
 
