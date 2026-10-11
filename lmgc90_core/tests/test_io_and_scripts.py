@@ -1,6 +1,8 @@
 from pathlib import Path
+import ast
 
 from lmgc90_core import DOFOperation, GranuloConfig, PostProCommand, Project, pre
+from lmgc90_core.scenes.demos import falling_disks, sphere_stack
 
 
 def _compression(tmp: Path) -> Project:
@@ -71,8 +73,60 @@ def test_pre_script_contains_pylmgc90_calls(tmp_path: Path):
     assert "pre.smoothWall" in src
     assert "pre.tact_behav(name='bt_ac', law='GAP_SGR_CLB'" in src
     assert "pre.see_table(" in src
+    assert "behav=law_bt_ac" in src
+    assert "behav='bt_ac'" not in src
     assert "imposeDrivenDof" in src
     assert "pre.writeDatbox(" in src
+
+
+def test_pre_script_compacts_repeated_avatars_when_requested():
+    p = Project(name="compact", dimension=2)
+    p.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    p.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    p.add(pre.rigidDisk(
+        r=0.2, center=[-1.0, 0.0], model="rigid", material="STEEL", color="REDxx"
+    ))
+    first = p.add(pre.rigidDisk(r=0.1, center=[0.0, 0.0], model="rigid", material="STEEL"))
+    second = p.add(pre.rigidDisk(r=0.15, center=[1.0, 0.0], model="rigid", material="STEEL"))
+    third = p.add(pre.rigidDisk(r=0.12, center=[2.0, 0.0], model="rigid", material="STEEL"))
+    p.avatar_groups["pair"] = [first.avatar_id, second.avatar_id, third.avatar_id]
+    p.add(DOFOperation("translate", "group", "pair", {"dx": 0.25}))
+
+    expanded = p.to_pre_script()
+    compact = p.to_pre_script(use_loop=True)
+
+    assert expanded.count("pre.rigidDisk(") == 4
+    assert compact.count("pre.rigidDisk(") == 2
+    assert "for _center, _radius in (" in compact
+    assert "([1.0, 0.0], 0.15)" in compact
+    assert "_avatar_batch_0.append(_body)" in compact
+    assert "_avatar_batch_0[0].translate(dx=0.25)" in compact
+    assert "_avatar_batch_0[1].translate(dx=0.25)" in compact
+    assert "_avatar_batch_0[2].translate(dx=0.25)" in compact
+    assert len(compact) < len(expanded)
+    ast.parse(compact)
+
+
+def test_chipy_script_enables_detectors_required_by_demo_visibility():
+    project_2d = Project(name="falling_disks", dimension=2)
+    falling_disks(project_2d)
+    script_2d = project_2d.to_chipy_script()
+    assert "chipy.ComputeFreeVelocity()" in script_2d
+    assert "chipy.DKDKx_SelectProxTactors()" in script_2d
+    assert "chipy.DKJCx_SelectProxTactors()" in script_2d
+    assert len({tuple(a.center) for a in project_2d.avatars if a.avatar_type.value == "rigidDisk"}) == 10
+
+    project_3d = Project(name="sphere_stack", dimension=3)
+    sphere_stack(project_3d)
+    script_3d = project_3d.to_chipy_script()
+    assert "mhyp   = 3" in script_3d
+    assert "chipy.RBDY3_NewStep()" in script_3d
+    assert "chipy.SPSPx_SelectProxTactors()" in script_3d
+    assert "chipy.SPPLx_SelectProxTactors()" in script_3d
+    assert "chipy.DKDKx_SelectProxTactors()" not in script_3d
+
+    overridden = project_3d.to_chipy_script(use_SPPLx=False)
+    assert "chipy.SPPLx_SelectProxTactors()" not in overridden
 
 
 def test_equivalent_matches_factory():

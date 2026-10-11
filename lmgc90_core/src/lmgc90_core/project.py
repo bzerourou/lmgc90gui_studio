@@ -543,9 +543,9 @@ class Project:
         from .io import load_project
         return load_project(Path(path))
 
-    def to_pre_script(self) -> str:
+    def to_pre_script(self, *, use_loop: bool = False) -> str:
         from .pre_script import emit_pre
-        return emit_pre(self)
+        return emit_pre(self, use_loop=use_loop)
 
     def to_chipy_script(self, **params) -> str:
         from .chipy_script import emit_chipy

@@ -69,11 +69,16 @@ def write_datbox(
     return out
 
 
-def export_pre_script(project: Project, path: Union[str, Path]) -> Path:
+def export_pre_script(
+    project: Project,
+    path: Union[str, Path],
+    *,
+    use_loop: bool = False,
+) -> Path:
     """Always available: write the auditable pre.py from core (no pylmgc needed)."""
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(emit_pre(project), encoding="utf-8")
+    out.write_text(emit_pre(project, use_loop=use_loop), encoding="utf-8")
     return out
 
 
@@ -98,6 +103,8 @@ def write_cell_dual_datbox(
     scene: MaterializedScene,
     project: Project,
     base_path: Union[str, Path],
+    *,
+    use_loop: bool = False,
 ) -> dict[str, Path]:
     """Write DATBOX_SPRD and DATBOX_STBL under *base_path* (cell adhesion).
 
@@ -139,7 +146,7 @@ def write_cell_dual_datbox(
     }
     meta_path.write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
     # also emit pre scripts for audit
-    export_pre_script(project, base / "pre_cell.py")
+    export_pre_script(project, base / "pre_cell.py", use_loop=use_loop)
     return {"DATBOX_SPRD": p1, "DATBOX_STBL": p2, "PHASES": meta_path}
 
 
@@ -186,5 +193,3 @@ def _maybe_write_evolution_files(project: Project, out: Path) -> None:
             path.write_text(text, encoding="utf-8")
         except Exception:
             pass
-
-

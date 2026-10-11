@@ -1,7 +1,14 @@
 # =============================================================================
 # chipy_routines_dialog.py  —  LMGC90_GUI
 # =============================================================================
-"""\nDialogue de configuration des routines chipy pour la generationdu script de calcul command.py.4 onglets :  1. Modele      — mhyp, deformable, physique FEM, Rloc_tol, info projet  2. Routines    — corps rigides (RBDY2/3), detecteurs 2D/3D, FEM, mixtes,                   routines speciales  3. Extraction  — logs, visualisation, visibilite avatars,                   GetBodyVector RBDY2/3 (6 vecteurs chacun),                   forces de contact, energie, champs FEM  4. Pilotage    — restart, critere d'arret, multi-pas (dt variable)"""
+"""Dialogue de configuration des routines chipy pour ``command.py``.
+
+Onglets : modele, routines, extraction, pilotage, inspections 2D/3D/interactions
+et actions SET configurables.
+"""
+
+import ast
+import keyword
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
@@ -120,9 +127,9 @@ class ChipyRoutinesDialog(QDialog):
         "use_CDPLx":          False,
         "use_PRPRx":          False,
         # Deformables
-        "use_mecaFEM":        False,
-        "use_therFEM":        False,
-        "use_hydrFEM":        False,
+        "use_mecaMAILx":       False,
+        "use_therMAILx":       False,
+        "use_poroMAILx":       False,
         # Contacteurs mixtes rigide/deformable
         "use_DKMECAx":        False,
         "use_ALpMECAx":       False,
@@ -132,14 +139,56 @@ class ChipyRoutinesDialog(QDialog):
         "use_PT3Dx":          False,
         "use_NODES":          False,
         "use_bulk_behav":     False,
+        # Routines avancees optionnelles (les etapes du cycle restent automatiques)
+        "advanced_assemble_mechanical": False,
+        "advanced_assemble_thermal": False,
+        "advanced_assemble_poro": False,
+        "advanced_assemble_multi": False,
+        "advanced_fd_select_prox": False,
+        "advanced_compute_rnod": False,
+        "advanced_fatal_damping": False,
+        "advanced_smooth_force": False,
+        "advanced_display_out_dof": False,
+        "advanced_display_out_rnod": False,
+        "advanced_display_out_vloc_rloc": False,
+        "advanced_display_prox_tactors": False,
+        "advanced_hdf5": False,
+        "advanced_add_dof2": False,
+        "advanced_write_out_dof": False,
+        "advanced_write_out_gpv": False,
+        "advanced_write_out_mp_values": False,
+        "advanced_write_out_rnod": False,
+        "advanced_write_out_vloc_rloc": False,
+        "advanced_write_last": False,
+        "advanced_write_last_dof": False,
+        "advanced_write_last_gpv": False,
+        "advanced_write_last_mp_values": False,
+        "advanced_write_last_rnod": False,
+        "advanced_write_last_vloc_rloc": False,
+        "advanced_write_behaviours": False,
+        "advanced_write_bodies": False,
+        "advanced_write_driven_dof": False,
+        "advanced_write_mp_behaviours": False,
+        "advanced_add_registers_to_display": False,
+        "advanced_circular_selection": False,
+        "advanced_set_contact_radius": False,
+        "advanced_set_domain_boundary": False,
+        "advanced_set_number_interaction": False,
+        "advanced_set_periodic_condition": False,
+        "advanced_hdf5_filename": "command.h5",
+        "advanced_circular_selection_args": "0.0, 0.0, 1.0",
+        "advanced_set_contact_radius_args": "",
+        "advanced_set_domain_boundary_args": "",
+        "advanced_set_number_interaction_args": "",
+        "advanced_set_periodic_condition_args": "",
         # Onglet Extraction — Logs
         "disable_log":        False,
         # Visualisation
         "visu_RBDY2":         True,
         "visu_RBDY3":         False,
-        "visu_mecaFEM":       False,
-        "visu_therFEM":       False,
-        "visu_hydrFEM":       False,
+        "visu_mecaMAIL":       False,
+        "visu_therMAIL":       False,
+        "visu_poroMAIL":       False,
         "display_in_loop":    True,
         # Visibilite avatars — listes d'IDs (ex: "1, 3, 5") ou "" = desactive
         # Visibilite — liste d'entrees dynamiques
@@ -174,6 +223,8 @@ class ChipyRoutinesDialog(QDialog):
         "insp3d_entries": [],
         # ── Inspection Interactions ───────────────────────────────────────────
         "inspi_entries": [],
+        # Actions chipy SET configurables
+        "set_entries": [],
         # Onglet Pilotage — Restart
         "use_restart":        False,
         "restart_step":       0,
@@ -201,8 +252,16 @@ class ChipyRoutinesDialog(QDialog):
 
         self._params: Dict[str, Any] = dict(self.DEFAULTS)
         if current_params:
+            params = dict(current_params)
+            for current, legacy in (
+                ("use_mecaMAILx", "use_mecaMAIL"),
+                ("use_therMAILx", "use_therMAIL"),
+                ("use_poroMAILx", "use_poroMAIL"),
+            ):
+                if current not in params and legacy in params:
+                    params[current] = params[legacy]
             self._params.update(
-                {k: v for k, v in current_params.items() if k in self.DEFAULTS}
+                {k: v for k, v in params.items() if k in self.DEFAULTS}
             )
 
         self._build_ui()
@@ -222,11 +281,14 @@ class ChipyRoutinesDialog(QDialog):
         self._tabs = QTabWidget()
         self._tabs.addTab(self._tab_model(),    "Modele")
         self._tabs.addTab(self._tab_routines(), "Routines")
+        self._tabs.addTab(self._tab_advanced_routines(), "Avance")
         self._tabs.addTab(self._tab_extract(),  "Extraction")
         self._tabs.addTab(self._tab_pilot(),    "Pilotage")
         self._tabs.addTab(self._tab_insp_2d(),  "Inspect. 2D")
         self._tabs.addTab(self._tab_insp_3d(),  "Inspect. 3D")
         self._tabs.addTab(self._tab_insp_int(), "Inspect. Interact.")
+        self._tabs.addTab(self._tab_set_actions(), "Actions SET")
+
         root.addWidget(self._tabs, stretch=1)
 
         btn_preview = QPushButton("Apercu du script command.py")
@@ -278,7 +340,7 @@ class ChipyRoutinesDialog(QDialog):
         self._cb_deformable = _cb(
             "Activer les corps deformables  (ReadDatbox deformable=True)",
             tip="Active le chargement et le calcul des corps deformables "
-                "(MESH_DEFORMABLE). Active mecaFEMx automatiquement si MECAx.",
+                "(MESH_DEFORMABLE). Active mecaMAILx automatiquement si MECAx.",
         )
         fl_d.addRow(self._cb_deformable)
 
@@ -286,10 +348,10 @@ class ChipyRoutinesDialog(QDialog):
         self._combo_phys.addItems([
             "MECAx  -- Mecanique des solides",
             "THERx  -- Thermique",
-            "HYDRx  -- Hydraulique",
-            "THMx   -- Thermo-hydraulique-mecanique",
+            "POROx  -- Hydraulique",
+            "MULTI   -- Thermo-hydraulique-mecanique",
         ])
-        fl_d.addRow("Physique FEM :", self._combo_phys)
+        fl_d.addRow("Physique MAILx :", self._combo_phys)
 
         self._dspin_rloc = QDoubleSpinBox()
         self._dspin_rloc.setRange(1e-8, 1.0)
@@ -384,21 +446,21 @@ class ChipyRoutinesDialog(QDialog):
         vb.addWidget(grp_t3d)
 
         # Deformables
-        grp_fem = _section("Corps deformables  --  Routines FEM")
+        grp_fem = _section("Corps deformables  --  Routines MAILx")
         vb_fem = QVBoxLayout()
-        self._cb_mecaFEM = _cb(
-            "mecaFEMx  -- Mecanique  (assembly / Fint / Fext / K / ComputeDof)",
+        self._cb_mecaMAILx = _cb(
+            "mecaMAILx  -- Mecanique  (assembly / Fint / Fext / K / ComputeDof)",
             tip="Active l'assemblage et le calcul des forces internes mecaniques.",
         )
-        self._cb_therFEM = _cb(
-            "therFEMx  -- Thermique  (flux / bilan thermique / ComputeDof)",
+        self._cb_therMAILx = _cb(
+            "therMAILx  -- Thermique  (flux / bilan thermique / ComputeDof)",
             tip="Active les routines de diffusion thermique par elements finis.",
         )
-        self._cb_hydrFEM = _cb(
-            "hydrFEMx  -- Hydraulique  (pression / flux fluide / ComputeDof)",
+        self._cb_poroMAILx = _cb(
+            "poroMAILx  -- Hydraulique  (pression / flux fluide / ComputeDof)",
             tip="Active les routines de pression hydraulique par elements finis.",
         )
-        for c in (self._cb_mecaFEM, self._cb_therFEM, self._cb_hydrFEM):
+        for c in (self._cb_mecaMAILx, self._cb_therMAILx, self._cb_poroMAILx):
             vb_fem.addWidget(c)
         grp_fem.setLayout(vb_fem)
         vb.addWidget(grp_fem)
@@ -407,15 +469,15 @@ class ChipyRoutinesDialog(QDialog):
         grp_mix = _section("Contacteurs mixtes  --  Rigide / Deformable")
         vb_mix = QVBoxLayout()
         self._cb_DKMECAx  = _cb(
-            "DKMECAx   -- Disque rigide / Meca FEM 2D",
+            "DKMECAx   -- Disque rigide / Meca MAILx 2D",
             tip="Interaction entre disques rigides et elements finis mecaniques 2D.",
         )
         self._cb_ALpMECAx = _cb(
-            "ALpMECAx  -- CLALp (maconnerie) / Meca FEM 2D",
+            "ALpMECAx  -- CLALp (maconnerie) / Meca MAILx 2D",
             tip="Interaction interfaces maconnerie et elements finis mecaniques.",
         )
         self._cb_SPMECAx  = _cb(
-            "SPMECAx   -- Sphere rigide / Meca FEM 3D",
+            "SPMECAx   -- Sphere rigide / Meca MAILx 3D",
             tip="Interaction entre spheres rigides et elements finis mecaniques 3D.",
         )
         for c in (self._cb_DKMECAx, self._cb_ALpMECAx, self._cb_SPMECAx):
@@ -451,6 +513,151 @@ class ChipyRoutinesDialog(QDialog):
         vb.addStretch()
         return _scroll(w)
 
+    def _tab_advanced_routines(self) -> QWidget:
+        """Options de calcul avancees, separees du cycle chipy obligatoire."""
+        w = QWidget()
+        vb = QVBoxLayout(w)
+        vb.setSpacing(8)
+        vb.addWidget(_note(
+            "Les appels Initialize, ReadDatbox, ComputeFreeVelocity, WriteOut et "
+            "les autres etapes indispensables restent automatiques. ReadDatbox "
+            "charge deja les fichiers DAT/INI. Les options ci-dessous sont "
+            "facultatives et ajoutees uniquement quand elles sont cochees."
+        ))
+        self._advanced_checks = {}
+        self._advanced_edits = {}
+
+        def add_group(title: str, options: list) -> None:
+            group = _section(title)
+            layout = QVBoxLayout()
+            for option in options:
+                key, label = option[:2]
+                tip = option[2] if len(option) > 2 else ""
+                checkbox = _cb(label, tip=tip)
+                self._advanced_checks[key] = checkbox
+                layout.addWidget(checkbox)
+            group.setLayout(layout)
+            vb.addWidget(group)
+
+        add_group("Assemblage explicite par physique (MAILx)", [
+            ("advanced_assemble_mechanical", "AssembleMechanicalLHS / RHS",
+             "Appels explicites a chaque pas, uniquement si mecaMAILx est actif."),
+            ("advanced_assemble_thermal", "AssembleThermalLHS / RHS",
+             "Appels explicites a chaque pas, uniquement si therMAILx est actif."),
+            ("advanced_assemble_poro", "AssemblePoroLHS / RHS",
+             "Appels explicites a chaque pas, uniquement si poroMAILx est actif."),
+            ("advanced_assemble_multi", "AssembleMultiLHS / RHS",
+             "Appels explicites a chaque pas en physique THMx."),
+        ])
+        add_group("Contacts, forces et diagnostic", [
+            ("advanced_fd_select_prox", "Utiliser FdSelectProxTactors",
+             "Remplace la selection standard. Reserve aux contacts sphere/sphere."),
+            ("advanced_compute_rnod", "Recalculer les reactions (ComputeRnod)",
+             "Recalcule les reactions de contact apres la mise a jour du pas."),
+            ("advanced_fatal_damping", "Activer FatalDamping",
+             "Applique l'amortissement fatal a tous les corps a chaque pas."),
+            ("advanced_smooth_force", "Activer SmoothForceComputation",
+             "Recalcule explicitement les forces de contact apres resolution."),
+            ("advanced_display_prox_tactors", "Afficher les contacteurs proches",
+             "Appelle DisplayProxTactors a chaque pas."),
+            ("advanced_display_out_dof", "Afficher les degres de liberte",
+             "Appelle DisplayOutDof a chaque pas."),
+            ("advanced_display_out_rnod", "Afficher les reactions (Rnod)",
+             "Appelle DisplayOutRnod a chaque pas."),
+            ("advanced_display_out_vloc_rloc", "Afficher les contacts (Vloc/Rloc)",
+             "Appelle DisplayOutVlocRloc a chaque pas."),
+        ])
+        add_group("Sorties supplementaires", [
+            ("advanced_hdf5", "Initialiser une sortie HDF5 (InitHDF5 / WriteHDF5)",
+             "Ecrit aussi les resultats HDF5 a chaque pas d'ecriture."),
+            ("advanced_write_out_dof", "WriteOutDof"),
+            ("advanced_write_out_gpv", "WriteOutGPV"),
+            ("advanced_write_out_mp_values", "WriteOutMpValues"),
+            ("advanced_write_out_rnod", "WriteOutRnod"),
+            ("advanced_write_out_vloc_rloc", "WriteOutVlocRloc"),
+            ("advanced_write_last", "WriteLast"),
+            ("advanced_write_last_dof", "WriteLastDof"),
+            ("advanced_write_last_gpv", "WriteLastGPV"),
+            ("advanced_write_last_mp_values", "WriteLastMpValues"),
+            ("advanced_write_last_rnod", "WriteLastRnod"),
+            ("advanced_write_last_vloc_rloc", "WriteLastVlocRloc"),
+            ("advanced_add_dof2", "AddDof2InBodies avant WriteBodies",
+             "Met a jour les coordonnees de reference avant l'ecriture des corps."),
+            ("advanced_write_bodies", "WriteBodies"),
+            ("advanced_write_behaviours", "WriteBehaviours"),
+            ("advanced_write_driven_dof", "WriteDrivenDof"),
+            ("advanced_write_mp_behaviours", "WriteMpBehaviours"),
+        ])
+        add_group("Affichage et post-traitement", [
+            ("advanced_add_registers_to_display", "Ajouter les champs registres a l'affichage",
+             "Active addRegistersToDisplay avant l'ouverture des fichiers display."),
+            ("advanced_circular_selection", "Limiter le post-traitement a un disque",
+             "Appelle CircularSelection(x, y, r) apres ReadDatbox."),
+        ])
+
+        args_form = QFormLayout()
+        args_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow
+        )
+        for key, label, default, tooltip in [
+            ("advanced_hdf5_filename", "Fichier HDF5 :", "command.h5",
+             "Nom du fichier HDF5 de sortie."),
+            ("advanced_circular_selection_args", "Disque (x, y, r) :",
+             "0.0, 0.0, 1.0", "Arguments Python de CircularSelection."),
+            ("advanced_set_contact_radius_args", "SetContactRadius :", "",
+             "Argument radius, par exemple 0.01."),
+            ("advanced_set_domain_boundary_args", "SetDomainBoundary :",
+             "", "Arguments nommes, par exemple Xmin=-1.0, Xmax=1.0."),
+            ("advanced_set_number_interaction_args",
+             "SetNumberInteractionByContact :", "",
+             "Nombre d'interactions par contact."),
+            ("advanced_set_periodic_condition_args", "SetPeriodicCondition :",
+             "", "Arguments nommes, par exemple xperiod=1.0."),
+        ]:
+            edit = QLineEdit(self._params.get(key, default))
+            edit.setToolTip(tooltip)
+            self._advanced_edits[key] = edit
+            args_form.addRow(label, edit)
+        args_group = _section("Parametres des options avancees")
+        args_group.setLayout(args_form)
+        vb.addWidget(args_group)
+
+        settings_group = _section("Reglages de contact")
+        settings_layout = QVBoxLayout()
+        for key, label in [
+            ("advanced_set_contact_radius", "Configurer SetContactRadius"),
+            ("advanced_set_domain_boundary", "Configurer SetDomainBoundary"),
+            ("advanced_set_number_interaction",
+             "Configurer SetNumberInteractionByContact (experimental)"),
+            ("advanced_set_periodic_condition", "Configurer SetPeriodicCondition"),
+        ]:
+            checkbox = _cb(label)
+            self._advanced_checks[key] = checkbox
+            settings_layout.addWidget(checkbox)
+        settings_group.setLayout(settings_layout)
+        vb.addWidget(settings_group)
+
+        vb.addStretch()
+        self._refresh_advanced_routine_controls()
+        return _scroll(w)
+
+    def _refresh_advanced_routine_controls(self) -> None:
+        if not hasattr(self, "_advanced_checks"):
+            return
+        availability = {
+            "advanced_assemble_mechanical": self._cb_deformable.isChecked()
+                and self._cb_mecaMAILx.isChecked(),
+            "advanced_assemble_thermal": self._cb_deformable.isChecked()
+                and self._cb_therMAILx.isChecked(),
+            "advanced_assemble_poro": self._cb_deformable.isChecked()
+                and self._cb_poroMAILx.isChecked()
+                and self._combo_phys.currentIndex() != 3,
+            "advanced_assemble_multi": self._cb_deformable.isChecked()
+                and self._combo_phys.currentIndex() == 3,
+        }
+        for key, enabled in availability.items():
+            self._advanced_checks[key].setEnabled(enabled)
+
     # ── Onglet 3 : Extraction ─────────────────────────────────────────────────
 
     def _tab_extract(self) -> QWidget:
@@ -479,9 +686,9 @@ class ChipyRoutinesDialog(QDialog):
         self._cb_vRBDY2    = _cb("RBDY2_WriteDisplayFiles  -- Corps rigides 2D",
                                   checked=True)
         self._cb_vRBDY3    = _cb("RBDY3_WriteDisplayFiles  -- Corps rigides 3D")
-        self._cb_vMeca     = _cb("mecaFEMx_WriteDisplayFiles  -- Deformables mecanique")
-        self._cb_vTher     = _cb("therFEMx_WriteDisplayFiles  -- Deformables thermique")
-        self._cb_vHydr     = _cb("hydrFEMx_WriteDisplayFiles  -- Deformables hydraulique")
+        self._cb_vMeca     = _cb("mecaMAILx_WriteDisplayFiles  -- Deformables mecanique")
+        self._cb_vTher     = _cb("therMAILx_WriteDisplayFiles  -- Deformables thermique")
+        self._cb_vHydr     = _cb("poroMAILx_WriteDisplayFiles  -- Deformables hydraulique")
         self._cb_disp_loop = _cb(
             "Ecrire les fichiers display dans la boucle de calcul",
             checked=True,
@@ -647,18 +854,18 @@ class ChipyRoutinesDialog(QDialog):
 
         # ── 8. Champs FEM ─────────────────────────────────────────────────────
         grp_fld = _section(
-            "Champs FEM  (contraintes, deformations, temperature...)"
+            "Champs MAILx  (contraintes, deformations, temperature...)"
         )
         vb_fld = QVBoxLayout()
         self._cb_fields = _cb(
-            "Champs par element        (mecaFEMx_WriteBodies)",
+            "Champs par element        (mecaMAILx_WriteBodies)",
             tip=(
                 "Ecrit les champs par element : contraintes et deformations "
-                "(MECAx), temperature (THERx), pression (HYDRx)."
+                "(MECAx), temperature (THERx), pression (POROx)."
             ),
         )
         self._cb_internal = _cb(
-            "Variables internes        (mecaFEMx_WriteInternalVariables)",
+            "Variables internes        (mecaMAILx_WriteInternalVariables)",
             tip=(
                 "Ecrit les variables internes aux points de Gauss : "
                 "plasticite, endommagement, variables d'histoire."
@@ -668,7 +875,7 @@ class ChipyRoutinesDialog(QDialog):
         vb_fld.addWidget(self._cb_internal)
         vb_fld.addWidget(_note(
             "Ces extractions ne sont actives que si "
-            "'mecaFEMx' est coche dans l'onglet Routines."
+            "'mecaMAILx' est coche dans l'onglet Routines."
         ))
         grp_fld.setLayout(vb_fld)
         vb.addWidget(grp_fld)
@@ -787,169 +994,552 @@ class ChipyRoutinesDialog(QDialog):
     _INSP2D_FUNCS = [
         # ---- DISKx ---------------------------------------------------------
         ("DISKx_GetNbDISKx",          "Nombre total de contacteurs DISKx",                    0),
-        ("DISKx_GetBodyId",           "ID corps RBDY2 du contacteur i",                       1),
         ("DISKx_GetPtrDISKx2BDYTY",   "Index local du contacteur dans son corps RBDY2",       1),
-        ("DISKx_GetPtrTactBehav",     "Loi de comportement associee au contacteur i",         1),
+        ("DISKx_GetNbPointOutlines",     "Nombre de points d'outline du disque i",         1),
         ("DISKx_GetRadius",           "Rayon du disque i",                                    1),
-        ("DISKx_GetCoor",             "Coordonnees du centre du disque i",                    1),
-        ("DISKx_GetVelocity",         "Vitesse du centre du disque i",                        1),
+        ("DISKx_GetNbScalarFields",             "Nombre de champs scalaires",                    1),
+        ("DISKx_GetDISKx2BDYTY",         "Description de DISKx2BDYTY",                        1),
+        ("DISKx_GetMaxRadius","Rayon maximum du disque i", 1),
+        ("DISKx_GetMeanRadius","Rayon moyen du disque i", 1),
+        ("DISKx_GetMinRadius","Rayon minimum du disque i", 1),
+        ("DISKx_GetContactorColor","Couleur du contacteur", 1),
+        ("DISKx_GetContactorCoor","Coordonnees du contacteur", 1),
+        ("DISKx_GetContactorRadius","Rayon du contacteur", 1),  
+
         # ---- JONCx ---------------------------------------------------------
         ("JONCx_GetNbJONCx",          "Nombre total de contacteurs JONCx (joncs/ellipses)",   0),
         ("JONCx_GetBodyId",           "ID corps RBDY2 du jonc i",                             1),
         ("JONCx_GetPtrJONCx2BDYTY",   "Index local du jonc dans son corps RBDY2",             1),
-        ("JONCx_GetPtrTactBehav",     "Loi de comportement associee au jonc i",               1),
-        ("JONCx_GetAxes",             "Demi-axes (a, b) du jonc i",                           1),
+        ("JONCx_GetNbScalarFields",     "Nombre de champs scalaires",               1),
+        ("JONCx_GetShape",             "Forme du jonc i",                           1),
         ("JONCx_GetCoor",             "Coordonnees du centre du jonc i",                      1),
-        # ---- POLYR ---------------------------------------------------------
-        ("POLYR_GetNbPOLYR",          "Nombre total de contacteurs POLYR (polygones rigides)", 0),
-        ("POLYR_GetBodyId",           "ID corps RBDY2 du polygone i",                         1),
-        ("POLYR_GetPtrPOLYR2BDYTY",   "Index local du polygone dans son corps RBDY2",         1),
-        ("POLYR_GetPtrTactBehav",     "Loi de comportement associee au polygone i",           1),
-        ("POLYR_GetNbVerti",          "Nombre de sommets du polygone i",                      1),
-        ("POLYR_GetVerti",            "Coordonnees des sommets du polygone i",                1),
-        ("POLYR_GetCoor",             "Coordonnees du centre de reference du polygone i",     1),
-        # ---- xKSID (cluster discret) ----------------------------------------
-        ("xKSID_GetNbxKSID",          "Nombre total de contacteurs xKSID (disques discrets)", 0),
-        ("xKSID_GetBodyId",           "ID corps RBDY2 du contacteur xKSID i",                 1),
-        ("xKSID_GetPtrxKSID2BDYTY",   "Index local du xKSID dans son corps RBDY2",            1),
-        ("xKSID_GetRadius",           "Rayon du disque discret i",                            1),
+        ("JONCx_GetNbPointOutlines",     "Nombre de points d'outline du jonc i",         1),
+        # -----POLYG ---------------------------------------------------------
+        ("POLYG_GetNbPOLYG",          "Nombre total de contacteurs POLYG (polygones)", 0),
+        ("POLYG_GetBodyId",           "ID corps RBDY2 du polygone i",                         1),
+        ("POLYG_GetContactorRadius", "Rayon du contacteur POLYG i", 1),
+        ("POLYG_GetMaxRadius", "Rayon maximum du contacteur POLYG i", 1),
+        ("POLYG_GetMinRadius", "Rayon minimum du contacteur POLYG i", 1),
+        ("POLYG_GetNbPointOutlines",     "Nombre de points d'outline du polygone i",         1),
+        ("POLYG_GetNbScalarFields",             "Nombre de champs scalaires",                    1),
+        ("POLYG_GetNbVertex",          "Nombre de sommets du polygone i",                      1),
+        ("POLYG_GetNbVertices",          "Nombre de segments du polygone i",                      1),
+        ("POLYG_GetPOLYG2BDYTY",         "Description de POLYG2BDYTY",                        1),
+        ("POLYG_GetPtrPOLYG2BDYTY",   "Index local du polygone dans son corps RBDY2",         1),
+        ("POLYG_GetVertex",            "Coordonnees des sommets du polygone i",                1),
+        ("POLYG_GetVertices",            "Coordonnees des segments du polygone i",                1),
+        # ---- xKSID (creux) ----------------------------------------
+        ("xKSID_GetContactorCoor",    "Coordonnees du contacteur xKSID i",                    1),
+        ("xKSID_GetContactorRadius",   "Rayon du contacteur xKSID i",                         1),
+        ("xKSID_GetNbPointOutlines",   "Nombre de points d'outline du contacteur xKSID i",     1),
+        ("xKSID_GetNbScalarFields",    "Nombre de champs scalaires du contacteur xKSID i",      1),
+        ("xKSID_GetNbxKSID",           "Nombre total de contacteurs xKSID (disques discrets)", 1),
+        ("xKSID_GetPtrxKSID2BDYTY",    "Index local du xKSID dans son corps RBDY2",            1),
+        # ---- Rigid Body Dynamics 2 (RBDY2) -------------------------------------
+        ("RBDY2_GetAllArea", "Aires de tous les corps RBDY2", 0),
+        ("RBDY2_GetAllBodyVector", "Vecteurs de tous les corps RBDY2", 1),
+        ("RBDY2_GetAllInertia", "Inerties de tous les corps RBDY2", 0),
+        ("RBDY2_GetAllMass", "Masses de tous les corps RBDY2", 0),
+        ("RBDY2_GetAverageSurfaceEnergy", "Energie moyenne de surface RBDY2", 0),
+        ("RBDY2_GetBetai", "Betai des corps RBDY2", 0),
+        ("RBDY2_GetBodyArea", "Aire des corps RBDY2", 0),
+        ("RBDY2_GetBodyDensity", "Densite des corps RBDY2", 0),
+        ("RBDY2_GetBodyInertia", "Inertie des corps RBDY2", 0),
+        ("RBDY2_GetBodyMass", "Masse des corps RBDY2", 0),
+        ("RBDY2_GetBodyVector", "Vecteur des corps RBDY2", 1),
+        ("RBDY2_GetBulkBehavID", "ID du comportement massif RBDY2", 0),
+        ("RBDY2_GetBulkBehavNumber", "Nombre de comportements massifs RBDY2", 0),
+        ("RBDY2_GetContactorColor", "Couleur du contacteur RBDY2", 0),
+        ("RBDY2_GetContactorType", "Type du contacteur RBDY2", 0),
+        ("RBDY2_GetElectricalCurrent", "Courant electrique RBDY2", 0),
+        ("RBDY2_GetElectricalPotential", "Potentiel electrique RBDY2", 0),
+        ("RBDY2_GetNbContactor", "Nombre de contacteurs RBDY2", 0),
+        ("RBDY2_GetNbRBDY2", "Nombre total de corps RBDY2", 0),
+        ("RBDY2_GetPeriode", "Periode RBDY2", 0),
+        ("RBDY2_GetPtrBodyVector", "Pointeur vers le vecteur des corps RBDY2", 0),
+        ("RBDY2_GetPtrMass", "Pointeur vers la masse des corps RBDY2", 0),
+        ("RBDY2_GetStress", "Contraintes RBDY2", 0),
+        ("RBDY2_GetThermalValue", "Valeur thermique RBDY2", 0),
+        ("RBDY2_GetVelocity", "Vitesse RBDY2", 1),
         # ---- RBDY2 corps ---------------------------------------------------
-        ("RBDY2_GetNbRBDY2",          "Nombre total de corps rigides 2D",                     0),
-        ("RBDY2_KineticEnergy",       "Energie cinetique totale (tous corps RBDY2)",           0),
-        # ---- PT2Dx noeuds FEM 2D -------------------------------------------
-        ("PT2Dx_GetNbPT2Dx",          "Nombre de noeuds contacteurs 2D (FEM)",                0),
-        ("PT2Dx_GetBodyId",           "ID du corps FEM parent du noeud i",                    1),
-        ("PT2Dx_GetCoor",             "Coordonnees du noeud contacteur 2D i",                 1),
+        ("PT2DL_GetBody",          "ID du corps RBDY2 parent du contacteur PT2DL i",         1),
+        ("PT2DL_GetNbPT2DL",          "Nombre total de contacteurs PT2DL",                     0),
+        ("PT2DL_GetNbPT2TL",          "Nombre total de contacteurs PT2TL",                     0),
+        ("PT2Dx_GetNbPT2Dx",          "Nombre de noeuds contacteurs 2D (MAILx)",                0),
+        ("PT2Dx_GetNbPointOutlines",  "Nombre de points d'outline du noeud 2D i",              1),
+        ("PT2Dx_GetNbScalarFields",   "Nombre de champs scalaires du noeud 2D i",             1),
+        ("PT2Dx_GetPtrPT2Dx2BDYTY",   "Index local du noeud 2D dans son corps RBDY2",         1),
     ]
 
     # ── Contacteurs 3D
     _INSP3D_FUNCS = [
         # ---- SPHER ---------------------------------------------------------
+        ("SPHER_GetContactorCoor",    "Coordonnées du contacteur SPHER i",                     1),
+        ("SPHER_GetContactorCoorb",   "Coordonnées du contacteur SPHER i (version b)",         1),
+        ("SPHER_GetContactorRadius",  "Rayon du contacteur SPHER i",                          1),
+        ("SPHER_GetNbPointOutlines",  "Nombre de points d'outline du contacteur SPHER i",      1),
         ("SPHER_GetNbSPHER",          "Nombre total de contacteurs SPHER (spheres)",           0),
-        ("SPHER_GetBodyId",           "ID corps RBDY3 de la sphere i",                         1),
-        ("SPHER_GetPtrSPHER2BDYTY",   "Index local de la sphere dans son corps RBDY3",         1),
-        ("SPHER_GetPtrTactBehav",     "Loi de comportement associee a la sphere i",            1),
-        ("SPHER_GetRadius",           "Rayon de la sphere i",                                  1),
-        ("SPHER_GetCoor",             "Coordonnees du centre de la sphere i",                  1),
-        ("SPHER_GetVelocity",         "Vitesse du centre de la sphere i",                      1),
-        # ---- POLYH ---------------------------------------------------------
-        ("POLYH_GetNbPOLYH",          "Nombre total de contacteurs POLYH (polyedres)",         0),
-        ("POLYH_GetBodyId",           "ID corps RBDY3 du polyedre i",                          1),
-        ("POLYH_GetPtrPOLYH2BDYTY",   "Index local du polyedre dans son corps RBDY3",          1),
-        ("POLYH_GetPtrTactBehav",     "Loi de comportement associee au polyedre i",            1),
-        ("POLYH_GetNbFaces",          "Nombre de faces du polyedre i",                         1),
-        ("POLYH_GetNbVerti",          "Nombre de sommets du polyedre i",                       1),
-        ("POLYH_GetVerti",            "Coordonnees des sommets du polyedre i",                 1),
-        ("POLYH_GetCoor",             "Coordonnees du centre de reference du polyedre i",      1),
+        ("SPHER_GetNbScalarFields",   "Nombre de champs scalaires du contacteur SPHER i",      1),
+        ("SPHER_GetPtrAllConnectivities", "Pointeur vers toutes les connectivités du contacteur SPHER i", 1),
+        ("SPHER_GetPtrSPHER2BDYTY",   "Index local du contacteur SPHER dans son corps RBDY3",          1),
+        ("SPHER_GetSPHER2BDYTY",      "Description de SPHER2BDYTY",                            1),
+
+        # ---- POLYR ---------------------------------------------------------
+        ("POLYR_GetNbPOLYR",          "Nombre total de contacteurs POLYR (polygones rigides)", 0),
+        ("POLYR_GetContactorColor", "Couleur du contacteur POLYR i", 1),
+        ("POLYR_GetNbPointOutlines", "Nombre de points d'outline du polygone rigide i", 1),
+        ("POLYR_GetNbScalarFields", "Nombre de champs scalaires du polygone rigide i", 1),
+        ("POLYR_GetPOLYR2BDYTY", "Description de POLYR2BDYTY", 1),
+        ("POLYR_GetPtrAllConnectivities", "Pointeur vers toutes les connectivités du polygone rigide i", 1),
+        ("POLYR_GetPtrConnectivity", "Pointeur vers la connectivité du polygone rigide i", 1),
+        ("POLYR_GetPtrNormalTT", "Pointeur vers le vecteur normal du polygone rigide i", 1),
+        ("POLYR_GetPtrPOLYR2BDYTY", "Index local du polygone rigide dans son corps RBDY2", 1),
+        ("POLYR_GetPtrVertexRef", "Pointeur vers le sommet de référence du polygone rigide i", 1),
+        ("POLYR_GetPtrVertexTT", "Pointeur vers le sommet du polygone rigide i", 1),
+        ("POLYR_GetTopoData", "Données topologiques du polygone rigide i", 1),
+        ("POLYR_GetVertex", "Coordonnées des sommets du polygone rigide i", 1),
+        ("POLYR_GetWireframe", "Données du fil de fer du polygone rigide i", 1),  
         # ---- CYLND ---------------------------------------------------------
         ("CYLND_GetNbCYLND",          "Nombre total de contacteurs CYLND (cylindres)",         0),
-        ("CYLND_GetBodyId",           "ID corps RBDY3 du cylindre i",                          1),
+        ("CYLND_GetNbPointOutlines",  "Nombre de points d'outline du cylindre i",              1),
+        ("CYLND_GetNbScalarFields",   "Nombre de champs scalaires du cylindre i",             1),
+        ("CYLND_GetPtrAllConnectivities", "Pointeur vers toutes les connectivités du cylindre i", 1),
         ("CYLND_GetPtrCYLND2BDYTY",   "Index local du cylindre dans son corps RBDY3",          1),
-        ("CYLND_GetPtrTactBehav",     "Loi de comportement associee au cylindre i",            1),
-        ("CYLND_GetRadius",           "Rayon du cylindre i",                                   1),
-        ("CYLND_GetLength",           "Longueur du cylindre i",                                1),
-        ("CYLND_GetCoor",             "Coordonnees du centre du cylindre i",                   1),
+        ("CYLND_GetShape",            "Description de CYLND2BDYTY",                            1),
         # ---- PLANE 3D (parois planes) ----------------------------------------
-        ("PLANE_GetNbPLANE",          "Nombre total de contacteurs PLANE (plans rigides 3D)",  0),
-        ("PLANE_GetBodyId",           "ID corps RBDY3 du plan i",                              1),
-        ("PLANE_GetNormal",           "Normale unitaire du plan i",                            1),
-        ("PLANE_GetCoor",             "Point d'ancrage du plan i",                             1),
+        ("PLANx_GetNbPLANx",          "Nombre total de contacteurs PLANx (plans rigides 3D)",  0),
+        ("PLANx_GetNbPointOutlines",  "Nombre de points d'outline du plan i",              1),
+        ("PLANx_GetNbScalarFields",   "Nombre de champs scalaires du plan i",             1),
+        ("PLANx_GetPtrAllConnectivities", "Pointeur vers toutes les connectivités du plan i", 1),
+        ("PLANx_GetPtrPLANx2BDYTY",   "Index local du plan dans son corps RBDY3",          1),
+        # ---- DNLYC (creux) -------------------------------------------------
+        ("DNLYC_GetNbDNLYC",          "Nombre total de contacteurs DNLYC (lignes)",          0),
+        ("DNLYC_GetNbPointOutlines",  "Nombre de points d'outline de la ligne i",              1),
+        ("DNLYC_GetNbScalarFields",   "Nombre de champs scalaires de la ligne i",             1),
+        ("DNLYC_GetPtrAllConnectivities", "Pointeur vers toutes les connectivités de la ligne i", 1),
+        ("DNLYC_GetPtrDNLYC2BDYTY",   "Index local de la ligne dans son corps RBDY3",          1),
+        
         # ---- RBDY3 corps ---------------------------------------------------
-        ("RBDY3_GetNbRBDY3",          "Nombre total de corps rigides 3D",                      0),
-        # ---- PT3Dx noeuds FEM 3D -------------------------------------------
-        ("PT3Dx_GetNbPT3Dx",          "Nombre de noeuds contacteurs 3D (FEM)",                 0),
-        ("PT3Dx_GetBodyId",           "ID du corps FEM parent du noeud 3D i",                  1),
-        ("PT3Dx_GetCoor",             "Coordonnees du noeud contacteur 3D i",                  1),
+        ("RBDY3_GetAllBodyVector", "Vecteurs de tous les corps RBDY3", 0),
+        ("RBDY3_GetAllInertia", "Inerties de tous les corps RBDY3", 0),
+        ("RBDY3_GetAllMass", "Masses de tous les corps RBDY3", 0),
+        ("RBDY3_GetAllRData", "Données de tous les corps RBDY3", 0),
+        ("RBDY3_GetAllVolume", "Volumes de tous les corps RBDY3", 0),
+        ("RBDY3_GetBehavior", "Comportement des corps RBDY3", 0),
+        ("RBDY3_GetBodyDensity", "Densité des corps RBDY3", 0),
+        ("RBDY3_GetBodyInertia", "Inertie des corps RBDY3", 0),
+        ("RBDY3_GetBodyMatrix", "Matrice des corps RBDY3", 0),
+        ("RBDY3_GetBodyVector", "Vecteur des corps RBDY3", 0),
+        ("RBDY3_GetBulkBehavNumber", "Nombre de comportements massifs RBDY3", 0),
+        ("RBDY3_GetContactorColor", "Couleur des contacteurs RBDY3", 0),
+        ("RBDY3_GetContactorType", "Type des contacteurs RBDY3", 0),
+        ("RBDY3_GetDofStatus", "Statut des degrés de liberté RBDY3", 0),
+        ("RBDY3_GetGlobInertia", "Inertie globale RBDY3", 0),
+        ("RBDY3_GetMass", "Masse des corps RBDY3", 0),
+        ("RBDY3_GetNbContactor", "Nombre de contacteurs RBDY3", 0),
+        ("RBDY3_GetNbRBDY3", "Nombre total de corps rigides 3D", 0),
+        ("RBDY3_GetPtrBodyVector", "Pointeur vers le vecteur des corps RBDY3", 0),
+        ("RBDY3_GetPtrMass", "Pointeur vers la masse des corps RBDY3", 0),
+        ("RBDY3_GetThermalValue", "Valeur thermique RBDY3", 0),
+        ("RBDY3_GetVelocity", "Vitesse des corps RBDY3", 0),
+        ("RBDY3_GetVolume", "Volume des corps RBDY3", 0),
+        # ---- PT3Dx noeuds MAILx 3D -------------------------------------------
+        ("PT3Dx_GetNbPT3Dx",          "Nombre de noeuds contacteurs 3D (MAILx)",                0),
+        ("PT3Dx_GetNbPointOutlines",  "Nombre de points d'outline du noeud 3D i",              1),
+        ("PT3Dx_GetNbScalarFields",   "Nombre de champs scalaires du noeud 3D i",             1),
+        ("PT3Dx_GetPtrAllConnectivities", "Pointeur vers toutes les connectivités du noeud 3D i", 1),
+        ("PT3Dx_GetPtrPT3Dx2BDYTY",   "Index local du noeud 3D dans son corps RBDY3",          1),
     ]
 
     # ── Interactions (paires de contacteurs)
     _INSPI_FUNCS = [
+        ("GetDimension", "Dimension du projet (2D ou 3D)", 0),
+        ("timer_GetNewTimer", "Creer un nouveau timer", 0),
+        ("TimeEvolution_GetStep", "Pas de temps de l'evolution temporelle", 0),
+        ("TimeEvolution_GetTime", "Temps de l'evolution temporelle", 0),
+        ("TimeEvolution_GetTimeStep", "Pas de temps de l'evolution temporelle", 0),
         # ---- DKDKx (Disque-Disque) -----------------------------------------
-        ("DKDKx_GetNbDKDKx",          "Nombre de paires actives Disque-Disque",                0),
-        ("DKDKx_GetBodyIds",          "IDs RBDY2 des deux corps de la paire i",                1),
-        ("DKDKx_GetTactors",          "IDs des deux contacteurs DISKx de la paire i",          1),
-        ("DKDKx_GetGapTT",            "Gap (jeu) de la paire i",                               1),
-        ("DKDKx_GetStatusTT",         "Statut de contact de la paire i (0=gap, 1=contact)",    1),
-        ("DKDKx_GetRlocTT",           "Reaction locale (Rn, Rt) de la paire i",                1),
-        ("DKDKx_GetVlocTT",           "Vitesse locale (Vn, Vt) de la paire i",                 1),
-        # ---- DKJCx (Disque-Jonc) --------------------------------------------
-        ("DKJCx_GetNbDKJCx",          "Nombre de paires actives Disque-Jonc",                  0),
-        ("DKJCx_GetBodyIds",          "IDs RBDY2 des deux corps de la paire i",                1),
-        ("DKJCx_GetTactors",          "IDs des deux contacteurs (DISKx, JONCx) de la paire i", 1),
-        ("DKJCx_GetGapTT",            "Gap de la paire i",                                     1),
-        ("DKJCx_GetStatusTT",         "Statut de contact de la paire i",                       1),
-        ("DKJCx_GetRlocTT",           "Reaction locale (Rn, Rt) de la paire i",                1),
-        # ---- DKKDx (Disque-Corde) -------------------------------------------
-        ("DKKDx_GetNbDKKDx",          "Nombre de paires actives Disque-Corde",                 0),
-        ("DKKDx_GetBodyIds",          "IDs RBDY2 des deux corps de la paire i",                1),
-        ("DKKDx_GetGapTT",            "Gap de la paire i",                                     1),
-        ("DKKDx_GetRlocTT",           "Reaction locale de la paire i",                         1),
-        # ---- PLPLx (Polygone-Polygone) ----------------------------------------
-        ("PLPLx_GetNbPLPLx",          "Nombre de paires actives Polygone-Polygone",            0),
-        ("PLPLx_GetBodyIds",          "IDs RBDY2 des deux corps de la paire i",                1),
-        ("PLPLx_GetTactors",          "IDs des deux contacteurs POLYR de la paire i",          1),
-        ("PLPLx_GetGapTT",            "Gap de la paire i",                                     1),
-        ("PLPLx_GetStatusTT",         "Statut de contact de la paire i",                       1),
-        ("PLPLx_GetRlocTT",           "Reaction locale (Rn, Rt) de la paire i",                1),
-        ("PLPLx_GetVlocTT",           "Vitesse locale (Vn, Vt) de la paire i",                 1),
+        ("DKDKx_GetCZMEnergy", "Energie de contact DKDKx i",                             1),
+                ("PLPLx_GetCZMEnergy",        "Energie de contact PLPLx i",              1),
+        # ---- PRPRx (polyhedre-polyhedre) ----------------------------------------
+        ("PRPRx_GetF2f2Inters",        "Intersections F2f de la paire i",                       1),
+        ("PRPRx_GetF2fAllIdata",       "Données d'interaction F2f de la paire i",                1),
+        ("PRPRx_GetF2fCentralKernel",  "Noyau central F2f de la paire i",                        1),
+        ("PRPRx_GetF2fOutlines",       "Contours F2f de la paire i",                            1),
+        ("PRPRx_GetF2fStress",         "Contraintes F2f de la paire i",                         1),
+        ("PRPRx_GetInteractionInternal", "Données internes d'interaction de la paire i",            1),
+        ("PRPRx_GetInteractionInternalComment", "Commentaires sur les données internes d'interaction de la paire i", 1),
+        ("PRPRx_GetInteractionVector", "Vecteur d'interaction de la paire i",                    1),
+        ("PRPRx_GetNbF2f",            "Nombre d'intersections F2f de la paire i",              1),
         # ---- CLALp (Brique-Brique maconnerie) --------------------------------
-        ("CLALp_GetNbCLALp",          "Nombre de paires actives Brique-Brique (maconnerie)",   0),
-        ("CLALp_GetBodyIds",          "IDs des deux corps de la paire i",                      1),
-        ("CLALp_GetGapTT",            "Gap de la paire i",                                     1),
-        ("CLALp_GetStatusTT",         "Statut de contact de la paire i",                       1),
-        ("CLALp_GetRlocTT",           "Reaction locale de la paire i",                         1),
-        # ---- ALpALp ---------------------------------------------------------
-        ("ALpALp_GetNbALpALp",        "Nombre de paires actives ALp-ALp",                     0),
-        ("ALpALp_GetBodyIds",         "IDs des deux corps de la paire i",                      1),
-        ("ALpALp_GetGapTT",           "Gap de la paire i",                                     1),
-        ("ALpALp_GetRlocTT",          "Reaction locale de la paire i",                         1),
-        # ---- SPSPx (Sphere-Sphere) -------------------------------------------
-        ("SPSPx_GetNbSPSPx",          "Nombre de paires actives Sphere-Sphere",                0),
-        ("SPSPx_GetBodyIds",          "IDs RBDY3 des deux corps de la paire i",                1),
-        ("SPSPx_GetTactors",          "IDs des deux contacteurs SPHER de la paire i",          1),
-        ("SPSPx_GetGapTT",            "Gap de la paire i",                                     1),
-        ("SPSPx_GetStatusTT",         "Statut de contact de la paire i",                       1),
-        ("SPSPx_GetRlocTT",           "Reaction locale (Rn, Rt, Rs) de la paire i",            1),
-        ("SPSPx_GetVlocTT",           "Vitesse locale (Vn, Vt, Vs) de la paire i",             1),
-        # ---- SPCDx (Sphere-Cylindre) -----------------------------------------
-        ("SPCDx_GetNbSPCDx",          "Nombre de paires actives Sphere-Cylindre",              0),
-        ("SPCDx_GetBodyIds",          "IDs RBDY3 des deux corps de la paire i",                1),
-        ("SPCDx_GetTactors",          "IDs des contacteurs (SPHER, CYLND) de la paire i",      1),
-        ("SPCDx_GetGapTT",            "Gap de la paire i",                                     1),
-        ("SPCDx_GetRlocTT",           "Reaction locale de la paire i",                         1),
-        # ---- SPPLx (Sphere-Plan) ---------------------------------------------
-        ("SPPLx_GetNbSPPLx",          "Nombre de paires actives Sphere-Plan",                  0),
-        ("SPPLx_GetBodyIds",          "IDs RBDY3 des deux corps de la paire i",                1),
-        ("SPPLx_GetGapTT",            "Gap de la paire i",                                     1),
-        ("SPPLx_GetRlocTT",           "Reaction locale de la paire i",                         1),
-        # ---- CDCDx (Cylindre-Cylindre) ----------------------------------------
-        ("CDCDx_GetNbCDCDx",          "Nombre de paires actives Cylindre-Cylindre",            0),
-        ("CDCDx_GetBodyIds",          "IDs RBDY3 des deux corps de la paire i",                1),
-        ("CDCDx_GetGapTT",            "Gap de la paire i",                                     1),
-        ("CDCDx_GetRlocTT",           "Reaction locale de la paire i",                         1),
-        # ---- CDPLx (Cylindre-Plan) -------------------------------------------
-        ("CDPLx_GetNbCDPLx",          "Nombre de paires actives Cylindre-Plan",                0),
-        ("CDPLx_GetBodyIds",          "IDs RBDY3 des deux corps de la paire i",                1),
-        ("CDPLx_GetGapTT",            "Gap de la paire i",                                     1),
-        ("CDPLx_GetRlocTT",           "Reaction locale de la paire i",                         1),
-        # ---- PRPRx (Polyedre-Polyedre) ----------------------------------------
-        ("PRPRx_GetNbPRPRx",          "Nombre de paires actives Polyedre-Polyedre",            0),
-        ("PRPRx_GetBodyIds",          "IDs RBDY3 des deux corps de la paire i",                1),
-        ("PRPRx_GetTactors",          "IDs des deux contacteurs POLYH de la paire i",          1),
-        ("PRPRx_GetGapTT",            "Gap de la paire i",                                     1),
-        ("PRPRx_GetStatusTT",         "Statut de contact de la paire i",                       1),
-        ("PRPRx_GetRlocTT",           "Reaction locale (Rn, Rt, Rs) de la paire i",            1),
-        # ---- DKMECAx / ALpMECAx / SPMECAx (rigide-deformable) ---------------
-        ("DKMECAx_GetNbDKMECAx",      "Nombre de paires actives Disque-MECAx (FEM)",           0),
-        ("DKMECAx_GetBodyIds",        "IDs des deux corps de la paire i",                      1),
-        ("DKMECAx_GetGapTT",          "Gap de la paire i",                                     1),
-        ("DKMECAx_GetRlocTT",         "Reaction locale de la paire i",                         1),
-        ("ALpMECAx_GetNbALpMECAx",    "Nombre de paires actives ALp-MECAx",                   0),
-        ("ALpMECAx_GetBodyIds",       "IDs des deux corps de la paire i",                      1),
-        ("ALpMECAx_GetRlocTT",        "Reaction locale de la paire i",                         1),
-        ("SPMECAx_GetNbSPMECAx",      "Nombre de paires actives Sphere-MECAx",                 0),
-        ("SPMECAx_GetBodyIds",        "IDs des deux corps de la paire i",                      1),
-        ("SPMECAx_GetRlocTT",         "Reaction locale de la paire i",                         1),
+        # ----  2D contacteurs ----------------------------------------------------
+        ("ALpxx_GetAllConnec", "Liste des connectivites de tous les contacteurs ALpxx", 0),
+        ("ALpxx_GetAllData", "Donnees de tous les contacteurs ALpxx", 0),
+        # ----  ASPxx ----------------------------------------------------
+        ("ASpxx_GetAllConnec", "Liste des connectivites de tous les contacteurs ASpxx", 0),
+        ("ASpxx_GetAllData", "Donnees de tous les contacteurs ASpxx", 0),
+        # ---- CLpxx ---------------------------------------------------------
+        ("CLpxx_GetAllConnec", "Liste des connectivites de tous les contacteurs CLpxx", 0),
+        ("CLpxx_GetAllData", "Donnees de tous les contacteurs CLpxx", 0),
+        ("CLxxx_GetNbCLxxx", "Nombre total de contacteurs CLxxx", 0),
+        # ---- CSPRx ---------------------------------------------------------
+        ("CSPRx_GetInfo", "Informations sur le contacteur CSPRx", 0),
+        ("CSpxx_GetAllConnec", "Liste des connectivites de tous les contacteurs CSpxx", 0),
+        ("CSpxx_GetAllData", "Donnees de tous les contacteurs CSpxx", 0),
+        # ---- CSxxx ---------------------------------------------------------
+        ("CSxxx_GetNbCSxxx", "Nombre total de contacteurs CSxxx", 0),
+        # ---- Déformables MAILx (2D et 3D) ----------------------------------------
+        ("MAILx_GetCoordNodty", "Coordonnees des noeuds MAILx i", 1),
+        ("MAILx_GetCoordsNodty", "Coordonnees des noeuds MAILx i", 1),
+        ("MAILx_GetNbCell", "Nombre de cellules MAILx i", 1),
+        ("MAILx_GetNbMAILx", "Nombre total de contacteurs MAILx", 0),
+        ("MAILx_GetNbNodes", "Nombre de noeuds MAILx i", 1),
+        # ---- Comportements massifs -------------------------------------------------
+        ("bulk_behav_GetBulkBehav", "Comportement massif", 0),
+        ("bulk_behav_GetGravity", "Gravite", 0),
+        ("bulk_behav_GetNbBulkBehav", "Nombre de comportements massifs", 0),
+        # ---- Post-traitement ---------------------------------------------------
+        ("postpro_2D_GetKineticEnergy", "Énergie cinétique 2D", 1),
+        ("postpro_3D_GetKineticEnergy", "Énergie cinétique 3D", 1),
+        ("postpro_3D_GetRBDY3PrincStress", "Contraintes principales RBDY3 3D", 1),
+        # ---- Comportements de contact ------------------------------------------
+        ("tact_behav_GetInternalComment", "Commentaires sur les données internes de contact", 1),
+        ("tact_behav_GetLawInternalComment", "Commentaires sur les lois de contact", 1),
+        ("tact_behav_GetNbTactBehav", "Nombre de comportements de contact", 1),
+        ("tact_behav_GetParam", "Paramètres du comportement de contact", 1),
+        ("tact_behav_GetParamRankFromName", "Rang du paramètre du comportement de contact à partir de son nom", 1),
+        ("tact_behav_GetTactBehav", "Comportement de contact", 1),
+        ("tact_behav_GetTactBehavRankFromName", "Rang du comportement de contact à partir de son nom", 1),
+        # --- MAILx thermique
+        ("therMAILx_GetAll", "Toutes les données du MAILx thermique", 1),
+        ("therMAILx_GetBodyVector", "Vecteur de corps du MAILx thermique", 1),
+        ("therMAILx_GetConnectivity", "Connectivité du MAILx thermique", 1),
+        ("therMAILx_GetCoor", "Coordonnées du MAILx thermique", 1),
+        ("therMAILx_GetFlux", "Flux du MAILx thermique", 1),
+        ("therMAILx_GetGpCoor", "Coordonnées des points d'intégration du MAILx thermique", 1),
+        ("therMAILx_GetGpField", "Champ scalaire des points d'intégration du MAILx thermique", 1),
+        ("therMAILx_GetGrad", "Gradients du MAILx thermique", 1),
+        ("therMAILx_GetNbDofs", "Nombre de degrés de liberté du MAILx thermique", 1),
+        ("therMAILx_GetNbElements", "Nombre d'éléments du MAILx thermique", 1),
+        ("therMAILx_GetNbGp", "Nombre de points d'intégration du MAILx thermique", 1),
+        ("therMAILx_GetNbGpByElem", "Nombre de points d'intégration par élément du MAILx thermique", 1),
+        ("therMAILx_GetNbNodes", "Nombre de noeuds du MAILx thermique", 1),
+        ("therMAILx_GetNbTherMAILx", "Nombre de MAILx thermiques", 1),
+        ("therMAILx_GetScalarFieldRank", "Rang du champ scalaire du MAILx thermique", 1),
+        ("therMAILx_GetVectorFieldRank", "Rang du champ vectoriel du MAILx thermique", 1),
+        # --- POROx --------------------------------------------------------
+        ("poroMAILx_GetAll", "Toutes les données du MAILx poro", 1),
+        ("poroMAILx_GetBodyVector", "Vecteur de corps du MAILx poro", 1),
+        ("poroMAILx_GetConnectivity", "Connectivité du MAILx poro", 1),
+        ("poroMAILx_GetCoor", "Coordonnées du MAILx poro", 1),
+        ("poroMAILx_GetFlux", "Flux du MAILx poro", 1),
+        ("poroMAILx_GetGrad", "Gradients du MAILx poro", 1),
+        ("poroMAILx_GetInternal", "Données internes du MAILx poro", 1),
+        ("poroMAILx_GetMecaScalarFieldRank", "Rang du champ scalaire mécanique du MAILx poro", 1),
+        ("poroMAILx_GetMecaVectorFieldRank", "Rang du champ vectoriel mécanique du MAILx poro", 1),
+        ("poroMAILx_GetNbElements", "Nombre d'éléments du MAILx poro", 1),
+        ("poroMAILx_GetNbGpByElem", "Nombre de points d'intégration par élément du MAILx poro", 1),
+        ("poroMAILx_GetNbNodes", "Nombre de noeuds du MAILx poro", 1),
+        ("poroMAILx_GetNbPoroMAILx", "Nombre de MAILx poro", 1),
+        ("poroMAILx_GetStrain", "Déformations du MAILx poro", 1),
+        ("poroMAILx_GetStress", "Contraintes du MAILx poro", 1),
+        ("poroMAILx_GetTherScalarFieldRank", "Rang du champ scalaire thermique du MAILx poro", 1),
+        ("poroMAILx_GetTherVectorFieldRank", "Rang du champ vectoriel thermique du MAILx poro", 1),
+        # --- multiMAILx ------------------------------------------------------
+        ("multiMAILx_GetAll", "Toutes les données du MAILx multi", 1),
+        ("multiMAILx_GetBodyVector", "Vecteur de corps du MAILx multi", 1),
+        ("multiMAILx_GetConnectivity", "Connectivité du MAILx multi", 1),
+        ("multiMAILx_GetCoor", "Coordonnées du MAILx multi", 1),
+        ("multiMAILx_GetDeformationEnergy", "Énergie de déformation du MAILx multi", 1),
+        ("multiMAILx_GetElementsNeighbor", "Voisins des éléments du MAILx multi", 1),
+        ("multiMAILx_GetElementsVolume", "Volume des éléments du MAILx multi", 1),
+        ("multiMAILx_GetNb", "Nombre de MAILx multi", 1),
+        ("multiMAILx_GetNbElements", "Nombre d'éléments du MAILx multi", 1),
+        ("multiMAILx_GetNbNodes", "Nombre de noeuds du MAILx multi", 1),
+        ("multiMAILx_GetPtrBoundaryElements", "Pointeurs vers les éléments de bord du MAILx multi", 1),
+        ("multiMAILx_GetPtrElementsEnergy", "Pointeurs vers les énergies des éléments du MAILx multi", 1),
+        ("multiMAILx_GetPtrElementsJacobian", "Pointeurs vers les Jacobiens des éléments du MAILx multi", 1),
+        ("multiMAILx_GetPtrElementsVisibility", "Pointeurs vers la visibilité des éléments du MAILx multi", 1),
+        ("multiMAILx_GetScalarFieldRank", "Rang du champ scalaire du MAILx multi", 1),
+        ("multiMAILx_GetVectorFieldRank", "Rang du champ vectoriel du MAILx multi", 1),
+        # ---  Mesh 2D (Q4) ------------------------------------------------------ 
+        ("mesh2D_GetIndicesMeshQ4", "Indices du maillage 2D (Q4)", 1),
+        ("mp_solver_GetBrancheValues", "Valeurs des branches du solveur mp", 1),
+    ]
+
+    _SET_FUNCS = [
+        # --- CDCDx (Contacteur-Contacteur) ----------------------------------------
+        ("CDCDx_SetContactRadius", "Rayon de contact du CDCDx", 1),
+        ("CDCDx_SetNumberInterByContact", "Nombre d'interactions par contact du CDCDx", 1),
+        ("CDCDx_SetXPeriodicCondition", "Condition périodique en X du CDCDx", 1),
+        ("CDCDx_SetYPeriodicCondition", "Condition périodique en Y du CDCDx", 1),
+        # --- CLALp ---
+        ("CLALp_SetNonSymmetricDetection", "Détection de non-symétrie pour CLALp", 1),
+        # --- CLxxx ---
+        ("CLxxx_SetNbNodesByCLxxx", "Nombre de noeuds par CLxxx", 1),
+        # --- CSASp ---
+        ("CSASp_SetNonSymmetricDetection", "Détection de non-symétrie pour CSASp", 1),
+        ("CSASp_SetTrimAngle", "Angle d'ajustement pour CSASp", 1),
+        # --- CSxxx ---
+        ("CSxxx_SetQuadrature", "Quadrature pour CSxxx", 1),
+        ("CSxxx_SetShrink", "Réduction pour CSxxx", 1),
+        # --- DKDKx --------
+        ("DISKx_SetVdilation", "Dilation en V pour DISKx", 1),
+        ("DISKx_SetXdilation", "Dilation en X pour DISKx", 1),
+
+        ("DKDKL_SetPeriodicCondition", "Condition périodique pour DKDKL", 1),
+        ("DKDKx_SetFrictionModel", "Modèle de frottement pour DKDKx", 1),
+        ("DKDKx_SetPeriodicCondition", "Condition périodique pour DKDKx", 1),
+        ("DKDKx_SetSurfaceSectors", " Secteurs de surface pour DKDKx", 1),
+        ("DKJCx_SetFrictionModel", "Modèle de frottement pour DKJCx", 1),
+        ("DKJCx_SetSurfaceSectors", " Secteurs de surface pour DKJCx", 1),
+        ("DKKDx_SetSurfaceSectors", " Secteurs de surface pour DKKDx", 1),
+        ("DKPLx_SetPeriodicCondition", "Condition périodique pour DKPLx", 1),
+        # --- DKKDx ---
+        ("Integrator_SetContactDetectionConfiguration", "Configuration de détection de contact pour l'intégrateur", 1),
+        # --- MAILx ---
+        ("MAILx_SetCoorRef", "Référentiel de coordonnées pour MAILx", 1),
+        ("MAILx_SetNodalField", "Champ nodal pour MAILx", 1),
+        # --- NewtonRaphson ---
+        ("NewtonRaphson_SetBadIter", "Nombre d'itérations bad pour NewtonRaphson", 1),
+        ("NewtonRaphson_SetFinalTime", "Temps final pour NewtonRaphson", 1),
+        ("NewtonRaphson_SetGoodIter", "Nombre d'itérations good pour NewtonRaphson", 1),
+        ("NewtonRaphson_SetIncPatience", "Incertitude de patience pour NewtonRaphson", 1),
+        ("NewtonRaphson_SetMaxIter", "Nombre maximum d'itérations pour NewtonRaphson", 1),
+        ("NewtonRaphson_SetMaxTimeStep", "Pas de temps maximum pour NewtonRaphson", 1),
+        ("NewtonRaphson_SetMinTimeStep", "Pas de temps minimum pour NewtonRaphson", 1),
+        # ----PLJCx (parois planes) ----------------------------------------    
+        ("PLJCx_SetFrictionModel", "Modèle de frottement pour PLJCx", 1),
+        ("PLPLx_SetBigPolygTolerance", "Tolérance pour PLPLx", 1),
+        ("PLPLx_SetFrictionModel", "Modèle de frottement pour PLPLx", 1),
+        ("PLPLx_SetPeriodicCondition", "Condition périodique pour PLPLx", 1),
+        # ----POLYG (polygones) ----------------------------------------    
+        ("POLYG_SetVdilation", "Dilation en V pour POLYG", 1),
+        ("POLYG_SetXdilation", "Dilation en X pour POLYG", 1),
+        ("POLYR_SetBigPolyr", "Polygone grand pour POLYR", 1),
+        ("POLYR_SetNbBigPolyr", "Nombre de polygones grands pour POLYR", 1),
+        ("POLYR_SetThresholdBigPolyr", "Seuil pour polygones grands pour POLYR", 1),
+        # ----PRPRx (particules) ----------------------------------------    
+        ("PRPRx_SetCundallNeighbor", "Voisin Cundall pour PRPRx", 1),
+        ("PRPRx_SetF2fMinimalSurfaceSize", "Taille minimale de surface pour PRPRx", 1),
+        ("PRPRx_SetInteractionInternal", "Interaction interne pour PRPRx", 1),
+        ("PRPRx_SetInternalSurface", "Surface interne pour PRPRx", 1),
+        ("PRPRx_SetReactionTrackingLength", "Longueur de suivi de réaction pour PRPRx", 1),
+        ("PRPRx_SetTolRecupRloc", "Tolérance de récupération de Rloc pour PRPRx", 1),
+        ("PRPRx_SetXPeriodicCondition", "Condition périodique en X pour PRPRx", 1),
+        ("PRPRx_SetYPeriodicCondition", "Condition périodique en Y pour PRPRx", 1),
+        # ---
+        ("PT2Dx_SetDisplayRadius", "Rayon d'affichage pour PT2Dx", 1),
+        ("PT3Dx_SetDisplayRadius", "Rayon d'affichage pour PT3Dx", 1),
+        ("PTPT2_SetExplicitLocalFrame", "Cadre local explicite pour PTPT2", 1),
+        ("PTPT2_SetTolerance", "Tolérance pour PTPT2", 1),
+        ("PTPT3_SetExplicitLocalFrame", "Cadre local explicite pour PTPT3", 1),
+        ("PTPT3_SetXPeriodicCondition", "Condition périodique en X pour PTPT3", 1),
+        ("PTPT3_SetYPeriodicCondition", "Condition périodique en Y pour PTPT3", 1),
+        # ----- RBDY2 corps ---------------------------------------------------
+        ("RBDY2_SetBodiesInvisible", "Bodies invisibles pour RBDY2", 1),
+        ("RBDY2_SetContactorColor", "Couleur du contacteur pour RBDY2", 1),
+        ("RBDY2_SetEquilibriumNorm", "Norme d'équilibre pour RBDY2", 1),
+        ("RBDY2_SetInvisible", "Invisible pour RBDY2", 1),
+        ("RBDY2_SetInvisibleVlocyDrivenDof", "Degrés de liberté invisibles pour RBDY2", 1),
+        ("RBDY2_SetPeriodicCondition", "Condition périodique pour RBDY2", 1),
+        ("RBDY2_SetSurfaceSectors", "Secteurs de surface pour RBDY2", 1),
+        ("RBDY2_SetVisible", "Visible pour RBDY2", 1),
+        ("RBDY2_SetVisibleVlocyDrivenDof", "Degrés de liberté visibles pour RBDY2", 1),
+        ("RBDY2_SetVlocyDrivenDof", "Degrés de liberté Vlocy pour RBDY2", 1),
+        ("RBDY2_SetXmaxBoundary", "Limite X max pour RBDY2", 1),
+        ("RBDY2_SetXminBoundary", "Limite X min pour RBDY2", 1),
+        ("RBDY2_SetYmaxBoundary", "Limite Y max pour RBDY2", 1),
+        ("RBDY2_SetYminBoundary", "Limite Y min pour RBDY2", 1),
+        # ----- RBDY3 corps ---------------------------------------------------
+        ("RBDY3_SetBodiesInvisible", "Bodies invisibles pour RBDY3", 1),
+        ("RBDY3_SetContactorColor", "Couleur du contacteur pour RBDY3", 1),
+        ("RBDY3_SetEquilibriumNorm", "Norme d'équilibre pour RBDY3", 1),
+        ("RBDY3_SetInvisible", "Invisible pour RBDY3", 1),
+        ("RBDY3_SetInvisibleSmallObjects", "Objets petits invisibles pour RBDY3", 1),
+        ("RBDY3_SetXmaxBoundary", "Limite X max pour RBDY3", 1),
+        ("RBDY3_SetXminBoundary", "Limite X min pour RBDY3", 1),
+        ("RBDY3_SetYPeriodicCondition", "Condition périodique en Y pour RBDY3", 1),
+        ("RBDY3_SetYmaxBoundary", "Limite Y max pour RBDY3", 1),
+        ("RBDY3_SetYminBoundary", "Limite Y min pour RBDY3", 1),
+        ("RBDY3_SetZmaxBoundary", "Limite Z max pour RBDY3", 1),
+        ("RBDY3_SetZminBoundary", "Limite Z min pour RBDY3", 1),
+        # --- SPHER (spheres) ----------------------------------------
+        ("SPHER_SetRadiusCorrection", "Correction du rayon pour SPHER", 1),
+        ("SPPRx_SetXPeriodicCondition", "Condition périodique en X pour SPPRx", 1),
+        ("SPPRx_SetYPeriodicCondition", "Condition périodique en Y pour SPPRx", 1),
+        ("SPSPx_SetContactRadius", "Rayon de contact pour SPSPx", 1),
+        ("SPSPx_SetNumberInterByContact", "Nombre d'interactions par contact pour SPSPx", 1),
+        ("SPSPx_SetXPeriodicCondition", "Condition périodique en X pour SPSPx", 1),
+        ("SPSPx_SetYPeriodicCondition", "Condition périodique en Y pour SPSPx", 1),
+        # -----
+        ("SetContactRadius", "Rayon de contact", 1),
+        ("SetDimension", "Dimension", 1),
+        ("SetDomainBoundary", "Limite de domaine", 1),
+        ("SetNumberInteractionByContact", "Nombre d'interactions par contact", 1),
+        ("SetPeriodicCondition", "Condition périodique", 1),
+        # --- TimeEvolution (évolution temporelle) --------------------------------
+        ("TimeEvolution_SetInitialStep", "Pas de temps initial pour l'évolution temporelle", 1),
+        ("TimeEvolution_SetInitialTime", "Temps initial pour l'évolution temporelle", 1),
+        ("TimeEvolution_SetTimeStep", "Pas de temps pour l'évolution temporelle", 1),
+        # --- Comportements massifs -------------------------------------------------
+        ("bulk_behav_SetBiot", "Paramètre de Biot pour bulk_behav", 1),
+        ("bulk_behav_SetCapacity", "Capacité pour bulk_behav", 1),
+        ("bulk_behav_SetConductivity", "Conductivité pour bulk_behav", 1),
+        ("bulk_behav_SetDensity", "Densité pour bulk_behav", 1),
+        ("bulk_behav_SetExternalFlux", "Flux externe pour bulk_behav", 1),
+        ("bulk_behav_SetGravity", "Gravité pour bulk_behav", 1),
+
+        ("cpg_3D_SetCheckType", "Type de vérification pour cpg_3D", 1),
+        ("cpg_3D_SetDiagonalPrecond", "Préconditionnement diagonal pour cpg_3D", 1),
+        ("cpg_3D_SetFrictionless", "Sans frottement pour cpg_3D", 1),
+        ("cpg_SetCheckType", "Type de vérification pour cpg", 1),
+        ("cpg_SetDiagonalPrecond", "Préconditionnement diagonal pour cpg", 1),
+        ("cpg_SetFrictionless", "Sans frottement pour cpg", 1),
+        ("cpg_SetNoConjugaison", "Pas de conjugaison pour cpg", 1),
+        # ----
+        ("mecaMAILx_SetCoroAllBodies", "Corps tous pour mecaMAILx", 1),
+        ("mecaMAILx_SetCoroBody", "Corps pour mecaMAILx", 1),
+        ("mecaMAILx_SetEquilibriumNorm", "Norme d'équilibre pour mecaMAILx", 1),
+        ("mecaMAILx_SetInvisible", "Invisible pour mecaMAILx", 1),
+        ("mecaMAILx_SetInvisibleVlocyDrivenDof", "Invisible VlocyDrivenDof pour mecaMAILx", 1),
+        ("mecaMAILx_SetPreconAllBodies", "Préconditionnement tous pour mecaMAILx", 1),
+        ("mecaMAILx_SetPreconBody", "Préconditionnement pour mecaMAILx", 1),
+        ("mecaMAILx_SetRVDrivenDofValue", "Valeur Dof RVDriven pour mecaMAILx", 1),
+        ("mecaMAILx_SetRVDrivenDofs", "Dofs RVDriven pour mecaMAILx", 1),
+        ("mecaMAILx_SetRigidAllBodies", "Corps rigides tous pour mecaMAILx", 1),
+        ("mecaMAILx_SetRigidBody", "Corps rigide pour mecaMAILx", 1),
+        ("mecaMAILx_SetScalarFieldByElement", "Champ scalaire par élément pour mecaMAILx", 1),
+        ("mecaMAILx_SetScalarFieldByNode", "Champ scalaire par nœud pour mecaMAILx", 1),
+        ("mecaMAILx_SetTolCoro", "Tolérance pour mecaMAILx", 1),
+        ("mecaMAILx_SetVectorFieldByElement", "Champ vectoriel par élément pour mecaMAILx", 1),
+        ("mecaMAILx_SetVectorFieldByNode", "Champ vectoriel par nœud pour mecaMAILx", 1),
+        ("mecaMAILx_SetVisible", "Visible pour mecaMAILx", 1),
+        ("mecaMAILx_SetVisibleVlocyDrivenDof", "Visible VlocyDrivenDof pour mecaMAILx", 1),
+        ("mecaMAILx_SetVlocyDrivenDof", "Dof VlocyDriven pour mecaMAILx", 1),
+        ("mecaMAILx_UseNewPPSet", "Utiliser le nouveau ensemble PP pour mecaMAILx", 1),
+        # ----
+        ("multiMAILx_SetScalarFieldByElement", "Champ scalaire par élément pour multiMAILx", 1),
+        ("multiMAILx_SetScalarFieldByNode", "Champ scalaire par nœud pour multiMAILx", 1),
+        ("multiMAILx_SetVectorFieldByElement", "Champ vectoriel par élément pour multiMAILx", 1),
+        ("multiMAILx_SetVectorFieldByNode", "Champ vectoriel par nœud pour multiMAILx", 1),
+        # ----
+        ("nlgs_3D_SetCheckType", "Type de vérification pour nlgs_3D", 1),
+        ("nlgs_3D_SetWithQuickScramble", "Avec mélange rapide pour nlgs_3D", 1),
+        ("nlgs_3D_SetWithReverseContactOrder", "Avec ordre inverse des contacts pour nlgs_3D", 1),
+        ("nlgs_SetCheckType", "Type de vérification pour nlgs", 1),
+        ("nlgs_SetTemporaryVariable", "Variable temporaire pour nlgs", 1),
+        ("nlgs_SetWithQuickScramble", "Avec mélange rapide pour nlgs", 1),
+
+        ("overall_SetWorkingDirectory", "Répertoire de travail pour overall", 1),
+        ("overall_SetWorkingFileName", "Nom de fichier de travail pour overall", 1),
+
+        ("poroMAILx_SetCoroAllBodies", "Corps tous pour poroMAILx", 1),
+        ("poroMAILx_SetCoroBody", "Corps pour poroMAILx", 1),
+        ("poroMAILx_SetEquilibriumNorm", "Norme d'équilibre pour poroMAILx", 1),
+        ("poroMAILx_SetInvisible", "Invisible pour poroMAILx", 1),
+        ("poroMAILx_SetInvisibleVlocyDrivenDof", "Invisible VlocyDrivenDof pour poroMAILx", 1),
+        ("poroMAILx_SetPreconAllBodies", "Préconditionnement tous pour poroMAILx", 1),
+        ("poroMAILx_SetPreconBody", "Préconditionnement pour poroMAILx", 1),
+        ("poroMAILx_SetRVDrivenDofValue", "Valeur Dof RVDriven pour poroMAILx", 1),
+        ("poroMAILx_SetRVDrivenDofs", "Dofs RVDriven pour poroMAILx", 1),
+        ("poroMAILx_SetRigidAllBodies", "Corps rigides tous pour poroMAILx", 1),
+        ("poroMAILx_SetRigidBody", "Corps rigide pour poroMAILx", 1),
+        ("poroMAILx_SetScalarFieldByElement", "Champ scalaire par élément pour poroMAILx", 1),
+        ("poroMAILx_SetScalarFieldByNode", "Champ scalaire par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetTolCoro", "Tolérance pour poroMAILx", 1),
+        ("poroMAILx_SetVectorFieldByElement", "Champ vectoriel par élément pour poroMAILx", 1),
+        ("poroMAILx_SetVectorFieldByNode", "Champ vectoriel par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetVisible", "Visible pour poroMAILx", 1),
+        ("poroMAILx_SetVisibleVlocyDrivenDof", "Visible VlocyDrivenDof pour poroMAILx", 1),
+        ("poroMAILx_SetMecaScalarFieldByElement", "Champ mécanique scalaire par élément pour poroMAILx", 1),
+        ("poroMAILx_SetMecaScalarFieldByNode", "Champ mécanique scalaire par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetMecaVectorFieldByElement", "Champ mécanique vectoriel par élément pour poroMAILx", 1),
+        ("poroMAILx_SetMecaVectorFieldByNode", "Champ mécanique vectoriel par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetPreconAllBodies", "Préconditionnement tous pour poroMAILx", 1),
+        ("poroMAILx_SetPreconBody", "Préconditionnement pour poroMAILx", 1),
+        ("poroMAILx_SetRVDrivenDofValue", "Valeur Dof RVDriven pour poroMAILx", 1),
+        ("poroMAILx_SetRVDrivenDofs", "Dofs RVDriven pour poroMAILx", 1),
+        ("poroMAILx_SetRigidAllBodies", "Corps rigides tous pour poroMAILx", 1),
+        ("poroMAILx_SetRigidBody", "Corps rigide pour poroMAILx", 1),
+        ("poroMAILx_SetScalarFieldByElement", "Champ scalaire par élément pour poroMAILx", 1),
+        ("poroMAILx_SetScalarFieldByNode", "Champ scalaire par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetTolCoro", "Tolérance pour poroMAILx", 1),
+        ("poroMAILx_SetVectorFieldByElement", "Champ vectoriel par élément pour poroMAILx", 1),
+        ("poroMAILx_SetVectorFieldByNode", "Champ vectoriel par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetVisible", "Visible pour poroMAILx", 1),
+        ("poroMAILx_SetVisibleVlocyDrivenDof", "Visible VlocyDrivenDof pour poroMAILx", 1),
+        ("poroMAILx_SetMecaScalarFieldByElement", "Champ mécanique scalaire par élément pour poroMAILx", 1),
+        ("poroMAILx_SetMecaScalarFieldByNode", "Champ mécanique scalaire par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetMecaVectorFieldByElement", "Champ mécanique vectoriel par élément pour poroMAILx", 1),
+        ("poroMAILx_SetMecaVectorFieldByNode", "Champ mécanique vectoriel par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetPreconAllBodies", "Préconditionnement tous pour poroMAILx", 1),
+        ("poroMAILx_SetPreconBody", "Préconditionnement pour poroMAILx", 1),
+        ("poroMAILx_SetRVDrivenDofValue", "Valeur Dof RVDriven pour poroMAILx", 1),
+        ("poroMAILx_SetRVDrivenDofs", "Dofs RVDriven pour poroMAILx", 1),
+        ("poroMAILx_SetRigidAllBodies", "Corps rigides tous pour poroMAILx", 1),
+        ("poroMAILx_SetRigidBody", "Corps rigide pour poroMAILx", 1),
+        ("poroMAILx_SetTherScalarFieldByElement", "Champ thermique scalaire par élément pour poroMAILx", 1),    
+        ("poroMAILx_SetTherScalarFieldByElement", "Champ thermique scalaire par élément pour poroMAILx", 1),
+        ("poroMAILx_SetTherScalarFieldByNode", "Champ thermique scalaire par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetTherVectorFieldByElement", "Champ thermique vectoriel par élément pour poroMAILx", 1),
+        ("poroMAILx_SetTherVectorFieldByNode", "Champ thermique vectoriel par nœud pour poroMAILx", 1),
+        ("poroMAILx_SetVlocyDrivenDof", "Dof VlocyDriven pour poroMAILx", 1),
+
+        ("postpro_SetCircularSelectionZone", "Zone de sélection circulaire pour postpro", 1),
+        ("postpro_SetRectangularSelectionZone", "Zone de sélection rectangulaire pour postpro", 1),
+        ("postpro_SetSelectionZone", "Zone de sélection pour postpro", 1),
+
+        ("tact_behav_SetCohesionParameters", "Paramètres de cohésion pour tact_behav", 1),
+        ("tact_behav_SetDampingParameters", "Paramètres d'amortissement pour tact_behav", 1),
+        ("tact_behav_SetElasticityParameters", "Paramètres d'élasticité pour tact_behav", 1),
+        ("tact_behav_SetFrictionParameters", "Paramètres de frottement pour tact_behav", 1),
+        ("tact_behav_SetLawInternalComment", "Commentaires internes sur la loi pour tact_behav", 1),
+        ("tact_behav_SetLawName", "Nom de la loi pour tact_behav", 1),
+        ("tact_behav_SetLawParameters", "Paramètres de la loi pour tact_behav", 1),
+        ("tact_behav_SetLawType", "Type de loi pour tact_behav", 1),
+        ("tact_behav_SetLawVersion", "Version de la loi pour tact_behav", 1),
+        ("tact_behav_SetNbLawParameters", "Nombre de paramètres de la loi pour tact_behav", 1),
+        ("tact_behav_SetNbTactBehav", "Nombre de comportements de contact pour tact_behav", 1),
+        ("tact_behav_SetNormalDampingParameters", "Paramètres d'amortissement normal pour tact_behav", 1),
+        ("tact_behav_SetNormalElasticityParameters", "Paramètres d'élasticité normale pour tact_behav", 1),
+        ("tact_behav_SetNormalFrictionParameters", "Paramètres de frottement normal pour tact_behav", 1),
+        ("tact_behav_SetNormalLawParameters", "Paramètres de la loi normale pour tact_behav", 1),
+        ("tact_behav_SetNormalLawType", "Type de loi normale pour tact_behav", 1),
+        ("tact_behav_SetNormalLawVersion", "Version de la loi normale pour tact_behav", 1),
+        ("tact_behav_SetNormalNbLawParameters", "Nombre de paramètres de la loi normale pour tact_behav", 1),
+        ("tact_behav_SetNormalStiffnessParameters", "Paramètres de raideur normale pour tact_behav", 1),
+        ("tact_behav_SetParam", "Paramètre pour tact_behav", 1),
+        ("tact_behav_SetPressureParameters", "Paramètres de pression pour tact_behav", 1),
+        ("tact_behav_SetRNcap", "Capacité RN pour tact_behav", 1),
+        ("tact_behav_SetTangentialDampingParameters", "Paramètres d'amortissement tangentiels pour tact_behav", 1),
+        ("tact_behav_SetTangentialElasticityParameters", "Paramètres d'élasticité tangentiels pour tact_behav", 1),
+        ("tact_behav_SetTangentialFrictionParameters", "Paramètres de frottement tangentiels pour tact_behav", 1),
+        ("tact_behav_SetTangentialLawParameters", "Paramètres de la loi tangentiels pour tact_behav", 1),
+        ("tact_behav_SetTangentialLawType", "Type de loi tangentiels pour tact_behav", 1),
+        ("tact_behav_SetTangentialLawVersion", "Version de la loi tangentiels pour tact_behav", 1),
+        ("tact_behav_SetTangentialNbLawParameters", "Nombre de paramètres de la loi tangentiels pour tact_behav", 1),
+        ("tact_behav_SetTangentialStiffnessParameters", "Paramètres de raideur tangentiels pour tact_behav", 1),
+        ("tact_behav_SetCZMwithInitialFriction", "CZM avec frottement initial pour tact_behav", 1),
+        ("tact_behav_SetCZMwithInitialFrictionParameters", "Paramètres de CZM avec frottement initial pour tact_behav", 1),
+        ("tact_behav_SetCZMwithInitialFrictionLawParameters", "Paramètres de la loi CZM avec frottement initial pour tact_behav", 1),
+        ("tact_behav_SetCZMwithInitialFrictionLawType", "Type de loi CZM avec frottement initial pour tact_behav", 1),
+        ("tact_behav_SetCZMwithInitialFrictionLawVersion", "Version de la loi CZM avec frottement initial pour tact_behav", 1),
+        ("tact_behav_SetCZMwithInitialFrictionNbLawParameters", "Nombre de paramètres de la loi CZM avec frottement initial pour tact_behav", 1),
+        ("tact_behav_SetCZMwithInitialFrictionStiffnessParameters", "Paramètres de raideur CZM avec frottement initial pour tact_behav", 1),
+        ("tact_behav_SetDilatancyParameters", "Paramètres de dilatance pour tact_behav", 1),
+        ("tact_behav_SetParam", "Paramètre pour tact_behav", 1),
+        ("tact_behav_SetPressureParameters", "Paramètres de pression pour tact_behav", 1),
+        ("tact_behav_SetRNcap", "Capacité RN pour tact_behav", 1),
+        
+        ("therMAILx_SetScalarFieldByElement", "Champ scalaire par élément pour therMAILx", 1),
+        ("therMAILx_SetScalarFieldByNode", "Champ scalaire par nœud pour therMAILx", 1),
+        ("therMAILx_SetVectorFieldByElement", "Champ vectoriel par élément pour therMAILx", 1),
+        ("therMAILx_SetVectorFieldByNode", "Champ vectoriel par nœud pour therMAILx", 1),
+        
+        ("xKSID_SetVdilation", "Dilatation V pour xKSID", 1),
+        ("xKSID_SetXdilation", "Dilatation X pour xKSID", 1),
+
     ]
 
     def _make_insp_tab(
@@ -963,7 +1553,7 @@ class ChipyRoutinesDialog(QDialog):
         """
         Construit un onglet d'inspection generique.
         Parametres :
-            dim_label        : "2D", "3D" ou "INT"
+            dim_label        : "2D", "3D" "SET" ou "INT",
             funcs_catalog    : liste de tuples (nom_func, description, nb_params)
             rows_list_attr   : nom de l'attribut self._insp??_rows
             rows_layout_attr : nom de l'attribut self._insp??_rows_layout
@@ -981,6 +1571,11 @@ class ChipyRoutinesDialog(QDialog):
             "3D":  ("Fonctions chipy pour inspecter les contacteurs 3D : "
                     "SPHER, POLYH, CYLND, PLANE, PT3Dx, RBDY3. "
                     "Les fonctions sans ID (GetNb...) s'appellent sans argument."),
+            "SET": ("Fonctions chipy de modification (Set). Les IDs ou le groupe "
+                    "permettent d'appliquer l'action à chaque avatar ciblé. "
+                    "Avec un groupe, utilisez _id dans les arguments pour passer "
+                    "l'ID avec d'autres valeurs. "
+                    "La variable Python stocke le résultat de l'appel."),
             "INT": ("Fonctions chipy pour inspecter les interactions (paires de contacteurs) : "
                     "DKDKx, DKJCx, DKKDx, PLPLx, CLALp, ALpALp, "
                     "SPSPx, SPCDx, SPPLx, CDCDx, CDPLx, PRPRx, "
@@ -996,13 +1591,15 @@ class ChipyRoutinesDialog(QDialog):
 
         # ── En-tete colonnes ─────────────────────────────────────────────────
         hdr = QHBoxLayout()
-        for lbl_txt, lbl_w in [
-            ("Fonction chipy", 230),
-            ("IDs (paires/contacteurs)", 145),
-            ("Groupe", 110),
-            ("Mode / Timing", 200),
-            ("Var. Python", 110),
-        ]:
+        columns = ([
+                ("Fonction chipy", 230),
+                ("IDs (paires/contacteurs)", 145),
+                ("Groupe", 110),
+                ("Mode / Timing", 200),
+                ("Var. Python", 110),
+            ]
+        )
+        for lbl_txt, lbl_w in columns:
             lbl = QLabel("<b>{}</b>".format(lbl_txt))
             lbl.setFixedWidth(lbl_w)
             hdr.addWidget(lbl)
@@ -1059,11 +1656,44 @@ class ChipyRoutinesDialog(QDialog):
             add_cb_label     = "+ Ajouter une inspection interaction",
         )
 
+    def _tab_set_actions(self) -> QWidget:
+        """Onglet SET construit avec le même générateur de lignes d'inspection."""
+        return self._make_insp_tab(
+            dim_label="SET",
+            funcs_catalog=self._SET_FUNCS,
+            rows_list_attr="_set_rows",
+            rows_layout_attr="_set_rows_layout",
+            add_cb_label="+ Ajouter une action SET",
+        )
+
+    @staticmethod
+    def _validate_set_action(entry: dict, index: int) -> Optional[str]:
+        func = entry.get("func", "")
+        args = entry.get("args", "")
+        if (
+            not func
+            or not func.isidentifier()
+            or keyword.iskeyword(func)
+            or "Set" not in func
+        ):
+            return (
+                "Action SET {} : indiquez un nom de fonction chipy valide "
+                "contenant « Set ».".format(index)
+            )
+        try:
+            ast.parse("chipy.{}({})".format(func, args), mode="eval")
+        except SyntaxError as exc:
+            return "Action SET {} : arguments Python invalides ({})".format(
+                index, exc.msg
+            )
+        return None
+
     def _get_catalog_for_dim(self, dim: str) -> list:
         return {
             "2D":  self._INSP2D_FUNCS,
             "3D":  self._INSP3D_FUNCS,
             "INT": self._INSPI_FUNCS,
+            "SET": self._SET_FUNCS,
         }.get(dim, self._INSP2D_FUNCS)
 
     def _add_insp_row(self, dim: str, entry: dict = None):
@@ -1076,11 +1706,17 @@ class ChipyRoutinesDialog(QDialog):
         catalog = self._get_catalog_for_dim(dim)
         func_names = [f[0] for f in catalog]
 
-        _dim_key = {"2D": "2d", "3D": "3d"}.get(dim)
-        rows_list   = getattr(self,
-            "_insp{}_rows".format(_dim_key) if _dim_key else "_inspi_rows")
-        rows_layout = getattr(self,
-            "_insp{}_rows_layout".format(_dim_key) if _dim_key else "_inspi_rows_layout")
+        _row_attrs = {
+            "2D": ("_insp2d_rows", "_insp2d_rows_layout"),
+            "3D": ("_insp3d_rows", "_insp3d_rows_layout"),
+            "INT": ("_inspi_rows", "_inspi_rows_layout"),
+            "SET": ("_set_rows", "_set_rows_layout"),
+        }
+        rows_list_attr, rows_layout_attr = _row_attrs.get(
+            dim, _row_attrs["2D"]
+        )
+        rows_list = getattr(self, rows_list_attr)
+        rows_layout = getattr(self, rows_layout_attr)
 
         row_widget = QWidget()
         row_layout = QHBoxLayout(row_widget)
@@ -1108,17 +1744,22 @@ class ChipyRoutinesDialog(QDialog):
         # ── IDs ───────────────────────────────────────────────────────────────
         edit_ids = QLineEdit()
         edit_ids.setFixedWidth(100)
-        edit_ids.setPlaceholderText("1, 3, 5")
-        edit_ids.setText(entry.get("ids", ""))
+        edit_ids.setPlaceholderText("args, _id" if dim == "SET" else "1, 3, 5")
+        edit_ids.setText(
+            entry.get("args", entry.get("ids", ""))
+            if dim == "SET" else entry.get("ids", "")
+        )
         edit_ids.setToolTip(
+            "Arguments Python séparés par des virgules."
+            if dim == "SET" else
             "IDs (1-based) des contacteurs ou paires a inspecter. "
             "Laisser vide si la fonction ne prend pas d'ID (GetNb...)."
         )
 
         btn_pick = QPushButton("...")
-        btn_pick.setFixedWidth(28)
+        btn_pick.setFixedWidth(36)
         btn_pick.setToolTip("Choisir depuis la liste du projet.")
-        pick_dim = "2D" if dim in ("2D", "INT") else "3D"
+        pick_dim = "2D" if dim in ("2D", "INT", "SET") else "3D"
         def _make_pick(e=edit_ids, d=pick_dim):
             return lambda: self._pick_avatar_ids(e, d)
         btn_pick.clicked.connect(_make_pick())
@@ -1165,7 +1806,7 @@ class ChipyRoutinesDialog(QDialog):
 
         # ── Bouton supprimer ─────────────────────────────────────────────────
         btn_del = QPushButton("x")
-        btn_del.setFixedWidth(24)
+        btn_del.setFixedWidth(36)
         row_data = {
             "widget":     row_widget,
             "combo_func": combo_func,
@@ -1192,17 +1833,22 @@ class ChipyRoutinesDialog(QDialog):
     def _read_insp_row(self, row: dict) -> dict:
         """Lit une ligne d'inspection et retourne un dict serialisable."""
         _mode = row["combo_mode"].currentData()
-        return {
+        values = {
             "func":      row["combo_func"].currentText(),
-            "ids":       row["edit_ids"].text().strip(),
-            "group":     row["combo_grp"].currentText().strip(),
             "step_mode": _mode,
             "step_val":  row["spin_val"].value(),
-            "store":     row["edit_store"].text().strip(),
             # compat ascendante
             "in_loop":   _mode not in ("before", "after"),
             "freq":      row["spin_val"].value() if _mode == "every_n" else 1,
         }
+
+        values["ids"] = row["edit_ids"].text().strip()
+        values["group"] = row["combo_grp"].currentText().strip()
+        values["store"] = row["edit_store"].text().strip()
+        if row["dim"] == "SET":
+            values["args"] = values["ids"]
+
+        return values
 
     # =========================================================================
     # Chargement initial des widgets depuis _params
@@ -1215,7 +1861,7 @@ class ChipyRoutinesDialog(QDialog):
         {1: self._rb_cp, 2: self._rb_dp}.get(p["mhyp"], self._rb_3d).setChecked(True)
         self._cb_deformable.setChecked(p["deformable"])
         self._combo_phys.setCurrentIndex(
-            {"MECAx": 0, "THERx": 1, "HYDRx": 2, "THMx": 3}.get(p["physics"], 0)
+            {"MECAx": 0, "THERx": 1, "POROx": 2, "THMx": 3}.get(p["physics"], 0)
         )
         self._dspin_rloc.setValue(p["Rloc_tol"])
 
@@ -1228,8 +1874,8 @@ class ChipyRoutinesDialog(QDialog):
             "_cb_SPSPx":    "use_SPSPx",    "_cb_SPCDx":    "use_SPCDx",
             "_cb_SPPLx":    "use_SPPLx",    "_cb_CDCDx":    "use_CDCDx",
             "_cb_CDPLx":    "use_CDPLx",    "_cb_PRPRx":    "use_PRPRx",
-            "_cb_mecaFEM":  "use_mecaFEM",  "_cb_therFEM":  "use_therFEM",
-            "_cb_hydrFEM":  "use_hydrFEM",
+            "_cb_mecaMAILx":  "use_mecaMAILx",  "_cb_therMAILx":  "use_therMAILx",
+            "_cb_poroMAILx":  "use_poroMAILx",
             "_cb_DKMECAx":  "use_DKMECAx",  "_cb_ALpMECAx": "use_ALpMECAx",
             "_cb_SPMECAx":  "use_SPMECAx",
             "_cb_PT2Dx":    "use_PT2Dx",    "_cb_PT3Dx":    "use_PT3Dx",
@@ -1237,12 +1883,18 @@ class ChipyRoutinesDialog(QDialog):
         }.items():
             getattr(self, attr).setChecked(p.get(key, False))
 
+        for key, checkbox in self._advanced_checks.items():
+            checkbox.setChecked(p.get(key, False))
+        for key, edit in self._advanced_edits.items():
+            edit.setText(p.get(key, edit.text()))
+        self._refresh_advanced_routine_controls()
+
         # Extraction — cases simples
         for attr, key in {
             "_cb_disable_log":  "disable_log",
             "_cb_vRBDY2":       "visu_RBDY2",     "_cb_vRBDY3":    "visu_RBDY3",
-            "_cb_vMeca":        "visu_mecaFEM",   "_cb_vTher":     "visu_therFEM",
-            "_cb_vHydr":        "visu_hydrFEM",   "_cb_disp_loop": "display_in_loop",
+            "_cb_vMeca":        "visu_mecaMAILx",   "_cb_vTher":     "visu_therMAILx",
+            "_cb_vHydr":        "visu_poroMAILx",   "_cb_disp_loop": "display_in_loop",
             # visibilite : gestion separee via QLineEdit
             "_cb_Rnod":         "extract_Rnod",   "_cb_Vloc":      "extract_Vloc",
             "_cb_Rloc":         "extract_Rloc",   "_cb_energy":    "extract_energy",
@@ -1266,18 +1918,29 @@ class ChipyRoutinesDialog(QDialog):
             if w2: w2.deleteLater()
         for entry in p.get("insp2d_entries", []):
             self._add_insp_row("2D", entry)
+
         self._insp3d_rows.clear()
         while self._insp3d_rows_layout.count():
             w3 = self._insp3d_rows_layout.takeAt(0).widget()
             if w3: w3.deleteLater()
         for entry in p.get("insp3d_entries", []):
             self._add_insp_row("3D", entry)
+        
         self._inspi_rows.clear()
         while self._inspi_rows_layout.count():
             wi = self._inspi_rows_layout.takeAt(0).widget()
             if wi: wi.deleteLater()
         for entry in p.get("inspi_entries", []):
             self._add_insp_row("INT", entry)
+
+        # Actions SET configurables
+        self._set_rows.clear()
+        while self._set_rows_layout.count():
+            sw = self._set_rows_layout.takeAt(0).widget()
+            if sw:
+                sw.deleteLater()
+        for entry in p.get("set_entries", []):
+            self._add_insp_row("SET", entry)
 
         # GetBodyVector RBDY2/3 — charger les entrees depuis _params
         self._gbv2_rows.clear()
@@ -1325,6 +1988,12 @@ class ChipyRoutinesDialog(QDialog):
         self._rb_3d.toggled.connect(self._on_3d_toggled)
         self._cb_deformable.toggled.connect(self._on_deformable_toggled)
         self._combo_phys.currentIndexChanged.connect(self._on_phys_changed)
+        for checkbox in (
+            self._cb_mecaMAILx, self._cb_therMAILx, self._cb_poroMAILx
+        ):
+            checkbox.toggled.connect(
+                lambda _checked: self._refresh_advanced_routine_controls()
+            )
 
     def _on_stop_toggled(self, v: bool):
         self._combo_stop_type.setEnabled(v)
@@ -1348,16 +2017,18 @@ class ChipyRoutinesDialog(QDialog):
     def _on_deformable_toggled(self, v: bool):
         if v:
             self._on_phys_changed(self._combo_phys.currentIndex())
+        self._refresh_advanced_routine_controls()
 
     def _on_phys_changed(self, idx: int):
         if not self._cb_deformable.isChecked():
             return
-        self._cb_mecaFEM.setChecked(idx == 0)
-        self._cb_therFEM.setChecked(idx == 1)
-        self._cb_hydrFEM.setChecked(idx in (2, 3))
+        self._cb_mecaMAILx.setChecked(idx == 0)
+        self._cb_therMAILx.setChecked(idx == 1)
+        self._cb_poroMAILx.setChecked(idx in (2, 3))
         self._cb_vMeca.setChecked(idx == 0)
         self._cb_vTher.setChecked(idx == 1)
         self._cb_vHydr.setChecked(idx in (2, 3))
+        self._refresh_advanced_routine_controls()
 
     # =========================================================================
     # Auto-detection depuis le projet courant
@@ -1521,7 +2192,7 @@ class ChipyRoutinesDialog(QDialog):
         spin = QSpinBox()
         spin.setRange(1, 9_999_999)
         spin.setFixedWidth(72)
-        spin.setToolTip("N (frequence) ou k (pas unique)")
+        spin.setToolTip("N (frequence) ou k (indice du pas, debutant a 0)")
 
         mode = entry.get("step_mode", default_mode)
         # Compat ascendante
@@ -1539,9 +2210,12 @@ class ChipyRoutinesDialog(QDialog):
 
         order = ["before", "all", "every_n", "at_k", "after"]
         combo.setCurrentIndex(order.index(mode) if mode in order else order.index(default_mode))
+        if mode == "at_k":
+            spin.setMinimum(0)
         spin.setValue(int(val))
 
         def _on_mode(i, s=spin):
+            s.setMinimum(0 if i == 3 else 1)
             s.setEnabled(i in (2, 3))  # every_n, at_k
         combo.currentIndexChanged.connect(_on_mode)
         _on_mode(combo.currentIndex())
@@ -1768,8 +2442,11 @@ class ChipyRoutinesDialog(QDialog):
             self._lbl_info.setText("(aucun projet charge)")
             return
 
+        from lmgc90_core.compute_script import infer_chipy_contact_routines
+
         st = self.controller.project
         dim = st.dimension
+        inferred_routines = infer_chipy_contact_routines(st)
 
         if dim == 3:
             self._rb_3d.setChecked(True)
@@ -1779,6 +2456,43 @@ class ChipyRoutinesDialog(QDialog):
             self._rb_cp.setChecked(True)
             self._cb_RBDY2.setChecked(True)
             self._cb_RBDY3.setChecked(False)
+
+        detector_widgets = {
+            "_cb_DKDKx": "use_DKDKx",
+            "_cb_DKJCx": "use_DKJCx",
+            "_cb_DKKDx": "use_DKKDx",
+            "_cb_PLPLx": "use_PLPLx",
+            "_cb_CLALp": "use_CLALp",
+            "_cb_ALpALp": "use_ALpALp",
+            "_cb_SPSPx": "use_SPSPx",
+            "_cb_SPCDx": "use_SPCDx",
+            "_cb_SPPLx": "use_SPPLx",
+            "_cb_CDCDx": "use_CDCDx",
+            "_cb_CDPLx": "use_CDPLx",
+            "_cb_PRPRx": "use_PRPRx",
+            "_cb_DKMECAx": "use_DKMECAx",
+            "_cb_ALpMECAx": "use_ALpMECAx",
+            "_cb_SPMECAx": "use_SPMECAx",
+            "_cb_PT2Dx": "use_PT2Dx",
+            "_cb_PT3Dx": "use_PT3Dx",
+        }
+        dimension_specific = {
+            2: {
+                "use_SPSPx", "use_SPCDx", "use_SPPLx", "use_CDCDx",
+                "use_CDPLx", "use_PRPRx", "use_SPMECAx", "use_PT3Dx",
+            },
+            3: {
+                "use_DKDKx", "use_DKJCx", "use_DKKDx", "use_PLPLx",
+                "use_CLALp", "use_ALpALp", "use_DKMECAx", "use_ALpMECAx",
+                "use_PT2Dx",
+            },
+        }
+        for attr, key in detector_widgets.items():
+            widget = getattr(self, attr)
+            if inferred_routines[key]:
+                widget.setChecked(True)
+            elif key in dimension_specific[dim]:
+                widget.setChecked(False)
 
         has_def = any(
             av.avatar_type.value == "mesh" for av in st.avatars
@@ -1856,7 +2570,7 @@ class ChipyRoutinesDialog(QDialog):
             else (2 if self._rb_dp.isChecked() else 1)
         )
         p["deformable"] = self._cb_deformable.isChecked()
-        p["physics"] = ["MECAx", "THERx", "HYDRx", "THMx"][
+        p["physics"] = ["MECAx", "THERx", "POROx", "THMx"][
             self._combo_phys.currentIndex()
         ]
         p["Rloc_tol"] = self._dspin_rloc.value()
@@ -1870,8 +2584,8 @@ class ChipyRoutinesDialog(QDialog):
             "_cb_SPSPx":    "use_SPSPx",    "_cb_SPCDx":    "use_SPCDx",
             "_cb_SPPLx":    "use_SPPLx",    "_cb_CDCDx":    "use_CDCDx",
             "_cb_CDPLx":    "use_CDPLx",    "_cb_PRPRx":    "use_PRPRx",
-            "_cb_mecaFEM":  "use_mecaFEM",  "_cb_therFEM":  "use_therFEM",
-            "_cb_hydrFEM":  "use_hydrFEM",
+            "_cb_mecaMAILx":  "use_mecaMAILx",  "_cb_therMAILx":  "use_therMAILx",
+            "_cb_poroMAILx":  "use_poroMAILx",
             "_cb_DKMECAx":  "use_DKMECAx",  "_cb_ALpMECAx": "use_ALpMECAx",
             "_cb_SPMECAx":  "use_SPMECAx",
             "_cb_PT2Dx":    "use_PT2Dx",    "_cb_PT3Dx":    "use_PT3Dx",
@@ -1883,8 +2597,8 @@ class ChipyRoutinesDialog(QDialog):
         for attr, key in {
             "_cb_disable_log":  "disable_log",
             "_cb_vRBDY2":       "visu_RBDY2",     "_cb_vRBDY3":    "visu_RBDY3",
-            "_cb_vMeca":        "visu_mecaFEM",   "_cb_vTher":     "visu_therFEM",
-            "_cb_vHydr":        "visu_hydrFEM",   "_cb_disp_loop": "display_in_loop",
+            "_cb_vMeca":        "visu_mecaMAILx",   "_cb_vTher":     "visu_therMAILx",
+            "_cb_vHydr":        "visu_poroMAILx",   "_cb_disp_loop": "display_in_loop",
             # visibilite : gestion separee via QLineEdit
             "_cb_Rnod":         "extract_Rnod",   "_cb_Vloc":      "extract_Vloc",
             "_cb_Rloc":         "extract_Rloc",   "_cb_energy":    "extract_energy",
@@ -1900,10 +2614,15 @@ class ChipyRoutinesDialog(QDialog):
         p["insp2d_entries"] = [self._read_insp_row(r) for r in self._insp2d_rows]
         p["insp3d_entries"] = [self._read_insp_row(r) for r in self._insp3d_rows]
         p["inspi_entries"]  = [self._read_insp_row(r) for r in self._inspi_rows]
+        p["set_entries"] = [self._read_insp_row(r) for r in self._set_rows]
+        for key, checkbox in self._advanced_checks.items():
+            p[key] = checkbox.isChecked()
+        for key, edit in self._advanced_edits.items():
+            p[key] = edit.text().strip()
 
         # GetBodyVector RBDY2/3 — collecter toutes les entrees
-        p["gbv2_entries"] = [self._read_gbv_row(row) for row in self._gbv2_rows]
-        p["gbv3_entries"] = [self._read_gbv_row(row) for row in self._gbv3_rows]
+        p["gbv2_entries"] = [self._read_gbv_row(r) for r in self._gbv2_rows]
+        p["gbv3_entries"] = [self._read_gbv_row(r) for r in self._gbv3_rows]
 
         # Pilotage
         p["use_restart"]      = self._cb_restart.isChecked()
@@ -1946,12 +2665,83 @@ class ChipyRoutinesDialog(QDialog):
                 )
 
         if p["deformable"] and not any(
-            p.get(k) for k in ("use_mecaFEM", "use_therFEM", "use_hydrFEM")
+            p.get(k) for k in ("use_mecaMAILx", "use_therMAILx", "use_poroMAILx")
         ):
             errors.append(
-                "Corps deformables actives mais aucune routine FEM "
-                "(mecaFEMx / therFEMx / hydrFEMx) n'est cochee dans l'onglet Routines."
+                "Corps deformables actives mais aucune routine MAILx "
+                "(mecaMAILx / therMAILx / poroMAILx) n'est cochee dans l'onglet Routines."
             )
+
+        advanced_setters = (
+            ("advanced_set_contact_radius", "SetContactRadius",
+             "advanced_set_contact_radius_args"),
+            ("advanced_set_domain_boundary", "SetDomainBoundary",
+             "advanced_set_domain_boundary_args"),
+            ("advanced_set_number_interaction", "SetNumberInteractionByContact",
+             "advanced_set_number_interaction_args"),
+            ("advanced_set_periodic_condition", "SetPeriodicCondition",
+             "advanced_set_periodic_condition_args"),
+        )
+        for option, function, args_key in advanced_setters:
+            if p[option]:
+                args = p[args_key]
+                if not args:
+                    error = "{} : indiquez les arguments requis.".format(function)
+                else:
+                    error = self._validate_set_action(
+                        {"func": function, "args": args}, function
+                    )
+                if error:
+                    errors.append(error)
+
+        for index, entry in enumerate(p["set_entries"], start=1):
+            error = self._validate_set_action(entry, index)
+            if error:
+                errors.append(error)
+
+        if p["advanced_hdf5"] and not p["advanced_hdf5_filename"]:
+            errors.append("HDF5 : indiquez un nom de fichier de sortie.")
+        if p["advanced_hdf5"] and any(p[key] for key in (
+            "advanced_write_out_dof", "advanced_write_out_gpv",
+            "advanced_write_out_mp_values", "advanced_write_out_rnod",
+            "advanced_write_out_vloc_rloc",
+        )):
+            errors.append(
+                "HDF5 utilise WriteOut pour ecrire les donnees. "
+                "Decochez les sorties ASCII individuelles."
+            )
+        if p["advanced_add_dof2"] and not p["advanced_write_bodies"]:
+            errors.append(
+                "AddDof2InBodies n'est utile qu'avec WriteBodies : cochez aussi WriteBodies."
+            )
+
+        if p["advanced_circular_selection"]:
+            args = p["advanced_circular_selection_args"]
+            if not args:
+                errors.append("CircularSelection : indiquez les arguments (x, y, r).")
+            else:
+                try:
+                    ast.parse(
+                        "chipy.CircularSelection({})".format(args),
+                        mode="eval",
+                    )
+                except SyntaxError as exc:
+                    errors.append(
+                        "CircularSelection : arguments Python invalides ({}).".format(
+                            exc.msg
+                        )
+                    )
+
+        if p["advanced_fd_select_prox"] and self.controller is not None:
+            pairs = {
+                (rule.candidate_contactor, rule.antagonist_contactor)
+                for rule in self.controller.project.visibility
+            }
+            if not pairs or any(pair != ("SPHER", "SPHER") for pair in pairs):
+                errors.append(
+                    "FdSelectProxTactors est reserve aux projets dont tous les "
+                    "contacts sont SPHER/SPHER."
+                )
 
         if errors:
             QMessageBox.warning(

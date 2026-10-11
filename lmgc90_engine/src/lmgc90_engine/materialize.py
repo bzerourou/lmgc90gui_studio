@@ -140,14 +140,43 @@ def materialize_project(project: Project) -> MaterializedScene:
 
     # --- postpro ---
     for cmd in project.postpro:
-        kwargs: dict[str, Any] = {"name": cmd.name, "step": cmd.step}
-        if cmd.target_type != "global" and cmd.target_value is not None:
-            kwargs[cmd.target_type] = cmd.target_value
+        kwargs: dict[str, Any] = {"name": cmd.name, "step": int(cmd.step)}
+        name_u = (cmd.name or "").upper()
+        tt = (cmd.target_type or "global").lower()
+        tv = cmd.target_value
+
+        if tt != "global" and tv is not None:
+            if name_u == "NEW RIGID SETS" or tt in ("groups", "rigid_sets"):
+                names = tv if isinstance(tv, (list, tuple)) else [tv]
+                kwargs["rigid_sets"] = [
+                    _bodies_for_group(project, scene, g) if isinstance(g, str) else list(g)
+                    for g in names
+                ]
+            elif name_u in ("TORQUE EVOLUTION", "BODY TRACKING") or tt in ("group", "rigid_set"):
+                if isinstance(tv, str):
+                    kwargs["rigid_set"] = _bodies_for_group(project, scene, tv)
+                elif isinstance(tv, (list, tuple)):
+                    kwargs["rigid_set"] = [
+                        scene.body_by_avatar_id[a]
+                        for a in tv
+                        if a in scene.body_by_avatar_id
+                    ]
+                else:
+                    kwargs["rigid_set"] = tv
+            else:
+                kwargs[tt] = tv
+
         posts.addCommand(pre.postpro_command(**kwargs))
 
     return scene
 
-
+def _bodies_for_group(project, scene, group_name: str) -> list:
+    ids = project.avatar_groups.get(group_name, []) or []
+    return [
+        scene.body_by_avatar_id[aid]
+        for aid in ids
+    ]
+    
 def _lmgc5(name: str, default: str = "XXXXX") -> str:
     s = (name or default).strip()
     if len(s) > 5:

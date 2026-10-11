@@ -1148,9 +1148,9 @@ class Viewer3D(QWidget):
         tb.addWidget(_sep())
 
         # Modes navigation / sélection / mesure
-        self._btn_nav     = _tool_btn("🖱️ Nav.",    "Navigation (orbit / zoom / pan)")
-        self._btn_select  = _tool_btn("👆 Sélect.", "Cliquer sur un avatar pour le sélectionner")
-        self._btn_measure = _tool_btn("📏 Règle",   "Mesurer la distance entre deux points")
+        self._btn_nav     = _tool_btn("🖱️Nav.",    "Navigation (orbit / zoom / pan)")
+        self._btn_select  = _tool_btn("👆Sélect.", "Cliquer sur un avatar pour le sélectionner")
+        self._btn_measure = _tool_btn("📏Règle",   "Mesurer la distance entre deux points")
         self._btn_nav.setChecked(True)
         mode_grp = QButtonGroup(self)
         for b in (self._btn_nav, self._btn_select, self._btn_measure):
@@ -1171,7 +1171,7 @@ class Viewer3D(QWidget):
         ]:
             btn = QPushButton(label)
             btn.setToolTip(tip)
-            btn.setFixedWidth(36)
+            btn.setFixedWidth(42)
             btn.clicked.connect(fn)
             tb.addWidget(btn)
 
@@ -1240,19 +1240,19 @@ class Viewer3D(QWidget):
 
         rst = QPushButton("🔄")
         rst.setToolTip("Réinitialiser la caméra")
-        rst.setFixedWidth(28)
+        rst.setFixedWidth(40)
         rst.clicked.connect(self._reset_camera)
         tb.addWidget(rst)
 
         clr = QPushButton("🗑️")
         clr.setToolTip("Effacer la scène")
-        clr.setFixedWidth(28)
+        clr.setFixedWidth(40)
         clr.clicked.connect(self.clear)
         tb.addWidget(clr)
 
         exp = QPushButton("📷")
         exp.setToolTip("Exporter la scène en PNG")
-        exp.setFixedWidth(28)
+        exp.setFixedWidth(40)
         exp.clicked.connect(self._export_png)
         tb.addWidget(exp)
 
@@ -1882,7 +1882,7 @@ class Viewer3D(QWidget):
 
     def _render_with_pylmgc90(self, avatars: List[Avatar]):
         """Rendu haute fidélité via pre.visuAvatars()."""
-        self._status("🔬 Rendu pylmgc90 en cours…")
+        self._status("🔬Rendu pylmgc90 en cours…")
         result = _render_via_pylmgc90(avatars, self.controller)
 
         if result is None:
@@ -2106,9 +2106,9 @@ class Viewer3D(QWidget):
         if path:
             try:
                 self.plotter.screenshot(path)
-                self._status(f"📷 Scène exportée : {path}")
+                self._status(f"📷Scène exportée : {path}")
             except Exception as e:
-                self._status(f"❌ Erreur export : {e}")
+                self._status(f"❌Erreur export : {e}")
 
     # =========================================================================
     # Utilitaires internes

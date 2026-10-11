@@ -136,6 +136,24 @@ def test_export_scripts(tmp_path: Path):
     assert cmd_path.is_file()
 
 
+def test_emit_pre_script_uses_performance_preference():
+    ctrl = ProjectController()
+    ctrl.new_project("compact", dimension=2)
+    ctrl.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    ctrl.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    ctrl.add(pre.rigidDisk(r=0.1, center=[0.0, 0.0], model="rigid", material="STEEL"))
+    ctrl.add(pre.rigidDisk(r=0.1, center=[1.0, 0.0], model="rigid", material="STEEL"))
+    ctrl.add(pre.rigidDisk(r=0.1, center=[2.0, 0.0], model="rigid", material="STEEL"))
+
+    ctrl.prefs.script_use_loop = False
+    expanded = ctrl.emit_pre_script()
+    ctrl.prefs.script_use_loop = True
+    compact = ctrl.emit_pre_script()
+
+    assert expanded.count("pre.rigidDisk(") == 3
+    assert compact.count("pre.rigidDisk(") == 1
+
+
 def test_save_load_roundtrip(tmp_path: Path):
     ctrl = ProjectController()
     ctrl.new_project("round", dimension=2)

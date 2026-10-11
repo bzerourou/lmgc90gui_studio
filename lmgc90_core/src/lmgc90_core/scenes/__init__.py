@@ -24,17 +24,17 @@ from .demos import (
     masonry_wall,
     rotating_drum,
     sphere_stack,
+    cell_adhesion_full,
 )
 
 __all__ = [
     "mesh_rigids_from_file",
     "cylinder_deposit_3d, mesh_rigids_from_file",
     "masonry_deformable_wall, cylinder_deposit_3d, mesh_rigids_from_file",
-    "cell_adhesion_v5",
-    "cell_adhesion_v4, cell_adhesion_v5",
     "cell_adhesion_v3, cell_adhesion_v4, cell_adhesion_v5",
     "cell_adhesion_v2",
     "cell_adhesion_v1",
+    "cell_adhesion_full",
     "SCENE_BUILDERS",
     "avalanche_slope",
     "ball_bearing",

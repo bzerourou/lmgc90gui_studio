@@ -9,6 +9,30 @@ if TYPE_CHECKING:
     from ..controller.project_controller import ProjectController
 
 
+def _avatar_rows(avatars, prefs) -> Optional[tuple[list[tuple[str, str]], str]]:
+    if not prefs.show_avatars_in_tree:
+        return None
+    visible = list(avatars)
+    if not prefs.show_granulo_individually:
+        visible = [
+            avatar for avatar in visible
+            if getattr(avatar.origin, "value", avatar.origin) != "granulo"
+        ]
+    shown = visible[:max(0, int(prefs.max_tree_avatars))]
+    rows = [
+        (
+            avatar.avatar_id[:8] + "…",
+            f"{avatar.avatar_type.value} @ {avatar.center}",
+        )
+        for avatar in shown
+    ]
+    omitted = len(visible) - len(shown)
+    if omitted:
+        label = "avatar masqué" if omitted == 1 else "avatars masqués"
+        rows.append(("…", f"{omitted} {label} (limite soft)"))
+    return rows, f"{len(shown)}/{len(visible)}"
+
+
 def create_tree_view(parent=None):
     from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem
 
@@ -24,8 +48,12 @@ def create_tree_view(parent=None):
             p = self.controller.project
             self.clear()
 
-            def branch(title: str, rows: list[tuple[str, str]]) -> None:
-                top = QTreeWidgetItem([title, str(len(rows))])
+            def branch(
+                title: str,
+                rows: list[tuple[str, str]],
+                count: Optional[str] = None,
+            ) -> None:
+                top = QTreeWidgetItem([title, count or str(len(rows))])
                 for a, b in rows:
                     top.addChild(QTreeWidgetItem([a, b]))
                 self.addTopLevelItem(top)
@@ -33,13 +61,11 @@ def create_tree_view(parent=None):
 
             branch("Materials", [(m.name, f"{m.material_type.value} ρ={m.density}") for m in p.materials])
             branch("Models", [(m.name, f"{m.physics}/{m.element} {m.dimension}D") for m in p.models])
-            branch(
-                "Avatars (AoS)",
-                [
-                    (a.avatar_id[:8] + "…", f"{a.avatar_type.value} @ {a.center}")
-                    for a in p.avatars
-                ],
-            )
+            prefs = self.controller.prefs
+            avatar_content = _avatar_rows(p.avatars, prefs)
+            if avatar_content is not None:
+                rows, count = avatar_content
+                branch("Avatars (AoS)", rows, count)
             branch(
                 "Populations (SoA)",
                 [

@@ -9,7 +9,7 @@ from .project import Project
 from .types import AvatarType
 
 
-def emit_pre(project: Project) -> str:
+def emit_pre(project: Project, *, use_loop: bool = False) -> str:
     w: list[str] = []
     def L(s: str = "") -> None:
         w.append(s)
@@ -45,13 +45,78 @@ def emit_pre(project: Project) -> str:
         L(f"mods.addModel(mod_{m.name})")
     L()
 
-    L("# --- avatars (individually edited) ---")
-    for av in project.avatars:
+    L("# --- avatars ---")
+    avatar_refs: dict[str, str] = {}
+    i = 0
+    batch_number = 0
+    while i < len(project.avatars):
+        av = project.avatars[i]
+        signature = _loop_avatar_signature(av) if use_loop else None
+        run_end = i + 1
+        if signature is not None:
+            while run_end < len(project.avatars):
+                next_signature = _loop_avatar_signature(project.avatars[run_end])
+                if next_signature != signature:
+                    break
+                run_end += 1
+
+        if signature is not None and run_end - i > 1:
+            batch = project.avatars[i:run_end]
+            batch_name = f"_avatar_batch_{batch_number}"
+            batch_lines = [
+                f"# {len(batch)} equivalent avatars",
+                f"{batch_name} = []",
+            ]
+            uses_radius = "_radius" in signature
+            if uses_radius:
+                batch_lines.append("for _center, _radius in (")
+                for item in batch:
+                    batch_lines.append(f"    ({item.center!r}, {item.radius!r}),")
+            else:
+                batch_lines.append("for _center in (")
+                for item in batch:
+                    batch_lines.append(f"    {item.center!r},")
+            batch_lines.append("):")
+            batch_lines.append("    " + _emit_avatar(
+                av,
+                center_expr="_center",
+                radius_expr="_radius" if uses_radius else None,
+                variable="_body",
+            ))
+            batch_lines.append(f"    {batch_name}.append(_body)")
+            batch_lines.append("    bodies.addAvatar(_body)")
+
+            expanded_lines = []
+            for item in batch:
+                ref = f"av_{_ident(item.avatar_id)}"
+                expanded_lines.extend((
+                    _emit_avatar(item),
+                    f"bodies.addAvatar({ref})",
+                ))
+            if len("\n".join(batch_lines)) < len("\n".join(expanded_lines)):
+                batch_number += 1
+                for line in batch_lines:
+                    L(line)
+                for index, item in enumerate(batch):
+                    avatar_refs[item.avatar_id] = f"{batch_name}[{index}]"
+            else:
+                for item in batch:
+                    L(_emit_avatar(item))
+                    ref = f"av_{_ident(item.avatar_id)}"
+                    avatar_refs[item.avatar_id] = ref
+                    L(f"bodies.addAvatar({ref})")
+            L()
+            i = run_end
+            continue
+
         L(_emit_avatar(av))
         if av.avatar_type == AvatarType.MESH_DEFORMABLE:
             L(_emit_mesh_contactors(av))
-        L(f"bodies.addAvatar(av_{_ident(av.avatar_id)})")
+        ref = f"av_{_ident(av.avatar_id)}"
+        avatar_refs[av.avatar_id] = ref
+        L(f"bodies.addAvatar({ref})")
         L()
+        i += 1
 
     if project.populations:
         L("# --- particle populations (SoA → pre.rigidDisk/Sphere loop) ---")
@@ -76,7 +141,7 @@ def emit_pre(project: Project) -> str:
     if project.operations:
         L("# --- boundary conditions ---")
         for op in project.operations:
-            L(_emit_dof(project, op))
+            L(_emit_dof(project, op, avatar_refs))
         L()
 
     if project.postpro:
@@ -143,41 +208,60 @@ def _emit_model(m: Model) -> str:
     )
 
 
-def _emit_avatar(av: Avatar) -> str:
+def _loop_avatar_signature(av: Avatar) -> str | None:
+    if av.avatar_type in (AvatarType.MESH_DEFORMABLE, AvatarType.EMPTY_AVATAR):
+        return None
+    return _emit_avatar(
+        av,
+        center_expr="_center",
+        radius_expr="_radius",
+        variable="_body",
+    )
+
+
+def _emit_avatar(
+    av: Avatar,
+    *,
+    center_expr: str | None = None,
+    radius_expr: str | None = None,
+    variable: str | None = None,
+) -> str:
     ident = _ident(av.avatar_id)
+    target = variable or f"av_{ident}"
     mat, mod = f"mat_{av.material_name}", f"mod_{av.model_name}"
-    c = av.center
+    c = center_expr if center_expr is not None else av.center
+    radius = radius_expr if radius_expr is not None else av.radius
     color = av.color
     t = av.avatar_type
     if t == AvatarType.RIGID_DISK:
         hollow = ", is_Hollow=True" if av.is_hollow else ""
         return (
-            f"av_{ident} = pre.rigidDisk(r={av.radius}, center={c}, "
+            f"{target} = pre.rigidDisk(r={radius}, center={c}, "
             f"model={mod}, material={mat}, color={color!r}{hollow})"
         )
     if t == AvatarType.RIGID_SPHERE:
         hollow = ", is_Hollow=True" if av.is_hollow else ""
         return (
-            f"av_{ident} = pre.rigidSphere(r={av.radius}, center={c}, "
+            f"{target} = pre.rigidSphere(r={radius}, center={c}, "
             f"model={mod}, material={mat}, color={color!r}{hollow})"
         )
     if t == AvatarType.RIGID_JONC:
         ax = av.axis or {}
         return (
-            f"av_{ident} = pre.rigidJonc(axe1={ax.get('axe1')}, axe2={ax.get('axe2')}, "
+            f"{target} = pre.rigidJonc(axe1={ax.get('axe1')}, axe2={ax.get('axe2')}, "
             f"center={c}, model={mod}, material={mat}, color={color!r})"
         )
     if t == AvatarType.SMOOTH_WALL:
         wp = av.wall_params or {}
         return (
-            f"av_{ident} = pre.smoothWall(l={wp.get('l')}, h={wp.get('h')}, "
+            f"{target} = pre.smoothWall(l={wp.get('l')}, h={wp.get('h')}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
             f"nb_polyg={wp.get('nb_polyg', 10)})"
         )
     if t == AvatarType.ROUGH_WALL:
         wp = av.wall_params or {}
         return (
-            f"av_{ident} = pre.roughWall(l={wp.get('l')}, r={wp.get('r')}, "
+            f"{target} = pre.roughWall(l={wp.get('l')}, r={wp.get('r')}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
             f"nb_vertex={wp.get('nb_vertex', 10)})"
         )
@@ -185,7 +269,7 @@ def _emit_avatar(av: Avatar) -> str:
         wp = av.wall_params or {}
         radius = wp.get("h", 2.0 * wp.get("r", 0.02)) / 2.0
         return (
-            f"av_{ident} = pre.fineWall(l={wp.get('l')}, r={radius}, "
+            f"{target} = pre.fineWall(l={wp.get('l')}, r={radius}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
             f"nb_vertex={wp.get('nb_vertex', 10)})"
         )
@@ -193,50 +277,50 @@ def _emit_avatar(av: Avatar) -> str:
         wp = av.wall_params or {}
         max_radius = wp.get("h", 2.0 * wp.get("rmax", 0.03)) / 2.0
         return (
-            f"av_{ident} = pre.granuloRoughWall(l={wp.get('l')}, "
+            f"{target} = pre.granuloRoughWall(l={wp.get('l')}, "
             f"rmin={wp.get('rmin')}, rmax={max_radius}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
             f"nb_vertex={wp.get('nb_vertex', 10)})"
         )
     if t == AvatarType.RIGID_CLUSTER:
         return (
-            f"av_{ident} = pre.rigidCluster(r={av.radius}, center={c}, "
+            f"{target} = pre.rigidCluster(r={radius}, center={c}, "
             f"model={mod}, material={mat}, color={color!r}, nb_disk={av.nb_vertices})"
         )
     if t == AvatarType.RIGID_CYLINDER:
         wp = av.wall_params or {}
         hollow = ", is_Hollow=True" if av.is_hollow else ""
         return (
-            f"av_{ident} = pre.rigidCylinder(r={av.radius}, h={wp.get('h')}, "
+            f"{target} = pre.rigidCylinder(r={radius}, h={wp.get('h')}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}{hollow})"
         )
     if t == AvatarType.RIGID_PLAN:
         ax = av.axis or {}
         return (
-            f"av_{ident} = pre.rigidPlan(center={c}, model={mod}, material={mat}, "
+            f"{target} = pre.rigidPlan(center={c}, model={mod}, material={mat}, "
             f"color={color!r}, axe1={ax.get('axe1')}, axe2={ax.get('axe2')}, axe3={ax.get('axe3')})"
         )
     if t == AvatarType.RIGID_POLYGON:
         if av.generation_type == "regular":
             return (
-                f"av_{ident} = pre.rigidPolygon(model={mod}, material={mat}, center={c}, "
+                f"{target} = pre.rigidPolygon(model={mod}, material={mat}, center={c}, "
                 f"color={color!r}, generation_type='regular', nb_vertices={av.nb_vertices}, "
-                f"radius={av.radius})"
+                f"radius={radius})"
             )
         return (
-            f"av_{ident} = pre.rigidPolygon(model={mod}, material={mat}, center={c}, "
+            f"{target} = pre.rigidPolygon(model={mod}, material={mat}, center={c}, "
             f"color={color!r}, generation_type={av.generation_type!r}, "
-            f"vertices=np.array({av.vertices}), radius={av.radius})"
+            f"vertices=np.array({av.vertices}), radius={radius})"
         )
     if t == AvatarType.RIGID_POLYHEDRON:
         if av.generation_type == "regular":
             return (
-                f"av_{ident} = pre.rigidPolyhedron(model={mod}, material={mat}, "
+                f"{target} = pre.rigidPolyhedron(model={mod}, material={mat}, "
                 f"center={c}, color={color!r}, generation_type='regular', "
-                f"nb_vertices={av.nb_vertices}, radius={av.radius})"
+                f"nb_vertices={av.nb_vertices}, radius={radius})"
             )
         return (
-            f"av_{ident} = pre.rigidPolyhedron(model={mod}, material={mat}, "
+            f"{target} = pre.rigidPolyhedron(model={mod}, material={mat}, "
             f"center={c}, color={color!r}, generation_type='vertices', "
             f"vertices=np.array({av.vertices}))"
         )
@@ -325,23 +409,36 @@ def _emit_see(rule: VisibilityRule, i: int) -> str:
         f"colorCandidat={rule.candidate_color!r}, "
         f"CorpsAntagoniste={rule.antagonist_body!r}, antagoniste={rule.antagonist_contactor!r}, "
         f"colorAntagoniste={rule.antagonist_color!r}, "
-        f"behav={rule.behavior_name!r}, alert={rule.alert})"
+        f"behav=law_{rule.behavior_name}, alert={rule.alert})"
     )
 
 
-def _emit_dof(project: Project, op) -> str:
+def _emit_dof(
+    project: Project,
+    op,
+    avatar_refs: dict[str, str] | None = None,
+) -> str:
+    avatar_refs = avatar_refs or {}
     if op.target_type == "avatar":
-        ident = _ident(str(op.target_value))
-        target = f"av_{ident}"
+        target = avatar_refs.get(
+            str(op.target_value), f"av_{_ident(str(op.target_value))}"
+        )
     elif op.target_type == "group":
         ids = project.avatar_groups.get(str(op.target_value), [])
         if not ids:
             return f"# DOF on empty group {op.target_value!r}"
-        ident = _ident(ids[0])
-        target = f"av_{ident}  # group {op.target_value!r} — apply to each member"
+        targets = [
+            avatar_refs.get(aid, f"av_{_ident(aid)}")
+            for aid in ids
+        ]
     else:
         target = "bodies"
     params = ", ".join(f"{k}={v!r}" for k, v in op.parameters.items())
+    if op.target_type == "group":
+        return "\n".join(
+            f"{target}.{op.operation_type}({params})"
+            for target in targets
+        )
     if op.operation_type == "imposeDrivenDof":
         return f"{target}.imposeDrivenDof({params})"
     if op.operation_type == "imposeInitValue":

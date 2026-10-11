@@ -150,17 +150,32 @@ class EngineSession:
             pass
         return out
 
-    def write_cell_dual_datbox(self, base_path: Union[str, Path]) -> dict:
+    def write_cell_dual_datbox(
+        self,
+        base_path: Union[str, Path],
+        *,
+        use_loop: bool = False,
+    ) -> dict:
         """Export DATBOX_SPRD + DATBOX_STBL (+ PHASES.json) for cell adhesion."""
         patch_numpy_cross()
         scene = self.materialize()
-        return datbox_mod.write_cell_dual_datbox(scene, self.project, base_path)
+        return datbox_mod.write_cell_dual_datbox(
+            scene,
+            self.project,
+            base_path,
+            use_loop=use_loop,
+        )
 
-    def emit_pre_script(self, path: Optional[Union[str, Path]] = None) -> str:
+    def emit_pre_script(
+        self,
+        path: Optional[Union[str, Path]] = None,
+        *,
+        use_loop: bool = False,
+    ) -> str:
         """Always available — delegates to lmgc90_core (no pylmgc required)."""
-        text = emit_pre(self.project)
+        text = emit_pre(self.project, use_loop=use_loop)
         if path is not None:
-            datbox_mod.export_pre_script(self.project, path)
+            datbox_mod.export_pre_script(self.project, path, use_loop=use_loop)
         return text
 
     def emit_chipy_script(
@@ -183,12 +198,15 @@ class EngineSession:
         dt: float = 1e-3,
         nb_steps: int = 5000,
         try_datbox: bool = True,
+        use_loop: bool = False,
     ) -> dict[str, Path]:
         """Write pre.py, command.py, and optionally DATBOX into *directory*."""
         out = Path(directory)
         out.mkdir(parents=True, exist_ok=True)
         paths: dict[str, Path] = {}
-        paths["pre"] = Path(datbox_mod.export_pre_script(self.project, out / "pre.py"))
+        paths["pre"] = Path(datbox_mod.export_pre_script(
+            self.project, out / "pre.py", use_loop=use_loop
+        ))
         chipy = self.emit_chipy_script(out / "command.py", dt=dt, nb_steps=nb_steps)
         paths["command"] = out / "command.py"
         if try_datbox:

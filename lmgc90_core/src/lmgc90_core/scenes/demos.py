@@ -55,31 +55,43 @@ def falling_disks(project: Project) -> None:
     """One floor + template disk expanded by a line Loop (no side walls)."""
     ensure_rigid_2d(project)
     # foundation only
-    project.add(smooth_wall(
-        l=4.0, h=0.1, center=[0.0, -0.5], model="rigid", material="TDURx", color="GRAYx",
+    floor = project.add(smooth_wall(
+        l=4.0, h=0.1, center=[0.0, 0.0], model="rigid", material="TDURx", color="GRAYx",
     ))
     # template avatar for the loop
     template = project.add(disk(
         r=0.1, center=[-1.35, 1.0], model="rigid", material="TDURx", color="BLUEx",
     ))
+
     loop = Loop(
         loop_type="line",
         model_avatar_id=template.avatar_id,
-        count=10,
+        count=9,
         step=0.3,
-        offset_x=-1.35,
+        offset_x=-1.05,
         offset_y=1.0,
         group_name="disques_chute",
     )
     project.apply_loop(loop, template=template)
+
+
+    #fixer le sol 2d
+    project.add(DOFOperation(
+        operation_type="imposeDrivenDof",
+        target_type="avatar",
+        target_value= floor.avatar_id , #floor.avatar_id,
+        parameters={"component": [1, 2, 3], "dofty": "vlocy", "ct": 0.0}))
+
     iqs(project, "iqsc0", 0.3)
     see_dw(project, "iqsc0")
     see_dd(project, "iqsc0")
 
 
+
+
 def sphere_stack(project: Project) -> None:
     ensure_rigid_3d(project)
-    project.add(plan(
+    floor = project.add(plan(
         axe1=1.5, axe2=1.5, axe3=0.05, center=[0.0, 0.0, -0.1],
         model="rigid", material="TDURx", color="GRAYx"))
     for iz in range(4):
@@ -90,6 +102,12 @@ def sphere_stack(project: Project) -> None:
                     center=[(ix - 1) * 0.18, (iy - 1) * 0.18, 0.1 + iz * 0.18],
                     model="rigid", material="TDURx", color="BLUEx"))
     iqs(project, "iqsc0", 0.25)
+    # fixer le sol 3d
+    project.add(DOFOperation(
+        operation_type="imposeDrivenDof",
+        target_type="avatar",
+        target_value= floor.avatar_id , #floor.avatar_id,
+        parameters={"component": [1, 2, 3, 4, 5 , 6], "dofty": "vlocy", "ct": 0.0}))
     see_table(
         project,
         cand_body="RBDY3", cand="SPHER", cand_color="BLUEx",
@@ -659,13 +677,13 @@ def cable_pendulum(project: Project) -> None:
     bob = project.add(disk(
         r=0.08, center=[1.2, 1.5], model="rigid", material="TDURx", color="BLUEx"))
     project.add(ContactLaw(
-        name="wire", law_type=ContactLawType.IQS_CLB, friction=0.0,
+        name="wire1", law_type=ContactLawType.IQS_CLB, friction=0.0,
     ))
     see_table(
         project,
         cand_body="RBDY2", cand="DISKx", cand_color="BLUEx",
         ant_body="RBDY2", ant="DISKx", ant_color="REEDx",
-        law="wire", alert=0.05,
+        law="wire1", alert=0.05,
     )
 
 
@@ -2632,6 +2650,567 @@ def mesh_rigids_from_file(project: Project) -> None:
         f"{{'filepath':{mesh_path!r},'source':'gen_sample_rigidsFromMesh2D'}}"
     )
 
+def cell_adhesion_full(project: Project) -> None:
+    """Cellule 3D complète (gen_sample Vassaux) — pas de réduction viewer.
+
+    Composants :
+      • substrat fixe SUBST (grille ~200 µm)
+      • membrane noyau BNOYs + PT3Dx BNOYp + intérieur INOYs
+      • membrane cellulaire BCELs/BCELp/BCELt (2 calottes)
+      • cytosol CTSLs/CTSLp
+      • 30 adhésions focales + DOF predefined (phase SPRD)
+      • réseaux MF (400) / MT (400) / IF (200)
+      • stress fibres (chaînes depuis focals)
+      • lois IQS_CLB + ELASTIC_ROD/WIRE (phase stabilisation active)
+      • see-tables SPHER + PT3Dx
+      • metadata dual DATBOX SPRD/STBL
+
+    Attention : des milliers de corps — lourd pour le viewer PyVista.
+    """
+    # --- timing (gen_sample argv defaults if used as showcase) ---
+    nsteps_sprd, dt_sprd = 1000, 1.0e-4
+    nsteps_stbl, dt_stbl = 5000, 1.0e-4
+    noutp = 50
+    charinc_sprd = 1.0 / (nsteps_sprd * dt_sprd)
+
+    # --- geometry (µm) — FULL gen_sample ---
+    diam_cell = 30.0
+    diam_core = diam_cell / 1.5
+    lref = diam_cell / 60.0
+    x0 = y0 = z0 = 0.0
+
+    diam_cm1 = diam_cm2 = 2.5 * diam_cell
+    z_cm1 = +(diam_cm1 / 2.0 - 0.75 * diam_cell / 2.0)
+    z_cm2 = -(diam_cm2 / 2.0 - 0.75 * diam_cell / 2.0)
+
+    ctsl_part_radii = 3.0 * lref
+    celb_part_radii = 3.0 * lref
+    celb_part_gap = 1.0 * celb_part_radii
+    radii_celb = diam_cell / 2.0 + celb_part_radii
+    radii_cm1 = diam_cm1 / 2.0 + celb_part_radii
+    radii_cm2 = diam_cm2 / 2.0 + celb_part_radii
+
+    core_part_radii = 1.5 * lref
+    corb_part_radii = lref
+    corb_part_gap = 2.0 * corb_part_radii
+    radii_corb = diam_core / 2.0 + corb_part_radii
+
+    lxsubst = lysubst = 200.0
+    subst_part_radii = 5.0 * lref
+    subst_part_gap = 2.0 * subst_part_radii
+    z_subst = -0.75 * diam_cell
+
+    nb_nodes_mf, nb_nodes_mt, nb_nodes_if = 400, 400, 200
+    radii_part_networks = 1.0 * lref
+    alert_intra = 4.0 * radii_part_networks
+    alert_extra = 2.0 * radii_part_networks
+
+    fibers_part_radii = 0.5 * lref
+    sf_inc_min = 5.0 * fibers_part_radii
+    sf_inc_max = 10.0 * fibers_part_radii
+    shoot_cone = math.pi / 2.0
+
+    shift_amp_prot = 3.0
+    nb_focals = 30
+    nb_focals_ptour = 10
+
+    # stabilisation stiffness (active laws in project)
+    stiff = 0.20
+    pstr = 2.00
+    seed_fo, seed_mf, seed_mt, seed_if = 12345, 12345, 12345, 12345
+
+    # --- materials / model ---
+    if not any(m.name == "TDURx" for m in project.materials):
+        project.add(Material(name="TDURx", material_type=MaterialType.RIGID, density=1.0))
+    if not any(m.name == "CELLx" for m in project.materials):
+        project.add(Material(name="CELLx", material_type=MaterialType.RIGID, density=1.0e-8))
+    if not any(m.name == "rigid" for m in project.models):
+        project.add(Model(name="rigid", physics="MECAx", element="Rxx3D", dimension=3))
+
+    def _fix(aid: str) -> None:
+        project.add(DOFOperation(
+            operation_type="imposeDrivenDof",
+            target_type="avatar",
+            target_value=aid,
+            parameters={"component": [1, 2, 3], "dofty": "vlocy", "ct": 0.0},
+        ))
+
+    def _add_sphere(
+        r: float,
+        center: List[float],
+        color: str,
+        *,
+        material: str = "CELLx",
+        contactors=None,
+        fix: bool = False,
+    ) -> str:
+        kwargs = dict(
+            avatar_type=AvatarType.RIGID_SPHERE,
+            center=list(center),
+            material_name=material,
+            model_name="rigid",
+            color=color,
+            origin=AvatarOrigin.MANUAL,
+            radius=float(r),
+        )
+        if contactors is not None:
+            kwargs["contactors"] = contactors
+        av = project.add(Avatar(**kwargs))
+        if fix:
+            _fix(av.avatar_id)
+        return av.avatar_id
+
+    def _inside_cytoplasm(px, py, pz, r) -> bool:
+        dist = math.sqrt((px - x0) ** 2 + (py - y0) ** 2 + (pz - z0) ** 2)
+        d1 = math.sqrt((px - x0) ** 2 + (py - y0) ** 2 + (pz - z_cm1) ** 2)
+        d2 = math.sqrt((px - x0) ** 2 + (py - y0) ** 2 + (pz - z_cm2) ** 2)
+        return (
+            dist - r > diam_core / 2.0 + core_part_radii
+            and d1 + r < diam_cm1 / 2.0
+            and d2 + r < diam_cm2 / 2.0
+        )
+
+    # ========== SUBSTRATE ==========
+    subst_ids: List[str] = []
+    npx = max(2, int(lxsubst / subst_part_gap))
+    npy = max(2, int(lysubst / subst_part_gap))
+    for i in range(npx):
+        px = -lxsubst / 2.0 + (i + 0.5) * (lxsubst / npx)
+        for j in range(npy):
+            py = -lysubst / 2.0 + (j + 0.5) * (lysubst / npy)
+            aid = _add_sphere(
+                subst_part_radii, [px, py, z_subst], "SUBST",
+                material="TDURx", fix=True,
+            )
+            subst_ids.append(aid)
+    project.group("substrate", subst_ids)
+
+    # ========== NUCLEUS MEMBRANE ==========
+    nucleus_ids: List[str] = []
+    nphi = max(4, int(math.pi * radii_corb / corb_part_gap))
+    phi = -math.pi / 2.0
+    for _ in range(nphi):
+        ntheta = max(4, 2 * int(math.pi * radii_corb * max(0.05, math.cos(phi)) / corb_part_gap))
+        theta = 0.0
+        for __ in range(ntheta):
+            cx = x0 + radii_corb * math.cos(phi) * math.cos(theta)
+            cy = y0 + radii_corb * math.cos(phi) * math.sin(theta)
+            cz = z0 + radii_corb * math.sin(phi)
+            aid = _add_sphere(
+                corb_part_radii, [cx, cy, cz], "BNOYs",
+                contactors=[{"shape": "PT3Dx", "color": "BNOYp"}],
+            )
+            nucleus_ids.append(aid)
+            theta += 2.0 * math.pi / ntheta
+        phi += math.pi / nphi
+
+    # ========== INNER NUCLEUS ==========
+    rng_core = np.random.default_rng(42)
+    n_inner_target = 100
+    attempts = 0
+    while len([a for a in nucleus_ids]) and attempts < n_inner_target * 80:
+        # count only INOYs separately
+        break
+    inner_ids: List[str] = []
+    attempts = 0
+    while len(inner_ids) < n_inner_target and attempts < n_inner_target * 100:
+        attempts += 1
+        r = float(rng_core.uniform(0.75 * core_part_radii, 1.25 * core_part_radii))
+        px = float(rng_core.uniform(x0 - diam_core / 2, x0 + diam_core / 2))
+        py = float(rng_core.uniform(y0 - diam_core / 2, y0 + diam_core / 2))
+        pz = float(rng_core.uniform(z0 - diam_core / 2, z0 + diam_core / 2))
+        dist = math.sqrt((px - x0) ** 2 + (py - y0) ** 2 + (pz - z0) ** 2)
+        if dist + r >= diam_core / 2.0:
+            continue
+        aid = _add_sphere(
+            r, [px, py, pz], "INOYs",
+            contactors=[{"shape": "PT3Dx", "color": "INOYp"}],
+        )
+        inner_ids.append(aid)
+        nucleus_ids.append(aid)
+    project.group("nucleus", nucleus_ids)
+
+    # ========== CELL MEMBRANE (2 shells) ==========
+    membrane_ids: List[str] = []
+
+    def _membrane_shell(z_ctr: float, radii_cm: float, lower_half: bool) -> None:
+        nphi_m = max(6, int(math.pi * radii_cm / celb_part_gap))
+        phi_m = -math.pi / 2.0
+        for _ in range(nphi_m):
+            z_pt = z_ctr + radii_cm * math.sin(phi_m)
+            ok = (z_pt < z0) if lower_half else (z_pt > z0)
+            if ok:
+                ntheta = max(
+                    6,
+                    2 * int(math.pi * radii_cm * max(0.05, math.cos(phi_m)) / celb_part_gap),
+                )
+                theta = 0.0
+                for __ in range(ntheta):
+                    cx = x0 + radii_cm * math.cos(phi_m) * math.cos(theta)
+                    cy = y0 + radii_cm * math.cos(phi_m) * math.sin(theta)
+                    cz = z_pt
+                    aid = _add_sphere(
+                        celb_part_radii,
+                        [cx, cy, cz],
+                        "BCELs",
+                        contactors=[
+                            {"shape": "PT3Dx", "color": "BCELp"},
+                            {
+                                "shape": "SPHER",
+                                "color": "BCELt",
+                                "params": {"byrd": celb_part_radii / 10.0},
+                            },
+                        ],
+                    )
+                    membrane_ids.append(aid)
+                    theta += 2.0 * math.pi / ntheta
+            phi_m += math.pi / nphi_m
+
+    _membrane_shell(z_cm1, radii_cm1, True)
+    _membrane_shell(z_cm2, radii_cm2, False)
+    project.group("membrane", membrane_ids)
+
+    # ========== CYTOSOL ==========
+    rng = np.random.default_rng(42)
+    cytosol_ids: List[str] = []
+    n_cytosol_target = 100
+    attempts = 0
+    while len(cytosol_ids) < n_cytosol_target and attempts < n_cytosol_target * 200:
+        attempts += 1
+        r = float(rng.uniform(1.0 * ctsl_part_radii, 2.0 * ctsl_part_radii))
+        px = float(rng.uniform(x0 - 1.5 * diam_cell, x0 + 1.5 * diam_cell))
+        py = float(rng.uniform(y0 - 1.5 * diam_cell, y0 + 1.5 * diam_cell))
+        pz = float(rng.uniform(z0 - 0.5 * diam_cell, z0 + 0.5 * diam_cell))
+        if not _inside_cytoplasm(px, py, pz, r):
+            continue
+        aid = _add_sphere(
+            r, [px, py, pz], "CTSLs",
+            contactors=[{"shape": "PT3Dx", "color": "CTSLp"}],
+        )
+        cytosol_ids.append(aid)
+    project.group("cytosol", cytosol_ids)
+
+    # ========== FOCAL ADHESIONS ==========
+    rng_fo = np.random.default_rng(seed_fo)
+    protein_targets: List[Tuple[float, float, float]] = []
+    focal_coords: List[Tuple[float, float, float]] = []
+    radii_circ = 0.0
+    for i in range(nb_focals):
+        nb_tours = max(1, nb_focals // nb_focals_ptour)
+        rad = radii_celb - int(i / nb_focals_ptour) * (radii_celb / nb_tours)
+        theta = 2.0 * i * math.pi / nb_focals_ptour
+        px_p = x0 + shift_amp_prot * rad * math.cos(theta)
+        py_p = y0 + shift_amp_prot * rad * math.sin(theta)
+        protein_targets.append((px_p, py_p, z_subst))
+        dist_xy = math.sqrt((px_p - x0) ** 2 + (py_p - y0) ** 2)
+        if dist_xy > radii_circ:
+            radii_circ = dist_xy
+
+    for i in range(nb_focals):
+        px_p, py_p, _ = protein_targets[i]
+        dist_xy = math.sqrt((px_p - x0) ** 2 + (py_p - y0) ** 2) + 1e-12
+        ang = (math.pi / 4.0) * (dist_xy / (radii_circ + 1e-12))
+        proj = radii_cm1 * math.sin(ang)
+        fx = (proj / dist_xy) * (px_p - x0) + x0
+        fy = (proj / dist_xy) * (py_p - y0) + y0
+        fz = -radii_cm1 * math.cos(ang) + z_cm1
+        focal_coords.append((fx, fy, fz))
+
+    focal_ids: List[str] = []
+    for i, ((fx, fy, fz), (px_p, py_p, pz_p)) in enumerate(
+        zip(focal_coords, protein_targets)
+    ):
+        aid = _add_sphere(
+            celb_part_radii,
+            [fx, fy, fz],
+            "INTEs",
+            contactors=[{"shape": "PT3Dx", "color": f"I{i:04d}"}],
+        )
+        focal_ids.append(aid)
+        for comp, delta, rampi in (
+            (1, px_p - fx, 1.0),
+            (2, py_p - fy, 1.0),
+            (3, pz_p - fz, 1.0),
+        ):
+            project.add(DOFOperation(
+                operation_type="imposeDrivenDof",
+                target_type="avatar",
+                target_value=aid,
+                parameters={
+                    "component": comp,
+                    "description": "predefined",
+                    "ct": charinc_sprd * delta,
+                    "amp": 0.0,
+                    "omega": 0.0,
+                    "phi": 0.0,
+                    "rampi": rampi,
+                    "ramp": 0.0,
+                    "dofty": "vlocy",
+                    "phase": "SPRD",
+                },
+            ))
+    project.group("focals", focal_ids)
+
+    # ========== NETWORKS MF / MT / IF ==========
+    def _place_network(
+        n: int,
+        color_s: str,
+        color_p: str,
+        *,
+        preferential: bool,
+        seed: int,
+        heterogeneous: bool = False,
+    ) -> List[str]:
+        ids: List[str] = []
+        rng_n = np.random.default_rng(seed)
+        dir_phi = float(rng_n.uniform(0.0, 2.0 * math.pi))
+        dir_theta = float(rng_n.uniform(-math.pi / 2.0, math.pi / 2.0))
+        tries = 0
+        while len(ids) < n and tries < n * 100:
+            tries += 1
+            if heterogeneous:
+                rad = float(rng_n.normal(diam_core / 2.0 + 2 * corb_part_radii, diam_cell / 2.0))
+                if not (
+                    diam_core / 2.0 + 2.0 * corb_part_radii + radii_part_networks
+                    < rad
+                    < max(diam_cm1, diam_cm2) / 2.0 - radii_part_networks
+                ):
+                    continue
+            else:
+                rad = float(rng_n.uniform(
+                    diam_core / 2.0 + 2.0 * corb_part_radii + radii_part_networks,
+                    max(diam_cm1, diam_cm2) / 2.0 - radii_part_networks,
+                ))
+            if preferential:
+                theta = float(rng_n.normal(dir_theta, math.pi / 2.0))
+                phi_n = float(rng_n.normal(dir_phi, math.pi / 2.0))
+            else:
+                theta = float(rng_n.uniform(0.0, 2.0 * math.pi))
+                phi_n = float(rng_n.uniform(-math.pi / 2.0, math.pi / 2.0))
+            px = x0 + rad * math.cos(phi_n) * math.cos(theta)
+            py = y0 + rad * math.cos(phi_n) * math.sin(theta)
+            pz = z0 + rad * math.sin(phi_n)
+            if not _inside_cytoplasm(px, py, pz, radii_part_networks):
+                continue
+            aid = _add_sphere(
+                radii_part_networks,
+                [px, py, pz],
+                color_s,
+                contactors=[{"shape": "PT3Dx", "color": color_p}],
+            )
+            ids.append(aid)
+        return ids
+
+    mf_ids = _place_network(nb_nodes_mf, "MFsxx", "MFpxx", preferential=False, seed=seed_mf)
+    mt_ids = _place_network(nb_nodes_mt, "MTsxx", "MTpxx", preferential=True, seed=seed_mt)
+    if_ids = _place_network(
+        nb_nodes_if, "IFsxx", "IFpxx",
+        preferential=False, seed=seed_if, heterogeneous=True,
+    )
+    project.group("microfilaments", mf_ids)
+    project.group("microtubules", mt_ids)
+    project.group("interm_filaments", if_ids)
+
+    # ========== STRESS FIBRES ==========
+    sf_ids: List[str] = []
+    seen = [0] * (nb_focals + 1)
+    numfibre = [0] * (nb_focals + 1)
+    nfibre = 0
+    rng_sf = np.random.default_rng(seed_fo + 7)
+
+    for i in range(nb_focals):
+        if seen[i]:
+            continue
+        numfibre[i] = nfibre
+        seen[i] = 1
+        ax, ay, az = focal_coords[i]
+        dist = math.sqrt((ax - x0) ** 2 + (ay - y0) ** 2 + (az - z0) ** 2) + 1e-12
+        phi_ref = math.asin(max(-1.0, min(1.0, (z0 - az) / dist)))
+        cos_th = max(-1.0, min(1.0, (x0 - ax) / (dist * max(1e-12, math.cos(phi_ref)))))
+        sin_th = (y0 - ay) / (dist * max(1e-12, math.cos(phi_ref)))
+        theta_ref = math.acos(cos_th) if sin_th > 0 else (2 * math.pi - math.acos(cos_th))
+
+        npart = 0
+        while True:
+            ox, oy, oz = ax, ay, az
+            ntry = 0
+            placed = False
+            while ntry < 10000:
+                ntry += 1
+                rad = float(rng_sf.uniform(sf_inc_min, sf_inc_max))
+                th = float(rng_sf.uniform(-shoot_cone, shoot_cone))
+                ph = float(rng_sf.uniform(-shoot_cone, shoot_cone))
+                ax = ox + rad * math.cos(ph + phi_ref) * math.cos(th + theta_ref)
+                ay = oy + rad * math.cos(ph + phi_ref) * math.sin(th + theta_ref)
+                az = oz + rad * math.sin(ph + phi_ref)
+                if _inside_cytoplasm(ax, ay, az, fibers_part_radii):
+                    placed = True
+                    break
+                if ntry == 5001:
+                    theta_ref = -theta_ref
+                    phi_ref = -phi_ref
+            if not placed:
+                break
+
+            d1 = math.sqrt((ax - x0) ** 2 + (ay - y0) ** 2 + (az - z_cm1) ** 2)
+            d2 = math.sqrt((ax - x0) ** 2 + (ay - y0) ** 2 + (az - z_cm2) ** 2)
+            dist_env1 = diam_cm1 / 2.0 - d1 - fibers_part_radii
+            dist_env2 = diam_cm2 / 2.0 - d2 - fibers_part_radii
+
+            color_body = f"Ss{nfibre:03d}"
+            if (dist_env1 < celb_part_radii or dist_env2 < celb_part_radii) and npart > 20:
+                c_pt = f"Se{nfibre:03d}"
+                aid = _add_sphere(
+                    fibers_part_radii, [ax, ay, az], color_body,
+                    contactors=[{"shape": "PT3Dx", "color": c_pt}],
+                )
+                sf_ids.append(aid)
+                break
+            if npart == 0:
+                c_pt = f"Sf{nfibre:03d}"
+            else:
+                c_pt = f"Sp{nfibre:03d}"
+            aid = _add_sphere(
+                fibers_part_radii, [ax, ay, az], color_body,
+                contactors=[{"shape": "PT3Dx", "color": c_pt}],
+            )
+            sf_ids.append(aid)
+            npart += 1
+            if npart > 200:
+                break
+        nfibre += 1
+
+    project.group("stress_fibres", sf_ids)
+    project.group(
+        "cell",
+        nucleus_ids + membrane_ids + cytosol_ids + focal_ids + mf_ids + mt_ids + if_ids + sf_ids,
+    )
+    project.group("nucleus_set", nucleus_ids)
+    project.group("cell_set", nucleus_ids + membrane_ids + cytosol_ids)
+
+    # ========== LAWS (stabilisation active) ==========
+    project.add(ContactLaw(name="ictn0", law_type=ContactLawType.IQS_CLB, friction=0.07))
+    project.add(ContactLaw(
+        name="ismt0", law_type=ContactLawType.ELASTIC_ROD,
+        properties={"stiffness": 22.8 * stiff, "prestrain": 0.0},
+    ))
+    project.add(ContactLaw(
+        name="icif0", law_type=ContactLawType.ELASTIC_WIRE,
+        properties={"stiffness": 15.7 * stiff, "prestrain": 0.10},
+    ))
+    project.add(ContactLaw(
+        name="icmf0", law_type=ContactLawType.ELASTIC_WIRE,
+        properties={"stiffness": 1.0 * stiff, "prestrain": -0.02 * pstr},
+    ))
+    project.add(ContactLaw(
+        name="icsf0", law_type=ContactLawType.ELASTIC_WIRE,
+        properties={"stiffness": 9.14 * stiff, "prestrain": -0.20 * pstr},
+    ))
+    project.add(ContactLaw(
+        name="icnm0", law_type=ContactLawType.ELASTIC_ROD,
+        properties={"stiffness": 1.0 * stiff, "prestrain": 0.0},
+    ))
+    project.add(ContactLaw(
+        name="iccm0", law_type=ContactLawType.ELASTIC_ROD,
+        properties={"stiffness": 5.0 * stiff, "prestrain": -0.02 * pstr},
+    ))
+    project.add(ContactLaw(
+        name="icfa0", law_type=ContactLawType.ELASTIC_WIRE,
+        properties={"stiffness": 10.0 * stiff, "prestrain": 0.0},
+    ))
+    project.add(ContactLaw(
+        name="icci0", law_type=ContactLawType.ELASTIC_WIRE,
+        properties={"stiffness": 100.0 * stiff, "prestrain": 0.0},
+    ))
+
+    # ========== SEE TABLES (SPHER contacts) ==========
+    for c1, c2, alert in [
+        ("INOYs", "INOYs", core_part_radii),
+        ("INOYs", "BNOYs", max(core_part_radii, corb_part_radii)),
+        ("INOYs", "CTSLs", max(core_part_radii, ctsl_part_radii)),
+        ("BNOYs", "SUBST", 0.1 * corb_part_radii),
+        ("BCELt", "BCELt", celb_part_radii / 10.0),
+        ("BNOYs", "BCELs", max(corb_part_radii, celb_part_radii)),
+        ("BNOYs", "MFsxx", corb_part_radii),
+        ("BNOYs", "MTsxx", corb_part_radii),
+        ("BNOYs", "IFsxx", corb_part_radii),
+        ("BCELs", "SUBST", 0.1 * celb_part_radii),
+        ("BCELs", "MFsxx", celb_part_radii),
+        ("BCELs", "IFsxx", celb_part_radii),
+        ("BCELs", "MTsxx", celb_part_radii),
+        ("BNOYs", "CTSLs", ctsl_part_radii),
+        ("BCELs", "CTSLs", ctsl_part_radii),
+        ("CTSLs", "CTSLs", ctsl_part_radii),
+        ("CTSLs", "SUBST", ctsl_part_radii),
+    ]:
+        see_table(
+            project,
+            cand_body="RBDY3", cand="SPHER", cand_color=c1,
+            ant_body="RBDY3", ant="SPHER", ant_color=c2,
+            law="ictn0", alert=alert,
+        )
+
+    # PT3Dx network / membrane / focals
+    see_table(project, cand_body="RBDY3", cand="PT3Dx", cand_color="MTpxx",
+              ant_body="RBDY3", ant="PT3Dx", ant_color="MTpxx", law="ismt0", alert=alert_intra)
+    see_table(project, cand_body="RBDY3", cand="PT3Dx", cand_color="IFpxx",
+              ant_body="RBDY3", ant="PT3Dx", ant_color="IFpxx", law="icif0", alert=alert_intra)
+    see_table(project, cand_body="RBDY3", cand="PT3Dx", cand_color="MFpxx",
+              ant_body="RBDY3", ant="PT3Dx", ant_color="MFpxx", law="icmf0", alert=alert_intra)
+    see_table(project, cand_body="RBDY3", cand="PT3Dx", cand_color="BNOYp",
+              ant_body="RBDY3", ant="PT3Dx", ant_color="BNOYp", law="icnm0", alert=2.0 * corb_part_gap)
+    see_table(project, cand_body="RBDY3", cand="PT3Dx", cand_color="BCELp",
+              ant_body="RBDY3", ant="PT3Dx", ant_color="BCELp", law="iccm0", alert=2.0 * celb_part_gap)
+    see_table(project, cand_body="RBDY3", cand="PT3Dx", cand_color="MTpxx",
+              ant_body="RBDY3", ant="PT3Dx", ant_color="MFpxx", law="icci0", alert=alert_extra)
+    see_table(project, cand_body="RBDY3", cand="PT3Dx", cand_color="MFpxx",
+              ant_body="RBDY3", ant="PT3Dx", ant_color="BNOYp", law="icci0", alert=alert_extra)
+    see_table(project, cand_body="RBDY3", cand="PT3Dx", cand_color="MFpxx",
+              ant_body="RBDY3", ant="PT3Dx", ant_color="BCELp", law="icci0", alert=alert_extra)
+    see_table(project, cand_body="RBDY3", cand="PT3Dx", cand_color="IFpxx",
+              ant_body="RBDY3", ant="PT3Dx", ant_color="BNOYp", law="icci0", alert=alert_extra)
+
+    for i in range(nb_focals):
+        see_table(
+            project,
+            cand_body="RBDY3", cand="PT3Dx", cand_color="BCELp",
+            ant_body="RBDY3", ant="PT3Dx", ant_color=f"I{i:04d}",
+            law="icfa0", alert=5.0 * celb_part_gap,
+        )
+
+    # ========== POST-PRO ==========
+    step = max(1, int(nsteps_stbl / noutp))
+    project.add(PostProCommand(name="SOLVER INFORMATIONS", step=1))
+    project.add(PostProCommand(name="KINETIC ENERGY", step=step))
+    project.add(PostProCommand(
+        name="NEW RIGID SETS", step=step,
+        target_type="groups", target_value=["nucleus_set", "cell_set"],
+    ))
+    project.add(PostProCommand(
+        name="TORQUE EVOLUTION", step=step,
+        target_type="group", target_value="focals",
+    ))
+    project.add(PostProCommand(
+        name="BODY TRACKING", step=step,
+        target_type="group", target_value="cell_set",
+    ))
+
+    project.dynamic_vars["cell_phases"] = (
+        "{"
+        f"'nsteps_sprd':{nsteps_sprd},'dt_sprd':{dt_sprd},"
+        f"'nsteps_stbl':{nsteps_stbl},'dt_stbl':{dt_stbl},'noutp':{noutp},"
+        f"'charinc_sprd':{charinc_sprd},"
+        "'sprd':{'visco_pen':1e-8,'stiff_pen':5000.0,'pstr_pen':0.0,'path':'DATBOX_SPRD'},"
+        "'stbl':{'visco_pen':1.0,'stiff_pen':0.20,'pstr_pen':2.0,'path':'DATBOX_STBL'},"
+        f"'n_focals':{len(focal_ids)},'n_stress_fibre_parts':{len(sf_ids)},"
+        f"'n_mf':{len(mf_ids)},'n_mt':{len(mt_ids)},'n_if':{len(if_ids)}"
+        "}"
+    )
+    project.dynamic_vars["cell_adhesion"] = (
+        f"{{'wave':'full','source':'gen_sample.Vassaux',"
+        f"'n_total':{len(list(project.avatars))},"
+        f"'n_substrate':{len(subst_ids)},'dual_datbox':True}}"
+    )
 
 
 
@@ -2644,6 +3223,7 @@ SCENE_BUILDERS = {
     "cell_adhesion_v3": cell_adhesion_v3,
     "cell_adhesion_v2": cell_adhesion_v2,
     "cell_adhesion_v1": cell_adhesion_v1,
+    "cell_adhesion_full": cell_adhesion_full,
     "factory_injection": factory_injection,
     "deformable_impact": deformable_impact,
     "deformable_drop": deformable_drop,

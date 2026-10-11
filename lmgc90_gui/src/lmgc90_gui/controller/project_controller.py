@@ -466,7 +466,10 @@ class ProjectController(_QObject):
 
     # ------------------------------------------------------------------ export / engine
     def emit_pre_script(self, path: Optional[Union[str, Path]] = None) -> str:
-        return self._session.emit_pre_script(path)
+        return self._session.emit_pre_script(
+            path,
+            use_loop=self.prefs.script_use_loop,
+        )
 
     def emit_chipy_script(self, path: Optional[Union[str, Path]] = None, **kw) -> str:
         """Full ``command.py`` via engine → core ``emit_chipy`` (all ChipyRoutines keys)."""
@@ -511,13 +514,17 @@ class ProjectController(_QObject):
     def write_cell_dual_datbox(self, base_path: Union[str, Path]) -> dict:
         """Export dual DATBOX_SPRD / DATBOX_STBL when project has cell_phases."""
         try:
-            return self._session.write_cell_dual_datbox(base_path)
+            return self._session.write_cell_dual_datbox(
+                base_path,
+                use_loop=self.prefs.script_use_loop,
+            )
         except Exception as exc:
             self._notify_error(str(exc))
             raise
 
 
     def export_all(self, directory: Union[str, Path], **kw) -> dict:
+        kw.setdefault("use_loop", self.prefs.script_use_loop)
         return self._session.export_all(directory, **kw)
 
     def pylmgc_available(self) -> bool:
