@@ -117,6 +117,12 @@ _OPACITY_MESH     = 0.65   # déformable : semi-transparent pour voir la structu
 _OPACITY_EMPTY    = 0.85
 _OPACITY_BATCH    = 0.90   # granulo batch
 
+# Rendu massif (populations / granulo) — style ParaView
+_GLYPH_THRESHOLD   = 200    # dès N>=200 → glyphs (plus de merge mesh/mesh)
+_POINTS_THRESHOLD  = 20000  # dès N>=20000 → points uniquement (très fluide)
+_GLYPH_SPHERE_RES  = 12     # résolution glyph sphère (vs 24 full mesh)
+_GLYPH_DISK_RES    = 16     # résolution glyph disque 2D
+
 # Hauteur d'extrusion 2D → 3D (en fraction du rayon/taille caractéristique)
 _EXTRUDE_RATIO    = 0.12   # hauteur = max(lx,ly) * ratio
 _EXTRUDE_MIN      = 0.005
@@ -1004,7 +1010,11 @@ def _apply_avatar_dofs(mesh: pv.PolyData, avatar: Avatar, controller) -> pv.Poly
 
 
 def _expand_renderables(renderables) -> List[Tuple[int, Avatar]]:
-    """Transforme les avatars et les populations en une séquence d'avatars rendables."""
+    """Transforme les avatars et les populations en une séquence d'avatars rendables.
+
+    Coûteux pour les grandes populations — à réserver aux DOF / sélection,
+    pas au rendu massif (voir `_split_renderables` + `_add_population_glyph`).
+    """
     expanded: List[Tuple[int, Avatar]] = []
     for item in renderables or []:
         if isinstance(item, ParticlePopulation):
@@ -1013,6 +1023,74 @@ def _expand_renderables(renderables) -> List[Tuple[int, Avatar]]:
         elif isinstance(item, Avatar):
             expanded.append((len(expanded), item))
     return expanded
+
+
+def _split_renderables(renderables):
+    """Sépare avatars individuels et ParticlePopulation (sans expansion)."""
+    avatars: List[Avatar] = []
+    populations: List[ParticlePopulation] = []
+    for item in renderables or []:
+        if isinstance(item, ParticlePopulation):
+            populations.append(item)
+        elif isinstance(item, Avatar):
+            avatars.append(item)
+    return avatars, populations
+
+
+def _centers_as_3d(centers: np.ndarray) -> np.ndarray:
+    """(N,2) ou (N,3) → (N,3) float64 contigu."""
+    c = np.asarray(centers, dtype=np.float64)
+    if c.ndim != 2:
+        raise ValueError(f"centers must be 2D, got {c.shape}")
+    if c.shape[1] == 3:
+        return np.ascontiguousarray(c)
+    if c.shape[1] == 2:
+        out = np.zeros((c.shape[0], 3), dtype=np.float64)
+        out[:, :2] = c
+        return out
+    raise ValueError(f"centers must be (N,2|3), got {c.shape}")
+
+
+def _population_color(pop: ParticlePopulation, color_mode: str) -> str:
+    """Couleur d'une population (uniforme) selon le mode actif."""
+    if color_mode == 'type':
+        return _TYPE_COLORS.get(pop.avatar_type, _DEFAULT_COLOR)
+    if color_mode == 'origin':
+        return _ORIGIN_COLORS.get(pop.origin.value, _DEFAULT_COLOR)
+    if color_mode == 'material':
+        h = hash(pop.material_name) & 0xFFFFFF
+        return '#{:06x}'.format(h | 0x404040)
+    return _lmgc_color(pop.color)
+
+
+def _glyph_source(avatar_type: AvatarType, is_2d: bool) -> pv.PolyData:
+    """Géométrie prototype basse résolution pour glyph (1 mesh × N)."""
+    if avatar_type == AvatarType.RIGID_SPHERE or (
+        avatar_type in (AvatarType.RIGID_DISK, AvatarType.RIGID_DISCRETE) and not is_2d
+    ):
+        return pv.Sphere(
+            radius=1.0,
+            theta_resolution=_GLYPH_SPHERE_RES,
+            phi_resolution=_GLYPH_SPHERE_RES,
+        )
+    # Disque 2D (et défaut population 2D) : disque plat (pas d'extrusion lourde)
+    disk = pv.Circle(radius=1.0, resolution=_GLYPH_DISK_RES)
+    # légère épaisseur pour la lisibilité en vue 3D
+    try:
+        return disk.extrude((0, 0, 0.15), capping=True)
+    except Exception:
+        return disk
+
+
+def _polydata_from_centers_radii(centers, radii) -> pv.PolyData:
+    """Nuage de points + scalaire scale (= rayon)."""
+    pts = _centers_as_3d(centers)
+    r = np.asarray(radii, dtype=np.float64).reshape(-1)
+    if pts.shape[0] != r.shape[0]:
+        raise ValueError("centers/radii length mismatch")
+    cloud = pv.PolyData(pts)
+    cloud["scale"] = r
+    return cloud
 
 
 # ============================================================================
@@ -1127,6 +1205,9 @@ class Viewer3D(QWidget):
         self._law_actors     = []          # liens see-tables / lois
         self._color_mode     = 'lmgc90'   # lmgc90 | type | material | origin
         self._pylmgc90_mode  = False       # True = rendu via visuAvatars
+        self._population_counts = {}       # actor_idx → N grains (rendu batch)
+        self._batch_meta = {}              # actor_idx → {centers, radii, items}
+        self._last_pick_pos = None         # world coords du dernier pick
         self._setup_ui()
 
     # =========================================================================
@@ -1318,6 +1399,7 @@ class Viewer3D(QWidget):
             pass
 
         if mode == _Mode.SELECT:
+            # Cell picking (meshes / glyphs) + fallback VTK pour points
             try:
                 self.plotter.enable_element_picking(
                     callback=self._on_pick,
@@ -1326,10 +1408,20 @@ class Viewer3D(QWidget):
                     pickable_window=False,
                 )
             except Exception:
-                self.plotter.iren.add_observer(
-                    'LeftButtonPressEvent', self._on_vtk_click_select
-                )
-            self._status("Mode sélection — cliquez sur un avatar")
+                pass
+            try:
+                # Observer pour récupérer la position monde + point-pick sur nuages
+                iren = self.plotter.iren.interactor
+                iren.RemoveObservers('LeftButtonPressEvent')
+                iren.AddObserver('LeftButtonPressEvent', self._on_vtk_click_select)
+            except Exception:
+                try:
+                    self.plotter.iren.add_observer(
+                        'LeftButtonPressEvent', self._on_vtk_click_select
+                    )
+                except Exception:
+                    pass
+            self._status("Mode sélection — cliquez sur un avatar / particule")
 
         elif mode == _Mode.MEASURE:
             try:
@@ -1356,10 +1448,42 @@ class Viewer3D(QWidget):
             self._status("Navigation")
 
     def _on_vtk_click_select(self, obj, event):
+        """Pick robuste : cell (glyphs/meshes) puis point (nuages)."""
         try:
-            picker = self.plotter.renderer.GetPickProp()
-            if picker:
-                self._on_pick(picker)
+            import vtk
+            iren = self.plotter.iren.interactor
+            x, y = iren.GetEventPosition()
+            ren = self.plotter.renderer
+
+            # 1) Cell picker (meshes, glyphs)
+            cell_picker = vtk.vtkCellPicker()
+            cell_picker.SetTolerance(0.01)
+            cell_picker.Pick(x, y, 0, ren)
+            prop = cell_picker.GetActor()
+            pos = cell_picker.GetPickPosition()
+            if prop is not None and cell_picker.GetCellId() >= 0:
+                self._last_pick_pos = np.array(pos, dtype=float)
+                self._on_pick(prop)
+                return
+
+            # 2) Point picker (mode points / centres)
+            pt_picker = vtk.vtkPointPicker()
+            pt_picker.SetTolerance(0.025)
+            pt_picker.Pick(x, y, 0, ren)
+            prop = pt_picker.GetActor()
+            pos = pt_picker.GetPickPosition()
+            if prop is not None and pt_picker.GetPointId() >= 0:
+                self._last_pick_pos = np.array(pos, dtype=float)
+                self._on_pick(prop)
+                return
+
+            # 3) Prop picker générique
+            prop_picker = vtk.vtkPropPicker()
+            prop_picker.Pick(x, y, 0, ren)
+            prop = prop_picker.GetActor()
+            if prop is not None:
+                self._last_pick_pos = np.array(prop_picker.GetPickPosition(), dtype=float)
+                self._on_pick(prop)
         except Exception:
             pass
 
@@ -1425,8 +1549,33 @@ class Viewer3D(QWidget):
                 pass
             self.plotter.render()
 
+        # Lot / population : résoudre la particule la plus proche du clic
+        meta = self._batch_meta.get(index)
+        particle_i = None
+        if meta is not None and self._last_pick_pos is not None:
+            centers = meta.get("centers")
+            if centers is not None and len(centers):
+                d = centers - self._last_pick_pos.reshape(1, 3)
+                particle_i = int(np.argmin(np.einsum("ij,ij->i", d, d)))
+
         av = next((a for i, a in self.avatars_data if i == index), None)
-        if av:
+        if meta is not None and particle_i is not None:
+            items = meta.get("items") or []
+            c = centers[particle_i]
+            r = float(meta["radii"][particle_i]) if meta.get("radii") is not None else 0.0
+            label = f"particule {particle_i}/{meta.get('n', '?')}"
+            if particle_i < len(items) and items[particle_i] is not None:
+                av_i = items[particle_i]
+                if hasattr(av_i, "avatar_type"):
+                    label = (
+                        f"{av_i.avatar_type.value} #{particle_i} "
+                        f"mat={av_i.material_name}"
+                    )
+            self._status(
+                f"Sélectionné (batch #{index}) : {label} "
+                f"@ ({c[0]:.4f}, {c[1]:.4f}, {c[2]:.4f}) r={r:.4f}"
+            )
+        elif av:
             c = av.center
             self._status(
                 f"Sélectionné : avatar #{index} — {av.avatar_type.value} "
@@ -1806,79 +1955,196 @@ class Viewer3D(QWidget):
         self.avatars_data.append((index, avatar))
         self._update_info()
 
-    def update_avatars(self, avatars: List[Avatar]):
+    def update_avatars(self, avatars):
         """
-        Recharge tous les avatars.
+        Recharge la scène (avatars individuels + ParticlePopulation).
 
         Stratégie :
-        • Mode pylmgc90 ON  → appel pre.visuAvatars() + chargement VTP
-        • Mode pylmgc90 OFF → rendu paramétrique avec batch pour les granulo
+        • Mode pylmgc90 ON  → pre.visuAvatars() + VTP
+        • Mode paramétrique :
+            - ParticlePopulation (et gros lots disk/sphere) → glyphs / points
+            - petits lots / autres types → mesh individuel (qualité)
         """
         self.clear()
         if not avatars:
             return
 
-        renderables = _expand_renderables(avatars)
+        singles, populations = _split_renderables(avatars)
 
-        # ── Mode pylmgc90 : rendu via visuAvatars ────────────────────────────
+        # ── Mode pylmgc90 ────────────────────────────────────────────────────
         if self._pylmgc90_mode:
+            # visuAvatars a besoin d'une liste plate ; expansion uniquement ici
+            renderables = _expand_renderables(avatars)
             self._render_with_pylmgc90([av for _, av in renderables])
             return
 
-        # ── Mode paramétrique ────────────────────────────────────────────────
-        _BATCH_TYPES = {AvatarType.RIGID_DISK, AvatarType.RIGID_SPHERE}
-        batches: Dict = {}
-        singles = []
+        next_idx = 0
+        opacity_factor = self._opacity_slider.value() / 100.0
 
-        for i, av in renderables:
+        # ── Populations SoA : glyphs (ou points si très grand N) ─────────────
+        for pop in populations:
+            n = len(pop)
+            if n == 0:
+                continue
+            color = _population_color(pop, self._color_mode)
+            actor = self._add_point_cloud(
+                centers=pop.centers,
+                radii=pop.radii,
+                color=color,
+                avatar_type=pop.avatar_type,
+                is_2d=(pop.dimension == 2),
+                opacity=_OPACITY_BATCH * opacity_factor,
+                n_hint=n,
+            )
+            self.actors[next_idx] = actor
+            self._orig_colors[next_idx] = color
+            if n:
+                self.avatars_data.append((next_idx, pop.as_avatar_view(0)))
+                self._population_counts[next_idx] = n
+                self._batch_meta[next_idx] = {
+                    "centers": _centers_as_3d(pop.centers),
+                    "radii": np.asarray(pop.radii, dtype=np.float64),
+                    "n": n,
+                    "items": [None] * n,  # population : pas d'Avatar par grain
+                    "population_id": pop.population_id,
+                }
+            next_idx += 1
+
+        # ── Avatars individuels : batch disk/sphere via glyph si nombreux ────
+        _BATCH_TYPES = {
+            AvatarType.RIGID_DISK,
+            AvatarType.RIGID_SPHERE,
+            AvatarType.RIGID_DISCRETE,
+        }
+        batches: Dict = {}
+        rest = []
+
+        for av in singles:
             if av.avatar_type in _BATCH_TYPES:
                 color = _color_for_avatar(av, self._color_mode)
-                key   = (av.avatar_type, color)
-                batches.setdefault(key, []).append((i, av))
+                key = (av.avatar_type, color)
+                batches.setdefault(key, []).append(av)
             else:
-                singles.append((i, av))
+                rest.append(av)
 
-        for i, av in singles:
-            self.add_avatar(av, i)
+        for av in rest:
+            self.add_avatar(av, next_idx)
+            next_idx += 1
 
         for (av_type, color), group in batches.items():
-            if len(group) == 1:
-                i, av = group[0]
-                self.add_avatar(av, i)
+            if len(group) < _GLYPH_THRESHOLD:
+                # Petit lot : mesh individuel (sélection / précision)
+                if len(group) == 1:
+                    self.add_avatar(group[0], next_idx)
+                    next_idx += 1
+                    continue
+                # Merge unique (évite merge O(N²) séquentiel) via append
+                parts = [build_avatar_mesh(av) for av in group]
+                parts = [m for m in parts if m is not None]
+                if not parts:
+                    continue
+                try:
+                    merged = parts[0].merge(parts[1:]) if len(parts) > 1 else parts[0]
+                except Exception:
+                    merged = parts[0]
+                    for p in parts[1:]:
+                        merged = merged.merge(p)
+                actor = self.plotter.add_mesh(
+                    merged, color=color, show_edges=False,
+                    opacity=_OPACITY_BATCH * opacity_factor,
+                    pickable=True, smooth_shading=True,
+                )
+                self.actors[next_idx] = actor
+                self._orig_colors[next_idx] = color
+                for av in group:
+                    self.avatars_data.append((next_idx, av))
+                next_idx += 1
                 continue
 
-            parts = [build_avatar_mesh(av) for _, av in group]
-            parts = [m for m in parts if m is not None]
-            if not parts:
-                continue
-
-            merged = parts[0]
-            for p in parts[1:]:
-                merged = merged.merge(p)
-
-            opacity = _OPACITY_BATCH * (self._opacity_slider.value() / 100)
-            actor = self.plotter.add_mesh(
-                merged, color=color,
-                show_edges=False,
-                opacity=opacity,
-                pickable=False,
-                smooth_shading=True,
+            # Gros lot d'avatars individuels disk/sphere → glyph
+            centers = np.array([_as3(av.center) for av in group], dtype=np.float64)
+            radii = np.array([float(av.radius or 0.1) for av in group], dtype=np.float64)
+            is_2d = all(len(av.center) < 3 for av in group)
+            actor = self._add_point_cloud(
+                centers=centers, radii=radii, color=color,
+                avatar_type=av_type, is_2d=is_2d,
+                opacity=_OPACITY_BATCH * opacity_factor, n_hint=len(group),
             )
-            first_i = group[0][0]
-            self.actors[first_i]       = actor
-            self._orig_colors[first_i] = color
-            for i, av in group:
-                self.avatars_data.append((i, av))
+            self.actors[next_idx] = actor
+            self._orig_colors[next_idx] = color
+            self._batch_meta[next_idx] = {
+                "centers": _centers_as_3d(centers),
+                "radii": np.asarray(radii, dtype=np.float64),
+                "n": len(group),
+                "items": list(group),
+            }
+            for av in group:
+                self.avatars_data.append((next_idx, av))
+            next_idx += 1
 
-        # DOF hints si activés
-        if self._dof_check.isChecked():
-            self._draw_dof_hints([av for _, av in renderables])
-        if getattr(self, "_law_check", None) is not None and self._law_check.isChecked():
-            self._draw_law_links([av for _, av in renderables])
+        # DOF / lois : expansion uniquement si demandé (évite le coût si désactivé)
+        if self._dof_check.isChecked() or (
+            getattr(self, "_law_check", None) is not None and self._law_check.isChecked()
+        ):
+            renderables = _expand_renderables(avatars)
+            if self._dof_check.isChecked():
+                self._draw_dof_hints([av for _, av in renderables])
+            if getattr(self, "_law_check", None) is not None and self._law_check.isChecked():
+                self._draw_law_links([av for _, av in renderables])
 
         self._refresh_group_combo()
         self._update_info()
         self._reset_camera()
+
+    def _add_point_cloud(
+        self,
+        centers,
+        radii,
+        color: str,
+        avatar_type: AvatarType,
+        is_2d: bool,
+        opacity: float,
+        n_hint: int,
+    ):
+        """Rendu massif : points si N très grand, sinon glyphs basse résolution."""
+        cloud = _polydata_from_centers_radii(centers, radii)
+        n = int(cloud.n_points)
+
+        if n >= _POINTS_THRESHOLD:
+            # Mode points — le plus proche de ParaView "Points"
+            r = np.asarray(radii, dtype=np.float64)
+            point_size = 3
+            if r.size:
+                # Heuristique : taille écran relative (clamp)
+                point_size = int(max(2, min(12, 4.0)))
+            actor = self.plotter.add_mesh(
+                cloud,
+                color=color,
+                opacity=opacity,
+                point_size=point_size,
+                render_points_as_spheres=True,
+                pickable=True,
+            )
+            self._status(f"Nuage de points — {n} particules (seuil ≥ {_POINTS_THRESHOLD})")
+            return actor
+
+        # Glyphs : 1 géométrie × N (scale = rayon)
+        geom = _glyph_source(avatar_type, is_2d=is_2d)
+        try:
+            glyphs = cloud.glyph(scale="scale", geom=geom, orient=False)
+        except TypeError:
+            # Anciennes versions PyVista
+            glyphs = cloud.glyph(scale="scale", geom=geom)
+        actor = self.plotter.add_mesh(
+            glyphs,
+            color=color,
+            opacity=opacity,
+            show_edges=False,
+            smooth_shading=True,
+            pickable=True,
+        )
+        self._status(f"Glyphs — {n} particules (seuil ≥ {_GLYPH_THRESHOLD})")
+        return actor
 
     def _render_with_pylmgc90(self, avatars: List[Avatar]):
         """Rendu haute fidélité via pre.visuAvatars()."""
@@ -1934,6 +2200,9 @@ class Viewer3D(QWidget):
         self.actors.clear()
         self.avatars_data.clear()
         self._orig_colors.clear()
+        self._population_counts.clear()
+        self._batch_meta.clear()
+        self._last_pick_pos  = None
         self._selected_idx   = None
         self._dof_actors.clear()
         self._measure_pts.clear()
@@ -2115,9 +2384,19 @@ class Viewer3D(QWidget):
     # =========================================================================
 
     def _update_info(self):
-        n   = len(self.avatars_data)
+        n_entries = len(self.avatars_data)
+        n_particles = sum(self._population_counts.values())
+        # avatars_data holds 1 entry per population actor; count real grains
+        if n_particles:
+            # subtract synthetic pop entries already counted in n_particles
+            n_pop_actors = len(self._population_counts)
+            n_singles = max(0, n_entries - n_pop_actors)
+            total = n_singles + n_particles
+            label = f"{total} particule(s) ({n_pop_actors} pop. + {n_singles} avatar(s))"
+        else:
+            label = f"{n_entries} avatar{'s' if n_entries != 1 else ''}"
         mode_label = " [pylmgc90]" if self._pylmgc90_mode else ""
-        self.info_label.setText(f"{n} avatar{'s' if n != 1 else ''}{mode_label}")
+        self.info_label.setText(f"{label}{mode_label}")
 
     def _status(self, msg: str):
         self._status_label.setText(msg)
