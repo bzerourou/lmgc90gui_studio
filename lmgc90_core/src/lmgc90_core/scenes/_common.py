@@ -65,7 +65,7 @@ def see_table(
     ))
 
 
-def see_dd(project: Project, law: str = "iqsc0", alert: float = 0.05) -> None:
+def see_dd(project: Project, law: str = "iqsc0", alert: float = 0.02) -> None:
     see_table(
         project,
         cand_body="RBDY2", cand="DISKx", cand_color="BLUEx",
@@ -74,7 +74,7 @@ def see_dd(project: Project, law: str = "iqsc0", alert: float = 0.05) -> None:
     )
 
 
-def see_dw(project: Project, law: str = "iqsc0", alert: float = 0.05) -> None:
+def see_dw(project: Project, law: str = "iqsc0", alert: float = 0.02) -> None:
     see_table(
         project,
         cand_body="RBDY2", cand="DISKx", cand_color="BLUEx",

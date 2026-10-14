@@ -55,8 +55,8 @@ def falling_disks(project: Project) -> None:
     """One floor + template disk expanded by a line Loop (no side walls)."""
     ensure_rigid_2d(project)
     # foundation only
-    floor = project.add(smooth_wall(
-        l=4.0, h=0.1, center=[0.0, 0.0], model="rigid", material="TDURx", color="GRAYx",
+    floor = project.add(jonc(
+        axe1=2.0, axe2=0.1, center=[0.0, 0.0], model="rigid", material="TDURx", color="GRAYx",
     ))
     # template avatar for the loop
     template = project.add(disk(
@@ -668,22 +668,31 @@ def cable_pendulum(project: Project) -> None:
 
     ensure_rigid_2d(project)
     anchor = project.add(disk(
-        r=0.02, center=[0.0, 3.0], model="rigid", material="TDURx", color="REEDx"))
+        r=0.02, center=[0.0, 3.0], model="rigid", material="TDURx", color="REEDx"), 
+        )
+    # ajouter un contacteur 
+    anchor.contactors.append({"shape": "PT2Dx", "color": "VERTx", "params": {'shift': [0.0, 0.0]} })
+    
+    
     project.add(DOFOperation(
         operation_type="imposeDrivenDof", target_type="avatar",
         target_value=anchor.avatar_id,
         parameters={"component": [1, 2, 3], "dofty": "vlocy", "ct": 0.0},
     ))
     bob = project.add(disk(
-        r=0.08, center=[1.2, 1.5], model="rigid", material="TDURx", color="BLUEx"))
+        r=0.08, center=[1.2, 1.5], model="rigid", material="TDURx", color="BLUEx"),
+    )
+    bob.contactors.append({"shape": "PT2Dx", "color": "VERTx", "params":{'shift': [0.0, 0.0]}  })
+    
+    
     project.add(ContactLaw(
-        name="wire1", law_type=ContactLawType.IQS_CLB, friction=0.0,
+        name="wire1", law_type=ContactLawType.ELASTIC_WIRE, properties={"stiffness": 1e7, "prestrain": 0.003}
     ))
     see_table(
         project,
-        cand_body="RBDY2", cand="DISKx", cand_color="BLUEx",
-        ant_body="RBDY2", ant="DISKx", ant_color="REEDx",
-        law="wire1", alert=0.05,
+        cand_body="RBDY2", cand="PT2Dx", cand_color="VERTx",
+        ant_body="RBDY2", ant="PT2Dx", ant_color="VERTx",
+        law="wire1", alert=2.5,
     )
 
 

@@ -77,6 +77,34 @@ def test_pre_script_contains_pylmgc90_calls(tmp_path: Path):
     assert "behav='bt_ac'" not in src
     assert "imposeDrivenDof" in src
     assert "pre.writeDatbox(" in src
+    assert ".addContactors(shape='CLxxx', color='CYANx', group='down')" in src
+
+
+def test_empty_avatar_contactors_are_emitted_before_rigid_properties():
+    p = Project(name="empty_contactors", dimension=2)
+    p.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    p.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    avatar = p.add(pre.emptyAvatar(
+        center=[0.0, 0.0], model="rigid", material="STEEL",
+    ))
+    avatar.contactors.append({
+        "shape": "DISKx",
+        "color": "BLUEx",
+        "params": {"byrd": 0.15},
+    })
+
+    script = p.to_pre_script()
+    call = "av_{}.addContactors(shape='DISKx', color='BLUEx', byrd=0.15)".format(
+        avatar.avatar_id[:8]
+    )
+    properties = "av_{}.computeRigidProperties()".format(avatar.avatar_id[:8])
+    add_avatar = "bodies.addAvatar(av_{})".format(avatar.avatar_id[:8])
+
+    assert "pre.avatar(2)" in script
+    assert call in script
+    assert properties in script
+    assert script.index(call) < script.index(properties) < script.index(add_avatar)
+    ast.parse(script)
 
 
 def test_pre_script_compacts_repeated_avatars_when_requested():
