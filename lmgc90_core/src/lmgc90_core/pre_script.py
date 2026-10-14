@@ -1,6 +1,7 @@
 """Emit an auditable `pre.py`. This is the reproducibility artefact."""
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .entities import Avatar, ContactLaw, GranuloConfig, Material, Model, VisibilityRule
@@ -110,10 +111,12 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
             continue
 
         L(_emit_avatar(av))
-        if av.avatar_type == AvatarType.MESH_DEFORMABLE:
-            L(_emit_mesh_contactors(av))
         ref = f"av_{_ident(av.avatar_id)}"
         avatar_refs[av.avatar_id] = ref
+        for line in _emit_contactors(av):
+            L(line)
+        if av.avatar_type == AvatarType.EMPTY_AVATAR and av.contactors:
+            L(f"{ref}.computeRigidProperties()")
         L(f"bodies.addAvatar({ref})")
         L()
         i += 1
@@ -209,7 +212,9 @@ def _emit_model(m: Model) -> str:
 
 
 def _loop_avatar_signature(av: Avatar) -> str | None:
-    if av.avatar_type in (AvatarType.MESH_DEFORMABLE, AvatarType.EMPTY_AVATAR):
+    if av.contactors or av.avatar_type in (
+        AvatarType.MESH_DEFORMABLE, AvatarType.EMPTY_AVATAR,
+    ):
         return None
     return _emit_avatar(
         av,
@@ -350,22 +355,104 @@ def _emit_avatar(
                 f"av_{ident} = pre.buildMeshedAvatar(mesh=mesh_{ident}, model={mod}, material={mat})"
             )
         return f"av_{ident} = None  # MESH_DEFORMABLE geom={geom!r} not emitted"
+    if t == AvatarType.EMPTY_AVATAR:
+        dimension = 3 if len(av.center) >= 3 else 2
+        return "\n".join((
+            f"{target} = pre.avatar({dimension})",
+            f"{target}.addBulk(pre.rigid{dimension}d())",
+            f"{target}.addNode(pre.node(coor=np.asarray({c}, dtype=float), number=1))",
+            f"{target}.defineGroups()",
+            f"{target}.defineModel(model={mod})",
+            f"{target}.defineMaterial(material={mat})",
+            f"{target}.computeRigidProperties()",
+        ))
     return (
         f"# TODO {t.value}: av_{ident} — stored in .lmgc90, emit not yet specialised\n"
         f"av_{ident} = None"
     )
 
 
-def _emit_mesh_contactors(av: Avatar) -> str:
+def _emit_contactors(av: Avatar) -> list[str]:
     ident = _ident(av.avatar_id)
-    lines = []
-    for c in av.contactors:
-        shape = c.get("shape")
-        color = c.get("color", av.color)
-        group = c.get("group")
-        extra = f", group={group!r}" if group else ""
-        lines.append(f"av_{ident}.addContactors(shape={shape!r}, color={color!r}{extra})")
-    return "\n".join(lines)
+    lines: list[str] = []
+    for index, contactor in enumerate(av.contactors):
+        shape = contactor.get("shape")
+        if not shape:
+            continue
+        options = dict(contactor.get("params") or {})
+        options.update({
+            key: value for key, value in contactor.items()
+            if key not in ("shape", "color", "params")
+        })
+        shape_key = str(shape).upper()
+        generation_type = options.pop("generation_type", None)
+        shift = options.pop("shift", None)
+
+        if shape_key == "POLYG":
+            if generation_type == "regular":
+                count = int(options.pop("nb_vertices"))
+                radius = float(options.pop("radius"))
+                options["vertices"] = [
+                    [
+                        radius * math.cos(2.0 * math.pi * vertex / count),
+                        radius * math.sin(2.0 * math.pi * vertex / count),
+                    ]
+                    for vertex in range(count)
+                ]
+                options["nb_vertices"] = count
+            elif generation_type == "full":
+                options["nb_vertices"] = len(options["vertices"])
+            if shift is not None:
+                options["vertices"] = [
+                    [coordinate + shift[axis] for axis, coordinate in enumerate(vertex)]
+                    for vertex in options["vertices"]
+                ]
+
+        elif shape_key == "POLYR":
+            if generation_type == "regular":
+                count = int(options.pop("nb_vertices"))
+                radius = float(options.pop("radius"))
+                vertices_name = f"_contactor_{ident}_{index}_vertices"
+                faces_name = f"_contactor_{ident}_{index}_faces"
+                lines.extend((
+                    f"{faces_name}, {vertices_name} = pre.buildPolyhedronConnectivity("
+                    f"pre.getRegularPolyhedronVertices({count}, {radius!r}))",
+                ))
+                options["vertices"] = vertices_name
+                options["connectivity"] = faces_name
+                options["nb_vertices"] = f"len({vertices_name})"
+                options["nb_faces"] = f"len({faces_name})"
+            elif generation_type == "full":
+                options["nb_vertices"] = len(options["vertices"])
+                options["nb_faces"] = len(options["connectivity"])
+            if shift is not None:
+                if isinstance(options["vertices"], str):
+                    vertices_name = options["vertices"]
+                    shifted_name = f"_contactor_{ident}_{index}_shifted_vertices"
+                    lines.append(
+                        f"{shifted_name} = {vertices_name} + np.array({shift!r})"
+                    )
+                    options["vertices"] = shifted_name
+                else:
+                    options["vertices"] = [
+                        [coordinate + shift[axis] for axis, coordinate in enumerate(vertex)]
+                        for vertex in options["vertices"]
+                    ]
+
+        kwargs = []
+        for key, value in options.items():
+            if key in ("nb_vertices", "nb_faces") and isinstance(value, str):
+                value = value
+            else:
+                value = repr(value)
+            kwargs.append(f"{key}={value}")
+        extra = ", " + ", ".join(kwargs) if kwargs else ""
+        color = contactor.get("color", av.color)
+        lines.append(
+            f"av_{ident}.addContactors(shape={shape!r}, color={color!r}{extra}, shift={shift!r})"
+            f"\nav_{ident}.computeRigidProperties()"
+        )
+    return lines
 
 
 def _emit_population(pop: ParticlePopulation) -> str:

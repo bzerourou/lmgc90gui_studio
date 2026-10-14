@@ -112,32 +112,49 @@ class ChipyRoutinesDialog(QDialog):
         # Onglet Routines — Corps rigides
         "use_RBDY2":          True,
         "use_RBDY3":          False,
-        # Detecteurs 2D
-        "use_DKDKx":          True,
-        "use_DKJCx":          False,
-        "use_DKKDx":          False,
-        "use_PLPLx":          False,
-        "use_CLALp":          False,
-        "use_ALpALp":         False,
-        # Detecteurs 3D
-        "use_SPSPx":          False,
-        "use_SPCDx":          False,
-        "use_SPPLx":          False,
-        "use_CDCDx":          False,
-        "use_CDPLx":          False,
-        "use_PRPRx":          False,
-        # Deformables
+        # Detecteurs 2D (chipy.macro.SelectProxTactors — liste officielle)
+        "use_CLALp":           False,
+        "use_CLJCx":           False,
+        "use_DKALp":           False,
+        "use_DKDKL":           False,
+        "use_DKDKx":           True,
+        "use_DKJCx":           False,
+        "use_DKKDx":           False,
+        "use_DKPLx":           False,
+        "use_P2P2L":           False,
+        "use_PLALp":           False,
+        "use_PLJCx":           False,
+        "use_PLPLx":           False,
+        "use_PTPT2":           False,
+        # Detecteurs 3D (liste officielle)
+        "use_CDCDx":           False,
+        "use_CDPLx":           False,
+        "use_CSASp":           False,
+        "use_CSPRx":           False,
+        "use_PRASp":           False,
+        "use_PRPLx":           False,
+        "use_PRPRx":           False,
+        "use_PTPT3":           False,
+        "use_SPCDx":           False,
+        "use_SPDCx":           False,
+        "use_SPPLx":           False,
+        "use_SPPRx":           False,
+        "use_SPSPx":           False,
+        # Option : laisser la macro appeler TOUS les detecteurs presents
+        "use_SelectProx_macro": False,  # True → chipy.SelectProxTactors() seul
+        # Deformables (modules FEM reels)
         "use_mecaMAILx":       False,
         "use_therMAILx":       False,
         "use_poroMAILx":       False,
-        # Contacteurs mixtes rigide/deformable
-        "use_DKMECAx":        False,
-        "use_ALpMECAx":       False,
-        "use_SPMECAx":        False,
-        # Routines speciales
-        "use_PT2Dx":          False,
-        "use_PT3Dx":          False,
-        "use_NODES":          False,
+        "use_multiMAILx":      False,
+        # Compat anciennes cles (aliases — non exposes comme detecteurs faux)
+        "use_PT2Dx":          False,  # alias → use_PTPT2
+        "use_PT3Dx":          False,  # alias → use_PTPT3
+        "use_DKMECAx":        False,  # alias → use_DKALp
+        "use_ALpMECAx":       False,  # alias → use_CLALp
+        "use_SPMECAx":        False,  # alias → use_CSASp
+        "use_CLALp":         False,  # IGNORE (n existe pas)
+        "use_NODES":          False,  # IGNORE (n existe pas)
         "use_bulk_behav":     False,
         # Routines avancees optionnelles (les etapes du cycle restent automatiques)
         "advanced_assemble_mechanical": False,
@@ -385,130 +402,225 @@ class ChipyRoutinesDialog(QDialog):
     # ── Onglet 2 : Routines ───────────────────────────────────────────────────
 
     def _tab_routines(self) -> QWidget:
+        """Detecteurs = modules XXX de chipy.macro.SelectProxTactors (2026.rc1)."""
         w = QWidget()
         vb = QVBoxLayout(w)
         vb.setSpacing(10)
 
-        # Corps rigides 2D
-        grp_r2d = _section("Corps rigides 2D  --  RBDY2")
+        vb.addWidget(_note(
+            "Liste officielle pylmgc90 chipy.macro.SelectProxTactors. "
+            "Les contacteurs (DISKx, PT2Dx, SPHER, …) sont charges via LoadTactors, "
+            "pas ici. Les interactions point/point sont PTPT2 / PTPT3 (pas PT2Dx / PT3Dx). "
+            "ALpALp et NODES n'existent pas dans chipy."
+        ))
+
+        # Corps rigides
+        grp_r2d = _section("Corps rigides 2D — RBDY2")
         vb_r2d = QVBoxLayout()
         self._cb_RBDY2 = _cb(
-            "Activer RBDY2  (NewStep / FreeVelocity / WriteOut)",
+            "Activer RBDY2  (IncrementStep / FreeVelocity / WriteOut…)",
             checked=True,
-            tip="Routines obligatoires pour tout corps rigide 2D.",
+            tip="Macro RBDY2_* pour tout corps rigide 2D.",
         )
         vb_r2d.addWidget(self._cb_RBDY2)
         grp_r2d.setLayout(vb_r2d)
         vb.addWidget(grp_r2d)
 
-        # Corps rigides 3D
-        grp_r3d = _section("Corps rigides 3D  --  RBDY3")
+        grp_r3d = _section("Corps rigides 3D — RBDY3")
         vb_r3d = QVBoxLayout()
         self._cb_RBDY3 = _cb(
-            "Activer RBDY3  (NewStep / FreeVelocity / WriteOut)",
-            tip="Routines obligatoires pour tout corps rigide 3D.",
+            "Activer RBDY3  (IncrementStep / FreeVelocity / WriteOut…)",
+            tip="Macro RBDY3_* pour tout corps rigide 3D.",
         )
         vb_r3d.addWidget(self._cb_RBDY3)
         grp_r3d.setLayout(vb_r3d)
         vb.addWidget(grp_r3d)
 
-        # Detecteurs contact 2D
-        grp_t2d = _section("Detecteurs de contact 2D")
+        # Detecteurs 2D
+        grp_t2d = _section("Detecteurs 2D — *_SelectProxTactors")
         vb_t2d = QVBoxLayout()
-        self._cb_DKDKx  = _cb("DKDKx   -- Disque / Disque",    checked=True)
-        self._cb_DKJCx  = _cb("DKJCx   -- Disque / Jonc")
-        self._cb_DKKDx  = _cb("DKKDx   -- Disque / Polygone")
-        self._cb_PLPLx  = _cb("PLPLx   -- Plan / Plan")
-        self._cb_CLALp  = _cb(
-            "CLALp   -- Ligne / Ligne  (maconnerie)",
-            tip="Detecteur pour les interfaces de briques (CLALp).",
+        self._cb_CLALp = _cb(
+            "CLALp  — CLxxx / ALpxx — ligne/ligne (maçonnerie, interfaces)",
+            tip="chipy.CLALp_SelectProxTactors() — detecteur officiel.",
         )
-        self._cb_ALpALp = _cb("ALpALp  -- Ligne / Ligne (ALp)")
-        for c in (self._cb_DKDKx, self._cb_DKJCx, self._cb_DKKDx,
-                  self._cb_PLPLx, self._cb_CLALp, self._cb_ALpALp):
+        self._cb_CLJCx = _cb(
+            "CLJCx  — CLxxx / JONCx — ligne/jonc",
+            tip="chipy.CLJCx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_DKALp = _cb(
+            "DKALp  — DISKx / ALpxx — disque/ligne MAILx",
+            tip="chipy.DKALp_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_DKDKL = _cb(
+            "DKDKL  — DISKx / DISKL — disque/disque linéaire",
+            tip="chipy.DKDKL_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_DKDKx = _cb(
+            "DKDKx  — DISKx / DISKx — disque/disque",
+            checked=True,
+            tip="chipy.DKDKx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_DKJCx = _cb(
+            "DKJCx  — DISKx / JONCx — disque/jonc (murs)",
+            tip="chipy.DKJCx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_DKKDx = _cb(
+            "DKKDx  — DISKx / POLYG — disque/polygone",
+            tip="chipy.DKKDx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_DKPLx = _cb(
+            "DKPLx  — DISKx / PLANx — disque/plan",
+            tip="chipy.DKPLx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_P2P2L = _cb(
+            "P2P2L  — PT2DL / PT2DL — point/point linéaire",
+            tip="chipy.P2P2L_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_PLALp = _cb(
+            "PLALp  — PLANx / ALpxx — plan/ligne MAILx",
+            tip="chipy.PLALp_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_PLJCx = _cb(
+            "PLJCx  — PLANx / JONCx — plan/jonc",
+            tip="chipy.PLJCx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_PLPLx = _cb(
+            "PLPLx  — PLANx / PLANx — plan/plan",
+            tip="chipy.PLPLx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_PTPT2 = _cb(
+            "PTPT2  — PT2Dx / PT2Dx — point/point (câbles, COUPLED wire)",
+            tip="chipy.PTPT2_SelectProxTactors() — detecteur officiel.",
+        )
+        for c in (self._cb_CLALp, self._cb_CLJCx, self._cb_DKALp, self._cb_DKDKL, self._cb_DKDKx, self._cb_DKJCx, self._cb_DKKDx, self._cb_DKPLx, self._cb_P2P2L, self._cb_PLALp, self._cb_PLJCx, self._cb_PLPLx, self._cb_PTPT2):
             vb_t2d.addWidget(c)
         grp_t2d.setLayout(vb_t2d)
         vb.addWidget(grp_t2d)
 
-        # Detecteurs contact 3D
-        grp_t3d = _section("Detecteurs de contact 3D")
+        # Detecteurs 3D
+        grp_t3d = _section("Detecteurs 3D — *_SelectProxTactors")
         vb_t3d = QVBoxLayout()
-        self._cb_SPSPx = _cb("SPSPx   -- Sphere / Sphere")
-        self._cb_SPCDx = _cb("SPCDx   -- Sphere / Cylindre")
-        self._cb_SPPLx = _cb("SPPLx   -- Sphere / Plan")
-        self._cb_CDCDx = _cb("CDCDx   -- Cylindre / Cylindre")
-        self._cb_CDPLx = _cb("CDPLx   -- Cylindre / Plan")
-        self._cb_PRPRx = _cb("PRPRx   -- Polyedre / Polyedre")
-        for c in (self._cb_SPSPx, self._cb_SPCDx, self._cb_SPPLx,
-                  self._cb_CDCDx, self._cb_CDPLx, self._cb_PRPRx):
+        self._cb_CDCDx = _cb(
+            "CDCDx  — CYLND / CYLND — cylindre/cylindre",
+            tip="chipy.CDCDx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_CDPLx = _cb(
+            "CDPLx  — CYLND / PLANx — cylindre/plan",
+            tip="chipy.CDPLx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_CSASp = _cb(
+            "CSASp  — CSxxx / ASpxx — surface/surface MAILx",
+            tip="chipy.CSASp_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_CSPRx = _cb(
+            "CSPRx  — CSxxx / POLYR — surface/polyèdre",
+            tip="chipy.CSPRx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_PRASp = _cb(
+            "PRASp  — POLYR / ASpxx — polyèdre/surface MAILx",
+            tip="chipy.PRASp_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_PRPLx = _cb(
+            "PRPLx  — POLYR / PLANx — polyèdre/plan",
+            tip="chipy.PRPLx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_PRPRx = _cb(
+            "PRPRx  — POLYR / POLYR — polyèdre/polyèdre",
+            tip="chipy.PRPRx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_PTPT3 = _cb(
+            "PTPT3  — PT3Dx / PT3Dx — point/point 3D",
+            tip="chipy.PTPT3_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_SPCDx = _cb(
+            "SPCDx  — SPHER / CYLND — sphère/cylindre",
+            tip="chipy.SPCDx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_SPDCx = _cb(
+            "SPDCx  — SPHER / DNLYC — sphère/cylindre creux",
+            tip="chipy.SPDCx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_SPPLx = _cb(
+            "SPPLx  — SPHER / PLANx — sphère/plan",
+            tip="chipy.SPPLx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_SPPRx = _cb(
+            "SPPRx  — SPHER / POLYR — sphère/polyèdre",
+            tip="chipy.SPPRx_SelectProxTactors() — detecteur officiel.",
+        )
+        self._cb_SPSPx = _cb(
+            "SPSPx  — SPHER / SPHER — sphère/sphère",
+            tip="chipy.SPSPx_SelectProxTactors() — detecteur officiel.",
+        )
+        for c in (self._cb_CDCDx, self._cb_CDPLx, self._cb_CSASp, self._cb_CSPRx, self._cb_PRASp, self._cb_PRPLx, self._cb_PRPRx, self._cb_PTPT3, self._cb_SPCDx, self._cb_SPDCx, self._cb_SPPLx, self._cb_SPPRx, self._cb_SPSPx):
             vb_t3d.addWidget(c)
         grp_t3d.setLayout(vb_t3d)
         vb.addWidget(grp_t3d)
 
-        # Deformables
-        grp_fem = _section("Corps deformables  --  Routines MAILx")
+        # Macro globale
+        grp_mac = _section("Macro globale (recommandee si DATBOX complet)")
+        vb_mac = QVBoxLayout()
+        self._cb_SelectProx_macro = _cb(
+            "Utiliser chipy.SelectProxTactors() uniquement",
+            tip=(
+                "Ignore les cases individuelles et appelle la macro officielle "
+                "qui dispatch vers tous les detecteurs de la dimension. "
+                "Ideal quand le DATBOX contient deja les bonnes see-tables."
+            ),
+        )
+        vb_mac.addWidget(self._cb_SelectProx_macro)
+        grp_mac.setLayout(vb_mac)
+        vb.addWidget(grp_mac)
+
+        # FEM
+        grp_fem = _section("Corps deformables — modules MAILx")
         vb_fem = QVBoxLayout()
         self._cb_mecaMAILx = _cb(
-            "mecaMAILx  -- Mecanique  (assembly / Fint / Fext / K / ComputeDof)",
-            tip="Active l'assemblage et le calcul des forces internes mecaniques.",
+            "mecaMAILx — mecanique (Assemb / Fint / Fext / ComputeDof…)",
+            tip="chipy.mecaMAILx_* — obligatoire pour MESH_DEFORMABLE MECAx.",
         )
         self._cb_therMAILx = _cb(
-            "therMAILx  -- Thermique  (flux / bilan thermique / ComputeDof)",
-            tip="Active les routines de diffusion thermique par elements finis.",
+            "therMAILx — thermique",
+            tip="chipy.therMAILx_*",
         )
         self._cb_poroMAILx = _cb(
-            "poroMAILx  -- Hydraulique  (pression / flux fluide / ComputeDof)",
-            tip="Active les routines de pression hydraulique par elements finis.",
+            "poroMAILx — poreux / hydraulique",
+            tip="chipy.poroMAILx_*",
         )
-        for c in (self._cb_mecaMAILx, self._cb_therMAILx, self._cb_poroMAILx):
+        self._cb_multiMAILx = _cb(
+            "multiMAILx — multi-physique",
+            tip="chipy.multiMAILx_*",
+        )
+        for c in (self._cb_mecaMAILx, self._cb_therMAILx,
+                  self._cb_poroMAILx, self._cb_multiMAILx):
             vb_fem.addWidget(c)
         grp_fem.setLayout(vb_fem)
         vb.addWidget(grp_fem)
 
-        # Contacteurs mixtes
-        grp_mix = _section("Contacteurs mixtes  --  Rigide / Deformable")
-        vb_mix = QVBoxLayout()
-        self._cb_DKMECAx  = _cb(
-            "DKMECAx   -- Disque rigide / Meca MAILx 2D",
-            tip="Interaction entre disques rigides et elements finis mecaniques 2D.",
+        # Aliases informatifs (activent les vrais detecteurs)
+        grp_alias = _section("Raccourcis (activent les detecteurs officiels)")
+        vb_al = QVBoxLayout()
+        self._cb_DKMECAx = _cb(
+            "Raccourci disque↔MAILx 2D → active DKALp",
+            tip="Ancien use_DKMECAx : mappe vers DKALp_SelectProxTactors.",
         )
         self._cb_ALpMECAx = _cb(
-            "ALpMECAx  -- CLALp (maconnerie) / Meca MAILx 2D",
-            tip="Interaction interfaces maconnerie et elements finis mecaniques.",
+            "Raccourci CLALp maçonnerie↔MAILx → active CLALp",
+            tip="Ancien use_ALpMECAx : mappe vers CLALp.",
         )
-        self._cb_SPMECAx  = _cb(
-            "SPMECAx   -- Sphere rigide / Meca MAILx 3D",
-            tip="Interaction entre spheres rigides et elements finis mecaniques 3D.",
-        )
-        for c in (self._cb_DKMECAx, self._cb_ALpMECAx, self._cb_SPMECAx):
-            vb_mix.addWidget(c)
-        grp_mix.setLayout(vb_mix)
-        vb.addWidget(grp_mix)
-
-        # Routines speciales
-        grp_spe = _section("Routines speciales")
-        vb_spe = QVBoxLayout()
-        self._cb_PT2Dx = _cb(
-            "PT2Dx   -- Noeuds ponctuels 2D  (cables, barres elastiques)",
-            tip="Interaction point/point 2D pour ELASTIC_WIRE, ELASTIC_ROD, etc.",
-        )
-        self._cb_PT3Dx = _cb(
-            "PT3Dx   -- Noeuds ponctuels 3D",
-            tip="Interaction point/point 3D.",
-        )
-        self._cb_NODES = _cb(
-            "NODES   -- Noeuds couples  (DOF couples, COUPLED_DOF)",
-            tip="Routines de couplage de degres de liberte entre noeuds.",
+        self._cb_SPMECAx = _cb(
+            "Raccourci sphere↔MAILx 3D → active CSASp",
+            tip="Ancien use_SPMECAx : mappe vers CSASp_SelectProxTactors.",
         )
         self._cb_bulk = _cb(
-            "UpdateBulkBehav  -- Lois de comportement volumique",
-            tip="Appel a chipy.UpdateBulkBehav() pour les lois plastiques, "
-                "d'endommagement, etc.",
+            "Update bulk behaviour (si disponible dans le script)",
+            tip="Flag use_bulk_behav pour le generateur de command.py.",
         )
-        for c in (self._cb_PT2Dx, self._cb_PT3Dx, self._cb_NODES, self._cb_bulk):
-            vb_spe.addWidget(c)
-        grp_spe.setLayout(vb_spe)
-        vb.addWidget(grp_spe)
+        for c in (self._cb_DKMECAx, self._cb_ALpMECAx, self._cb_SPMECAx, self._cb_bulk):
+            vb_al.addWidget(c)
+
+        grp_alias.setLayout(vb_al)
+        vb.addWidget(grp_alias)
 
         vb.addStretch()
         return _scroll(w)
@@ -1866,22 +1978,53 @@ class ChipyRoutinesDialog(QDialog):
         self._dspin_rloc.setValue(p["Rloc_tol"])
 
         # Routines (mapping attr -> cle)
-        for attr, key in {
-            "_cb_RBDY2":    "use_RBDY2",    "_cb_RBDY3":    "use_RBDY3",
-            "_cb_DKDKx":    "use_DKDKx",    "_cb_DKJCx":    "use_DKJCx",
-            "_cb_DKKDx":    "use_DKKDx",    "_cb_PLPLx":    "use_PLPLx",
-            "_cb_CLALp":    "use_CLALp",    "_cb_ALpALp":   "use_ALpALp",
-            "_cb_SPSPx":    "use_SPSPx",    "_cb_SPCDx":    "use_SPCDx",
-            "_cb_SPPLx":    "use_SPPLx",    "_cb_CDCDx":    "use_CDCDx",
-            "_cb_CDPLx":    "use_CDPLx",    "_cb_PRPRx":    "use_PRPRx",
-            "_cb_mecaMAILx":  "use_mecaMAILx",  "_cb_therMAILx":  "use_therMAILx",
-            "_cb_poroMAILx":  "use_poroMAILx",
-            "_cb_DKMECAx":  "use_DKMECAx",  "_cb_ALpMECAx": "use_ALpMECAx",
-            "_cb_SPMECAx":  "use_SPMECAx",
-            "_cb_PT2Dx":    "use_PT2Dx",    "_cb_PT3Dx":    "use_PT3Dx",
-            "_cb_NODES":    "use_NODES",    "_cb_bulk":     "use_bulk_behav",
-        }.items():
-            getattr(self, attr).setChecked(p.get(key, False))
+        _routine_map = {
+            "_cb_RBDY2": "use_RBDY2", "_cb_RBDY3": "use_RBDY3",
+            "_cb_CLALp": "use_CLALp",
+            "_cb_CLJCx": "use_CLJCx",
+            "_cb_DKALp": "use_DKALp",
+            "_cb_DKDKL": "use_DKDKL",
+            "_cb_DKDKx": "use_DKDKx",
+            "_cb_DKJCx": "use_DKJCx",
+            "_cb_DKKDx": "use_DKKDx",
+            "_cb_DKPLx": "use_DKPLx",
+            "_cb_P2P2L": "use_P2P2L",
+            "_cb_PLALp": "use_PLALp",
+            "_cb_PLJCx": "use_PLJCx",
+            "_cb_PLPLx": "use_PLPLx",
+            "_cb_PTPT2": "use_PTPT2",
+            "_cb_CDCDx": "use_CDCDx",
+            "_cb_CDPLx": "use_CDPLx",
+            "_cb_CSASp": "use_CSASp",
+            "_cb_CSPRx": "use_CSPRx",
+            "_cb_PRASp": "use_PRASp",
+            "_cb_PRPLx": "use_PRPLx",
+            "_cb_PRPRx": "use_PRPRx",
+            "_cb_PTPT3": "use_PTPT3",
+            "_cb_SPCDx": "use_SPCDx",
+            "_cb_SPDCx": "use_SPDCx",
+            "_cb_SPPLx": "use_SPPLx",
+            "_cb_SPPRx": "use_SPPRx",
+            "_cb_SPSPx": "use_SPSPx",
+            "_cb_SelectProx_macro": "use_SelectProx_macro",
+            "_cb_mecaMAILx": "use_mecaMAILx",
+            "_cb_therMAILx": "use_therMAILx",
+            "_cb_poroMAILx": "use_poroMAILx",
+            "_cb_multiMAILx": "use_multiMAILx",
+            "_cb_DKMECAx": "use_DKMECAx",
+            "_cb_ALpMECAx": "use_ALpMECAx",
+            "_cb_SPMECAx": "use_SPMECAx",
+            "_cb_bulk": "use_bulk_behav",
+        }
+        # Compat prefs legacy
+        if p.get("use_PT2Dx") and not p.get("use_PTPT2"):
+            p["use_PTPT2"] = True
+        if p.get("use_PT3Dx") and not p.get("use_PTPT3"):
+            p["use_PTPT3"] = True
+        for attr, key in _routine_map.items():
+            w = getattr(self, attr, None)
+            if w is not None:
+                w.setChecked(bool(p.get(key, False)))
 
         for key, checkbox in self._advanced_checks.items():
             checkbox.setChecked(p.get(key, False))
@@ -2008,7 +2151,7 @@ class ChipyRoutinesDialog(QDialog):
         self._rb_cp.setEnabled(not is3d)
         self._rb_dp.setEnabled(not is3d)
         for c in (self._cb_DKDKx, self._cb_DKJCx, self._cb_DKKDx,
-                  self._cb_PLPLx, self._cb_CLALp, self._cb_ALpALp):
+                  self._cb_PLPLx, self._cb_CLALp):
             c.setEnabled(not is3d)
         for c in (self._cb_SPSPx, self._cb_SPCDx, self._cb_SPPLx,
                   self._cb_CDCDx, self._cb_CDPLx, self._cb_PRPRx):
@@ -2458,40 +2601,63 @@ class ChipyRoutinesDialog(QDialog):
             self._cb_RBDY3.setChecked(False)
 
         detector_widgets = {
+            "_cb_CLALp": "use_CLALp",
+            "_cb_CLJCx": "use_CLJCx",
+            "_cb_DKALp": "use_DKALp",
+            "_cb_DKDKL": "use_DKDKL",
             "_cb_DKDKx": "use_DKDKx",
             "_cb_DKJCx": "use_DKJCx",
             "_cb_DKKDx": "use_DKKDx",
+            "_cb_DKPLx": "use_DKPLx",
+            "_cb_P2P2L": "use_P2P2L",
+            "_cb_PLALp": "use_PLALp",
+            "_cb_PLJCx": "use_PLJCx",
             "_cb_PLPLx": "use_PLPLx",
-            "_cb_CLALp": "use_CLALp",
-            "_cb_ALpALp": "use_ALpALp",
-            "_cb_SPSPx": "use_SPSPx",
-            "_cb_SPCDx": "use_SPCDx",
-            "_cb_SPPLx": "use_SPPLx",
+            "_cb_PTPT2": "use_PTPT2",
             "_cb_CDCDx": "use_CDCDx",
             "_cb_CDPLx": "use_CDPLx",
+            "_cb_CSASp": "use_CSASp",
+            "_cb_CSPRx": "use_CSPRx",
+            "_cb_PRASp": "use_PRASp",
+            "_cb_PRPLx": "use_PRPLx",
             "_cb_PRPRx": "use_PRPRx",
+            "_cb_PTPT3": "use_PTPT3",
+            "_cb_SPCDx": "use_SPCDx",
+            "_cb_SPDCx": "use_SPDCx",
+            "_cb_SPPLx": "use_SPPLx",
+            "_cb_SPPRx": "use_SPPRx",
+            "_cb_SPSPx": "use_SPSPx",
+            "_cb_SelectProx_macro": "use_SelectProx_macro",
+            "_cb_mecaMAILx": "use_mecaMAILx",
+            "_cb_therMAILx": "use_therMAILx",
+            "_cb_poroMAILx": "use_poroMAILx",
+            "_cb_multiMAILx": "use_multiMAILx",
             "_cb_DKMECAx": "use_DKMECAx",
             "_cb_ALpMECAx": "use_ALpMECAx",
             "_cb_SPMECAx": "use_SPMECAx",
-            "_cb_PT2Dx": "use_PT2Dx",
-            "_cb_PT3Dx": "use_PT3Dx",
+            "_cb_RBDY2": "use_RBDY2",
+            "_cb_RBDY3": "use_RBDY3",
+            "_cb_bulk": "use_bulk_behav",
         }
         dimension_specific = {
             2: {
-                "use_SPSPx", "use_SPCDx", "use_SPPLx", "use_CDCDx",
-                "use_CDPLx", "use_PRPRx", "use_SPMECAx", "use_PT3Dx",
+                "use_SPSPx", "use_SPCDx", "use_SPPLx", "use_CDCDx", "use_CDPLx",
+                "use_CSASp", "use_CSPRx", "use_PRASp", "use_PRPLx", "use_PRPRx",
+                "use_PTPT3", "use_SPDCx", "use_SPPRx", "use_SPMECAx",
             },
             3: {
-                "use_DKDKx", "use_DKJCx", "use_DKKDx", "use_PLPLx",
-                "use_CLALp", "use_ALpALp", "use_DKMECAx", "use_ALpMECAx",
-                "use_PT2Dx",
+                "use_CLALp", "use_CLJCx", "use_DKALp", "use_DKDKL", "use_DKDKx",
+                "use_DKJCx", "use_DKKDx", "use_DKPLx", "use_P2P2L", "use_PLALp",
+                "use_PLJCx", "use_PLPLx", "use_PTPT2", "use_DKMECAx", "use_ALpMECAx",
             },
         }
         for attr, key in detector_widgets.items():
-            widget = getattr(self, attr)
-            if inferred_routines[key]:
+            widget = getattr(self, attr, None)
+            if widget is None:
+                continue
+            if inferred_routines.get(key):
                 widget.setChecked(True)
-            elif key in dimension_specific[dim]:
+            elif key in dimension_specific.get(dim, ()):
                 widget.setChecked(False)
 
         has_def = any(
@@ -2514,9 +2680,9 @@ class ChipyRoutinesDialog(QDialog):
             cl.law_type.value for cl in getattr(st, "contact_laws", [])
         }
         if law_types & pt_laws:
-            (self._cb_PT2Dx if dim == 2 else self._cb_PT3Dx).setChecked(True)
+            (self._cb_PTPT2 if dim == 2 else self._cb_PTPT3).setChecked(True)
         if law_types & dof_laws:
-            self._cb_NODES.setChecked(True)
+            pass  # COUPLED_DOF = loi, pas un detecteur NODES
 
         self._refresh_info()
 
@@ -2575,23 +2741,62 @@ class ChipyRoutinesDialog(QDialog):
         ]
         p["Rloc_tol"] = self._dspin_rloc.value()
 
-        # Routines
-        for attr, key in {
-            "_cb_RBDY2":    "use_RBDY2",    "_cb_RBDY3":    "use_RBDY3",
-            "_cb_DKDKx":    "use_DKDKx",    "_cb_DKJCx":    "use_DKJCx",
-            "_cb_DKKDx":    "use_DKKDx",    "_cb_PLPLx":    "use_PLPLx",
-            "_cb_CLALp":    "use_CLALp",    "_cb_ALpALp":   "use_ALpALp",
-            "_cb_SPSPx":    "use_SPSPx",    "_cb_SPCDx":    "use_SPCDx",
-            "_cb_SPPLx":    "use_SPPLx",    "_cb_CDCDx":    "use_CDCDx",
-            "_cb_CDPLx":    "use_CDPLx",    "_cb_PRPRx":    "use_PRPRx",
-            "_cb_mecaMAILx":  "use_mecaMAILx",  "_cb_therMAILx":  "use_therMAILx",
-            "_cb_poroMAILx":  "use_poroMAILx",
-            "_cb_DKMECAx":  "use_DKMECAx",  "_cb_ALpMECAx": "use_ALpMECAx",
-            "_cb_SPMECAx":  "use_SPMECAx",
-            "_cb_PT2Dx":    "use_PT2Dx",    "_cb_PT3Dx":    "use_PT3Dx",
-            "_cb_NODES":    "use_NODES",    "_cb_bulk":     "use_bulk_behav",
-        }.items():
-            p[key] = getattr(self, attr).isChecked()
+        # Routines — detecteurs officiels + FEM
+        _routine_map = {
+            "_cb_RBDY2": "use_RBDY2", "_cb_RBDY3": "use_RBDY3",
+            "_cb_CLALp": "use_CLALp",
+            "_cb_CLJCx": "use_CLJCx",
+            "_cb_DKALp": "use_DKALp",
+            "_cb_DKDKL": "use_DKDKL",
+            "_cb_DKDKx": "use_DKDKx",
+            "_cb_DKJCx": "use_DKJCx",
+            "_cb_DKKDx": "use_DKKDx",
+            "_cb_DKPLx": "use_DKPLx",
+            "_cb_P2P2L": "use_P2P2L",
+            "_cb_PLALp": "use_PLALp",
+            "_cb_PLJCx": "use_PLJCx",
+            "_cb_PLPLx": "use_PLPLx",
+            "_cb_PTPT2": "use_PTPT2",
+            "_cb_CDCDx": "use_CDCDx",
+            "_cb_CDPLx": "use_CDPLx",
+            "_cb_CSASp": "use_CSASp",
+            "_cb_CSPRx": "use_CSPRx",
+            "_cb_PRASp": "use_PRASp",
+            "_cb_PRPLx": "use_PRPLx",
+            "_cb_PRPRx": "use_PRPRx",
+            "_cb_PTPT3": "use_PTPT3",
+            "_cb_SPCDx": "use_SPCDx",
+            "_cb_SPDCx": "use_SPDCx",
+            "_cb_SPPLx": "use_SPPLx",
+            "_cb_SPPRx": "use_SPPRx",
+            "_cb_SPSPx": "use_SPSPx",
+            "_cb_SelectProx_macro": "use_SelectProx_macro",
+            "_cb_mecaMAILx": "use_mecaMAILx",
+            "_cb_therMAILx": "use_therMAILx",
+            "_cb_poroMAILx": "use_poroMAILx",
+            "_cb_multiMAILx": "use_multiMAILx",
+            "_cb_DKMECAx": "use_DKMECAx",
+            "_cb_ALpMECAx": "use_ALpMECAx",
+            "_cb_SPMECAx": "use_SPMECAx",
+            "_cb_bulk": "use_bulk_behav",
+        }
+        for attr, key in _routine_map.items():
+            w = getattr(self, attr, None)
+            if w is not None:
+                p[key] = w.isChecked()
+
+        # Aliases → detecteurs officiels (pour generateur / prefs legacy)
+        if p.get("use_DKMECAx"):
+            p["use_DKALp"] = True
+        if p.get("use_ALpMECAx"):
+            p["use_CLALp"] = True
+        if p.get("use_SPMECAx"):
+            p["use_CSASp"] = True
+        # Compat cles PT2Dx/PT3Dx (prefs anciennes) = PTPT2/PTPT3
+        p["use_PT2Dx"] = bool(p.get("use_PTPT2"))
+        p["use_PT3Dx"] = bool(p.get("use_PTPT3"))
+        p["use_ALpALp"] = False  # n existe pas
+        p["use_NODES"] = False
 
         # Extraction — cases simples
         for attr, key in {

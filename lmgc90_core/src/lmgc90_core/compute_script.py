@@ -8,101 +8,11 @@ GUI and engine call this via ``emit_chipy`` / ``generate_command_script``.
 """
 from __future__ import annotations
 
-import ast
-import keyword
 from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
 
 from .project import Project
-
-
-_CONTACT_ROUTINE_BY_PAIR = {
-    ("DISKx", "DISKx"): "DKDKx",
-    ("DISKx", "JONCx"): "DKJCx",
-    ("JONCx", "DISKx"): "DKJCx",
-    ("DISKx", "xKSID"): "DKKDx",
-    ("xKSID", "DISKx"): "DKKDx",
-    ("DISKx", "POLYG"): "DKKDx",
-    ("POLYG", "DISKx"): "DKKDx",
-    ("POLYG", "POLYG"): "PLPLx",
-    ("CLxxx", "ALpxx"): "CLALp",
-    ("ALpxx", "CLxxx"): "CLALp",
-    ("ALpxx", "ALpxx"): "ALpALp",
-    ("SPHER", "SPHER"): "SPSPx",
-    ("SPHER", "CYLND"): "SPCDx",
-    ("CYLND", "SPHER"): "SPCDx",
-    ("SPHER", "PLANx"): "SPPLx",
-    ("PLANx", "SPHER"): "SPPLx",
-    ("CYLND", "CYLND"): "CDCDx",
-    ("CYLND", "PLANx"): "CDPLx",
-    ("PLANx", "CYLND"): "CDPLx",
-    ("POLYR", "POLYR"): "PRPRx",
-}
-_CONTACT_ROUTINE_KEYS = (
-    "DKDKx", "DKJCx", "DKKDx", "PLPLx", "CLALp", "ALpALp",
-    "SPSPx", "SPCDx", "SPPLx", "CDCDx", "CDPLx", "PRPRx",
-    "DKMECAx", "ALpMECAx", "SPMECAx", "PT2Dx", "PT3Dx", "NODES",
-)
-
-
-def _format_set_action_call(entry: dict, index: int) -> str:
-    """Validate and format one user-configured chipy SET call."""
-    func = str(entry.get('func', '')).strip()
-    args = str(entry.get('args', '')).strip()
-    if (
-        not func
-        or not func.isidentifier()
-        or keyword.iskeyword(func)
-        or 'Set' not in func
-    ):
-        raise ValueError(
-            f"SET action {index}: expected a valid chipy function name containing 'Set'."
-        )
-    mode = entry.get('step_mode', 'before')
-    if mode not in ('before', 'all', 'every_n', 'at_k', 'after'):
-        raise ValueError(f"SET action {index} ({func}): invalid step mode {mode!r}.")
-    if mode in ('every_n', 'at_k'):
-        try:
-            step_value = int(entry.get('step_val', 1))
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"SET action {index} ({func}): step value must be an integer."
-            ) from exc
-        minimum = 0 if mode == 'at_k' else 1
-        if step_value < minimum:
-            raise ValueError(
-                f"SET action {index} ({func}): step value must be at least {minimum}."
-            )
-    try:
-        ast.parse(f'chipy.{func}({args})', mode='eval')
-    except SyntaxError as exc:
-        raise ValueError(
-            f"SET action {index} ({func}): invalid Python arguments: {exc.msg}."
-        ) from exc
-    return f'chipy.{func}({args})'
-
-
-def infer_chipy_contact_routines(project: Project) -> dict[str, bool]:
-    """Infer rigid-body and contact detector defaults from dimension/see-tables."""
-    dim = int(project.dimension)
-    routines = {f"use_{name}": False for name in _CONTACT_ROUTINE_KEYS}
-    routines["use_RBDY2"] = dim == 2
-    routines["use_RBDY3"] = dim == 3
-    if dim == 2 and not project.visibility:
-        routines["use_DKDKx"] = True
-
-    for rule in project.visibility:
-        pair = (rule.candidate_contactor, rule.antagonist_contactor)
-        detector = _CONTACT_ROUTINE_BY_PAIR.get(pair)
-        if detector is not None:
-            routines[f"use_{detector}"] = True
-        for shape in pair:
-            if shape == "PT2Dx" and dim == 2:
-                routines["use_PT2Dx"] = True
-            elif shape == "PT3Dx" and dim == 3:
-                routines["use_PT3Dx"] = True
-    return routines
 
 
 class _JournalLike(Protocol):
@@ -117,56 +27,15 @@ class ComputeScriptGenerator:
         'Rloc_tol': 5e-2,
         'use_RBDY2': True,  'use_RBDY3': False,
         'use_DKDKx': True,  'use_DKJCx': False, 'use_DKKDx': False,
-        'use_PLPLx': False, 'use_CLALp': False,  'use_ALpALp': False,
+        'use_PLPLx': False, 'use_CLALp': False,
         'use_SPSPx': False, 'use_SPCDx': False,  'use_SPPLx': False,
         'use_CDCDx': False, 'use_CDPLx': False,  'use_PRPRx': False,
         'use_mecaMAILx': False, 'use_therMAILx': False, 'use_poroMAILx': False,
         'use_DKMECAx': False, 'use_ALpMECAx': False, 'use_SPMECAx': False,
         'use_PT2Dx': False,   'use_PT3Dx': False,
         'use_NODES': False,   'use_bulk_behav': False,
-        'advanced_assemble_mechanical': False,
-        'advanced_assemble_thermal': False,
-        'advanced_assemble_poro': False,
-        'advanced_assemble_multi': False,
-        'advanced_fd_select_prox': False,
-        'advanced_compute_rnod': False,
-        'advanced_fatal_damping': False,
-        'advanced_smooth_force': False,
-        'advanced_display_out_dof': False,
-        'advanced_display_out_rnod': False,
-        'advanced_display_out_vloc_rloc': False,
-        'advanced_display_prox_tactors': False,
-        'advanced_hdf5': False,
-        'advanced_add_dof2': False,
-        'advanced_write_out_dof': False,
-        'advanced_write_out_gpv': False,
-        'advanced_write_out_mp_values': False,
-        'advanced_write_out_rnod': False,
-        'advanced_write_out_vloc_rloc': False,
-        'advanced_write_last': False,
-        'advanced_write_last_dof': False,
-        'advanced_write_last_gpv': False,
-        'advanced_write_last_mp_values': False,
-        'advanced_write_last_rnod': False,
-        'advanced_write_last_vloc_rloc': False,
-        'advanced_write_behaviours': False,
-        'advanced_write_bodies': False,
-        'advanced_write_driven_dof': False,
-        'advanced_write_mp_behaviours': False,
-        'advanced_add_registers_to_display': False,
-        'advanced_circular_selection': False,
-        'advanced_set_contact_radius': False,
-        'advanced_set_domain_boundary': False,
-        'advanced_set_number_interaction': False,
-        'advanced_set_periodic_condition': False,
-        'advanced_hdf5_filename': 'command.h5',
-        'advanced_circular_selection_args': '0.0, 0.0, 1.0',
-        'advanced_set_contact_radius_args': '',
-        'advanced_set_domain_boundary_args': '',
-        'advanced_set_number_interaction_args': '',
-        'advanced_set_periodic_condition_args': '',
         'visu_RBDY2': True,  'visu_RBDY3': False,
-        'visu_mecaMAIL': False, 'visu_therMAIL': False, 'visu_poroMAIL': False,
+        'visu_mecaMAILx': False, 'visu_therMAILx': False, 'visu_poroMAILx': False,
         'display_in_loop': True,
         'extract_Rnod': False, 'extract_Vloc': False, 'extract_Rloc': False,
         'extract_energy': False, 'extract_KE': False,
@@ -177,7 +46,6 @@ class ComputeScriptGenerator:
         'insp2d_entries': [],
         'insp3d_entries': [],
         'inspi_entries':  [],
-        'set_entries': [],
         'use_restart': False, 'restart_step': 0,
         'use_stop_crit': False, 'stop_crit_type': 'energy',
         'stop_crit_val': 1e-6, 'stop_crit_freq': 10,
@@ -201,7 +69,7 @@ class ComputeScriptGenerator:
         'PT2Dx_GetNbPT2Dx', 'PT3Dx_GetNbPT3Dx',
         'DKDKx_GetNbDKDKx', 'DKJCx_GetNbDKJCx',
         'DKKDx_GetNbDKKDx', 'PLPLx_GetNbPLPLx',
-        'CLALp_GetNbCLALp', 'ALpALp_GetNbALpALp',
+        'CLALp_GetNbCLALp',
         'SPSPx_GetNbSPSPx', 'SPCDx_GetNbSPCDx',
         'SPPLx_GetNbSPPLx', 'CDCDx_GetNbCDCDx',
         'CDPLx_GetNbCDPLx', 'PRPRx_GetNbPRPRx',
@@ -231,20 +99,6 @@ class ComputeScriptGenerator:
     def generate_string(self, params: Dict[str, Any]) -> str:
         """Retourne le script complet sous forme de chaine."""
         p   = {**self._DEFAULTS, **params}
-        for current, legacy in (
-            ('use_mecaMAILx', 'use_mecaMAIL'),
-            ('use_therMAILx', 'use_therMAIL'),
-            ('use_poroMAILx', 'use_poroMAIL'),
-        ):
-            if current not in params and legacy in params:
-                p[current] = params[legacy]
-        for index, entry in enumerate(p.get('set_entries', []), start=1):
-            _format_set_action_call(entry, index)
-        if "mhyp" not in params and int(self.project.dimension) == 3:
-            p["mhyp"] = 3
-        for key, value in infer_chipy_contact_routines(self.project).items():
-            if key not in params:
-                p[key] = value
         buf = StringIO()
         w   = buf.write
 
@@ -266,26 +120,18 @@ class ComputeScriptGenerator:
         use_mecaMAILx = p['use_mecaMAILx'] and deformable
         use_therMAILx = p['use_therMAILx'] and deformable
         use_poroMAILx = p['use_poroMAILx'] and deformable
-        any_MAILx     = use_mecaMAILx or use_therMAILx or use_poroMAILx
+        any_FEM     = use_mecaMAILx or use_therMAILx or use_poroMAILx
 
-        tacts_2d = [t for t in ('DKDKx','DKJCx','DKKDx','PLPLx','CLALp','ALpALp')
-                    if dim == 2 and p.get(f'use_{t}')]
-        tacts_3d = [t for t in ('SPSPx','SPCDx','SPPLx','CDCDx','CDPLx','PRPRx')
-                    if dim == 3 and p.get(f'use_{t}')]
-        tacts_mix = [
-            t for t in ('DKMECAx','ALpMECAx','SPMECAx')
-            if p.get(f'use_{t}') and (
-                (dim == 2 and t in ('DKMECAx', 'ALpMECAx'))
-                or (dim == 3 and t == 'SPMECAx')
-            )
-        ]
-        tacts_pt = [
-            t for t in ('PT2Dx','PT3Dx','NODES')
-            if p.get(f'use_{t}') and (
-                t == 'NODES' or (dim == 2 and t == 'PT2Dx')
-                or (dim == 3 and t == 'PT3Dx')
-            )
-        ]
+        tacts_2d = [t for t in ('CLALp','CLJCx','DKALp','DKDKL','DKDKx','DKJCx','DKKDx','DKPLx','P2P2L','PLALp','PLJCx','PLPLx','PTPT2') if p.get(f'use_{t}')]
+        tacts_3d = [t for t in ('SPSPx','SPCDx','SPPLx','CDCDx','CDPLx','PRPRx')  if p.get(f'use_{t}')]
+        tacts_mix = [t for t in ('DKMECAx','ALpMECAx','SPMECAx')                   if p.get(f'use_{t}')]
+        # PT2Dx/PT3Dx are *contactors*; detection modules are PTPT2/PTPT3.
+        # NODES is not a SelectProxTactors interaction — ignored here.
+        tacts_pt = []
+        if p.get('use_PT2Dx'):
+            tacts_pt.append('PTPT2')
+        if p.get('use_PT3Dx'):
+            tacts_pt.append('PTPT3')
         all_tacts = tacts_2d + tacts_3d + tacts_mix + tacts_pt
 
         use_multi   = p.get('use_multi_step', False)
@@ -363,46 +209,25 @@ class ComputeScriptGenerator:
         w(f'chipy.ReadDatbox(deformable={deformable})\n')
         w('\n')
 
-        for option, func, argument_key in (
-            ('advanced_set_contact_radius', 'SetContactRadius',
-             'advanced_set_contact_radius_args'),
-            ('advanced_set_domain_boundary', 'SetDomainBoundary',
-             'advanced_set_domain_boundary_args'),
-            ('advanced_set_number_interaction', 'SetNumberInteractionByContact',
-             'advanced_set_number_interaction_args'),
-            ('advanced_set_periodic_condition', 'SetPeriodicCondition',
-             'advanced_set_periodic_condition_args'),
-        ):
-            if p.get(option):
-                args = str(p.get(argument_key, '')).strip()
-                w(_format_set_action_call(
-                    {'func': func, 'args': args}, option
-                ) + '\n')
-
-        if p.get('advanced_circular_selection'):
-            args = str(p.get('advanced_circular_selection_args', '')).strip()
-            try:
-                ast.parse(f'chipy.CircularSelection({args})', mode='eval')
-            except SyntaxError as exc:
-                raise ValueError(
-                    f"CircularSelection: invalid Python arguments: {exc.msg}."
-                ) from exc
-            w(f'chipy.CircularSelection({args})\n')
-
         if p.get('disable_log'):
             w('chipy.utilities_DisableLogMes()\n')
             w('\n')
 
-        # ── 5. Ouverture fichiers sortie ──────────────────────────────────────
+        # ── 5. Restart (avant ouverture des sorties) ──────────────────────────
+        # chipy.SetStep n'existe pas. Restart officiel :
+        #   ReadIni(record=N) + OpenDisplayFiles(restart=N+1)
+        _rs = int(p.get('restart_step', 0) or 0)
+        if use_restart and _rs:
+            w('# ── Restart ─────────────────────────────────────────────\n')
+            w(f'chipy.ReadIni(record={_rs})\n')
+            w('\n')
+
+        # ── 6. Ouverture fichiers sortie ──────────────────────────────────────
         w("chipy.utilities_logMes('DISPLAY & WRITE')\n")
-        if p.get('advanced_add_registers_to_display'):
-            w('chipy.addRegistersToDisplay()\n')
-        if p.get('advanced_hdf5'):
-            filename = str(p.get('advanced_hdf5_filename', '')).strip()
-            if not filename:
-                raise ValueError("HDF5 output requires a non-empty filename.")
-            w(f'chipy.InitHDF5({filename!r})\n')
-        w('chipy.OpenDisplayFiles()\n')
+        if use_restart and _rs:
+            w(f'chipy.OpenDisplayFiles(restart={_rs + 1})\n')
+        else:
+            w('chipy.OpenDisplayFiles()\n')
         w('chipy.OpenPostproFiles()\n')
         w('\n')
 
@@ -506,47 +331,6 @@ class ComputeScriptGenerator:
             if mode == 'at_k':
                 return ind + 'if k == {}:\n'.format(val), ind + '    '
             return '', ind
-
-        def _emit_set_action(entry: dict, index: int, prefix: str) -> None:
-            """Emit a SET call, optionally once per selected avatar."""
-            func = str(entry.get('func', '')).strip()
-            args = str(entry.get('args', entry.get('ids', ''))).strip()
-            ids_str = str(entry.get('ids', '')).strip()
-            group = str(entry.get('group', '')).strip()
-            store = str(entry.get('store', '')).strip()
-
-            if store and (
-                not store.isidentifier() or keyword.iskeyword(store)
-            ):
-                raise ValueError(
-                    f"SET action {index} ({func}): invalid Python variable name {store!r}."
-                )
-
-            if group:
-                target_ids = _resolve_group_ids(group)
-            elif ids_str and all(
-                token.strip().isdigit() for token in ids_str.split(',')
-            ):
-                target_ids = [
-                    token.strip() for token in ids_str.split(',') if token.strip()
-                ]
-            else:
-                target_ids = []
-
-            if target_ids:
-                call_args = args if group and '_id' in args else '_id'
-                call = _format_set_action_call(
-                    {**entry, 'func': func, 'args': call_args}, index
-                )
-                w(prefix + 'for _id in [{}]:\n'.format(', '.join(target_ids)))
-                assignment = '{} = {}'.format(store, call) if store else call
-                w(prefix + '    ' + assignment + '\n')
-                return
-
-            call = _format_set_action_call(
-                {**entry, 'func': func, 'args': args}, index
-            )
-            w(prefix + ('{} = '.format(store) if store else '') + call + '\n')
 
         def _is_no_id_func(func_name: str) -> bool:
             if func_name in self._NO_ID_FUNCS:
@@ -729,12 +513,7 @@ class ComputeScriptGenerator:
             w("        _factory_schedule.setdefault(_k, []).extend(_batch)\n")
             w('\n')
 
-        # ── 7. Restart ────────────────────────────────────────────────────────
-        if use_restart:
-            w('# ── Restart ─────────────────────────────────────────────\n')
-            w('chipy.ReadIni()\n')
-            w(f'chipy.SetStep({p["restart_step"]})\n')
-            w('\n')
+        # ── 7. Restart déjà géré après ReadDatbox (plus de SetStep) ───────────
 
         # ── 7b. GBV / Inspection avant la boucle (step_mode="before") ─────────
         # Émis après un éventuel restart pour lire l'état initial chargé.
@@ -796,17 +575,6 @@ class ComputeScriptGenerator:
             for _ebi in _all_insp_before:
                 _emit_insp_outside(_ebi)
 
-        _set_before = [
-            (index, entry)
-            for index, entry in enumerate(p.get('set_entries', []), start=1)
-            if _is_before(entry)
-        ]
-        if _set_before:
-            w('# ── Actions SET avant boucle ──────\n')
-            for index, entry in _set_before:
-                _emit_set_action(entry, index, '')
-            w('\n')
-
         # ── 8. Boucle(s) de calcul ────────────────────────────────────────────
         if use_multi:
             w('# ── Boucle multi-pas ────────────────────────────────────\n')
@@ -825,25 +593,7 @@ class ComputeScriptGenerator:
 
         L("chipy.utilities_logMes('INCREMENT STEP')")
         L('chipy.IncrementStep()')
-        if p.get('advanced_fatal_damping'):
-            L('chipy.FatalDamping()')
         w('\n')
-
-        _set_in_loop = [
-            (index, entry)
-            for index, entry in enumerate(p.get('set_entries', []), start=1)
-            if _is_in_loop(entry)
-        ]
-        if _set_in_loop:
-            L('# Actions SET')
-            for index, entry in _set_in_loop:
-                guard, extra_ind = _timing_guard(entry)
-                if guard:
-                    w(guard)
-                    _emit_set_action(entry, index, extra_ind)
-                else:
-                    _emit_set_action(entry, index, ind)
-            w('\n')
 
         # ── 8a. Activation des vagues de factory dans la boucle ───────────────
         if _factory_active:
@@ -860,11 +610,15 @@ class ComputeScriptGenerator:
             L('chipy.ComputeBulk()')
             L("chipy.utilities_logMes('COMPUTE Free Velocity - RBDY2')")
             L('chipy.ComputeFreeVelocity()')
+            L('chipy.SelectProxTactors()')
         if use_RBDY3:
-            L("chipy.utilities_logMes('COMPUTE Free Velocity - RBDY3')")
+            # Macros route to RBDY3_* when SetDimension(3); same path as official one_step
+            L("chipy.utilities_logMes('COMPUTE Fext/Fint - RBDY3')")
             L('chipy.ComputeFext()')
             L('chipy.ComputeBulk()')
+            L("chipy.utilities_logMes('COMPUTE Free Velocity - RBDY3')")
             L('chipy.ComputeFreeVelocity()')
+            L('chipy.SelectProxTactors()')
         w('\n')
 
         # b. FreeVelocity deformables
@@ -872,46 +626,23 @@ class ComputeScriptGenerator:
             L("chipy.utilities_logMes('mecaMAILx - assembly + FreeVelocity')")
             L('chipy.mecaMAILx_ComputeFext()')
             L('chipy.mecaMAILx_ComputeBulk()')
-            if p.get('advanced_assemble_mechanical'):
-                L('chipy.AssembleMechanicalLHS()')
-                L('chipy.AssembleMechanicalRHS()')
             L('chipy.mecaMAILx_ComputeFreeVelocity()')
         if use_therMAILx:
             L("chipy.utilities_logMes('therMAILx - flux + FreeVelocity')")
             L('chipy.therMAILx_ComputeFext()')
             L('chipy.therMAILx_ComputeBulk()')
-            if p.get('advanced_assemble_thermal'):
-                L('chipy.AssembleThermalLHS()')
-                L('chipy.AssembleThermalRHS()')
             L('chipy.therMAILx_ComputeFreeVelocity()')
         if use_poroMAILx:
             L("chipy.utilities_logMes('poroMAILx - pression + FreeVelocity')")
             L('chipy.poroMAILx_ComputeFext()')
             L('chipy.poroMAILx_ComputeBulk()')
-            if p.get('advanced_assemble_poro'):
-                L('chipy.AssemblePoroLHS()')
-                L('chipy.AssemblePoroRHS()')
-            if p.get('advanced_assemble_multi') and p.get('physics') == 'THMx':
-                L('chipy.AssembleMultiLHS()')
-                L('chipy.AssembleMultiRHS()')
             L('chipy.poroMAILx_ComputeFreeVelocity()')
-        if any_MAILx:
+        if any_FEM:
             w('\n')
 
         # c. Detection de contact
         L("chipy.utilities_logMes('SELECT PROX TACTORS')")
-        if p.get('advanced_fd_select_prox'):
-            pair_shapes = {
-                (rule.candidate_contactor, rule.antagonist_contactor)
-                for rule in self.project.visibility
-            }
-            if not pair_shapes or any(pair != ('SPHER', 'SPHER') for pair in pair_shapes):
-                raise ValueError(
-                    "FdSelectProxTactors is only valid when all project contacts "
-                    "are SPHER/SPHER."
-                )
-            L('chipy.FdSelectProxTactors()')
-        elif all_tacts:
+        if all_tacts:
             for t in tacts_2d:
                 L(f'chipy.{t}_SelectProxTactors()')
             for t in tacts_3d:
@@ -922,8 +653,6 @@ class ComputeScriptGenerator:
                 L(f'chipy.{t}_SelectProxTactors()')
         else:
             L('chipy.SelectProxTactors()')
-        if p.get('advanced_display_prox_tactors'):
-            L('chipy.DisplayProxTactors()')
         w('\n')
 
         # d. Resolution
@@ -932,8 +661,6 @@ class ComputeScriptGenerator:
         L('chipy.ExSolver(solver_type, norm, tol, relax, gs_it1, gs_it2)')
         L('chipy.UpdateTactBehav()')
         L('chipy.StockRloc()')
-        if p.get('advanced_smooth_force'):
-            L('chipy.SmoothForceComputation()')
         w('\n')
 
         # e. Comportement volumique
@@ -961,15 +688,6 @@ class ComputeScriptGenerator:
         if use_poroMAILx:
             L('chipy.poroMAILx_UpdateStep()')
         w('\n')
-
-        if p.get('advanced_compute_rnod'):
-            L('chipy.ComputeRnod()')
-        if p.get('advanced_display_out_dof'):
-            L('chipy.DisplayOutDof()')
-        if p.get('advanced_display_out_rnod'):
-            L('chipy.DisplayOutRnod(1, nb_steps)')
-        if p.get('advanced_display_out_vloc_rloc'):
-            L('chipy.DisplayOutVlocRloc()')
 
         # g. Extraction
         if p.get('extract_energy'):
@@ -1042,23 +760,9 @@ class ComputeScriptGenerator:
 
         # i. Ecriture resultats
         L("chipy.utilities_logMes('WRITE OUT')")
-        output_options = (
-            ('advanced_write_out_dof', 'WriteOutDof'),
-            ('advanced_write_out_gpv', 'WriteOutGPV'),
-            ('advanced_write_out_mp_values', 'WriteOutMpValues'),
-            ('advanced_write_out_rnod', 'WriteOutRnod'),
-            ('advanced_write_out_vloc_rloc', 'WriteOutVlocRloc'),
-        )
-        selected_output_options = [
-            func for option, func in output_options if p.get(option)
-        ]
-        if p.get('advanced_hdf5') or not selected_output_options:
-            L('chipy.WriteOut(freq_write)')
-        else:
-            for func in selected_output_options:
-                L(f'chipy.{func}(freq_write)')
-        if use_RBDY3 and not selected_output_options:
-            L('chipy.RBDY3_WriteOut(freq_write)')
+        L('chipy.WriteOut(freq_write)')
+        if use_RBDY3:
+            L('chipy.RBDY3_WriteOutDof(freq_write)')
         w('\n')
 
         # Visualisation dans la boucle
@@ -1119,17 +823,6 @@ class ComputeScriptGenerator:
             for _eo in _all_insp_out:
                 _emit_insp_outside(_eo)
 
-        _set_after = [
-            (index, entry)
-            for index, entry in enumerate(p.get('set_entries', []), start=1)
-            if _is_after(entry)
-        ]
-        if _set_after:
-            w('# ── Actions SET apres boucle ──────\n')
-            for index, entry in _set_after:
-                _emit_set_action(entry, index, '')
-            w('\n')
-
         # ── Visibilite apres boucle (step_mode="after") ───────────────────────
         if _vis_after:
             w('# ── Visibilite apres boucle ──────\n')
@@ -1152,38 +845,6 @@ class ComputeScriptGenerator:
                 w('chipy.poroMAILx_WriteDisplayFiles(1)\n')
             w('chipy.WritePostproFiles()\n')
             w('\n')
-
-        if p.get('advanced_add_dof2') and dim == 2:
-            w('chipy.AddDof2InBodies()\n')
-        if p.get('advanced_write_bodies'):
-            w('chipy.WriteBodies()\n')
-        if p.get('advanced_write_behaviours'):
-            w('chipy.WriteBehaviours()\n')
-        if p.get('advanced_write_driven_dof'):
-            w('chipy.WriteDrivenDof()\n')
-        if p.get('advanced_write_mp_behaviours'):
-            w('chipy.WriteMpBehaviours()\n')
-        if p.get('advanced_write_last'):
-            if p.get('advanced_hdf5'):
-                w('chipy.WriteLast({!r})\n'.format(
-                    str(p.get('advanced_hdf5_filename', '')).strip()
-                ))
-            else:
-                w('chipy.WriteLast()\n')
-        else:
-            for option, func in (
-                ('advanced_write_last_dof', 'WriteLastDof'),
-                ('advanced_write_last_gpv', 'WriteLastGPV'),
-                ('advanced_write_last_vloc_rloc', 'WriteLastVlocRloc'),
-            ):
-                if p.get(option):
-                    w(f'chipy.{func}()\n')
-        for option, func in (
-            ('advanced_write_last_mp_values', 'WriteLastMpValues'),
-            ('advanced_write_last_rnod', 'WriteLastRnod'),
-        ):
-            if p.get(option):
-                w(f'chipy.{func}()\n')
 
         #-----Avertissement - références de groupes non résolues (avatars introuvables) -----
         if getattr(self, '_unresolved_group_refs', None):
@@ -1210,6 +871,188 @@ class ComputeScriptGenerator:
 
         return buf.getvalue()
 
+
+# ---------------------------------------------------------------------------
+
+_DET2D_OFFICIAL = (
+    "CLALp", "CLJCx", "DKALp", "DKDKL", "DKDKx", "DKJCx", "DKKDx",
+    "DKPLx", "P2P2L", "PLALp", "PLJCx", "PLPLx", "PTPT2",
+)
+_DET3D_OFFICIAL = (
+    "CDCDx", "CDPLx", "CSASp", "CSPRx", "PRASp", "PRPLx", "PRPRx",
+    "PTPT3", "SPCDx", "SPDCx", "SPPLx", "SPPRx", "SPSPx",
+)
+
+# Contactor pair (sorted frozenset) -> detector name
+_PAIR_TO_DETECTOR_2D = {
+    frozenset({"DISKx", "DISKx"}): "DKDKx",
+    frozenset({"DISKx", "xKSID"}): "DKDKx",
+    frozenset({"DISKx", "JONCx"}): "DKJCx",
+    frozenset({"DISKx", "POLYG"}): "DKKDx",
+    frozenset({"DISKx", "PLANx"}): "DKPLx",
+    frozenset({"DISKx", "ALpxx"}): "DKALp",
+    frozenset({"DISKx", "CLxxx"}): "DKALp",
+    frozenset({"DISKx", "DISKL"}): "DKDKL",
+    frozenset({"JONCx", "CLxxx"}): "CLJCx",
+    frozenset({"JONCx", "ALpxx"}): "CLJCx",
+    frozenset({"JONCx", "PLANx"}): "PLJCx",
+    frozenset({"POLYG", "POLYG"}): "DKKDx",  # fallback; poly/poly often via DKKDx-style
+    frozenset({"PLANx", "PLANx"}): "PLPLx",
+    frozenset({"PLANx", "ALpxx"}): "PLALp",
+    frozenset({"PLANx", "CLxxx"}): "PLALp",
+    frozenset({"CLxxx", "ALpxx"}): "CLALp",
+    frozenset({"ALpxx", "ALpxx"}): "CLALp",
+    frozenset({"CLxxx", "CLxxx"}): "CLALp",
+    frozenset({"PT2Dx", "PT2Dx"}): "PTPT2",
+    frozenset({"PT2DL", "PT2DL"}): "P2P2L",
+}
+
+_PAIR_TO_DETECTOR_3D = {
+    frozenset({"SPHER", "SPHER"}): "SPSPx",
+    frozenset({"SPHER", "CYLND"}): "SPCDx",
+    frozenset({"SPHER", "DNLYC"}): "SPDCx",
+    frozenset({"SPHER", "PLANx"}): "SPPLx",
+    frozenset({"SPHER", "POLYR"}): "SPPRx",
+    frozenset({"SPHER", "ASpxx"}): "CSASp",
+    frozenset({"SPHER", "CSxxx"}): "CSASp",
+    frozenset({"CYLND", "CYLND"}): "CDCDx",
+    frozenset({"CYLND", "PLANx"}): "CDPLx",
+    frozenset({"PLANx", "PLANx"}): "SPPLx",  # rare; often sphere/plan
+    frozenset({"POLYR", "POLYR"}): "PRPRx",
+    frozenset({"POLYR", "PLANx"}): "PRPLx",
+    frozenset({"POLYR", "ASpxx"}): "PRASp",
+    frozenset({"POLYR", "CSxxx"}): "CSPRx",
+    frozenset({"CSxxx", "ASpxx"}): "CSASp",
+    frozenset({"ASpxx", "ASpxx"}): "CSASp",
+    frozenset({"CSxxx", "CSxxx"}): "CSASp",
+    frozenset({"PT3Dx", "PT3Dx"}): "PTPT3",
+}
+
+# AvatarType.value -> default contactor tag(s)
+_AVATAR_CONTACTORS_2D = {
+    "rigidDisk": ("DISKx",),
+    "rigidDiscreteDisk": ("DISKx",),
+    "rigidCluster": ("DISKx",),
+    "rigidJonc": ("JONCx",),
+    "rigidPolygon": ("POLYG",),
+    "rigidOvoidPolygon": ("POLYG",),
+    "roughWall": ("JONCx",),
+    "fineWall": ("JONCx",),
+    "smoothWall": ("JONCx",),
+    "granuloRoughWall": ("JONCx",),
+    "emptyAvatar": (),
+    "mesh": ("ALpxx", "CLxxx"),
+}
+_AVATAR_CONTACTORS_3D = {
+    "rigidSphere": ("SPHER",),
+    "rigidPlan": ("PLANx",),
+    "rigidCylinder": ("CYLND",),
+    "rigidPolyhedron": ("POLYR",),
+    "roughWall3D": ("PLANx",),
+    "granuloRoughWall3D": ("PLANx",),
+    "emptyAvatar": (),
+    "mesh": ("ASpxx", "CSxxx"),
+}
+
+
+def infer_chipy_contact_routines(project) -> Dict[str, bool]:
+    """Infer ``use_<Detector>`` flags from a Project (avatars, see-tables, laws).
+
+    Returns a dict with keys ``use_XXX`` for every official detector plus
+    a few FEM / body flags. Missing keys mean False.
+    """
+    dim = int(getattr(project, "dimension", 2) or 2)
+    flags: Dict[str, bool] = {}
+    for name in _DET2D_OFFICIAL + _DET3D_OFFICIAL:
+        flags[f"use_{name}"] = False
+
+    pair_map = _PAIR_TO_DETECTOR_3D if dim == 3 else _PAIR_TO_DETECTOR_2D
+    av_map = _AVATAR_CONTACTORS_3D if dim == 3 else _AVATAR_CONTACTORS_2D
+
+    # Contactors present in the scene
+    present: set[str] = set()
+
+    for av in getattr(project, "avatars", []) or []:
+        at = getattr(getattr(av, "avatar_type", None), "value", None) or str(
+            getattr(av, "avatar_type", "")
+        )
+        for c in av_map.get(at, ()):
+            present.add(c)
+        # explicit contactors on empty/mesh avatars
+        for cont in getattr(av, "contactors", None) or []:
+            shape = str(cont.get("shape", cont.get("type", ""))).upper()
+            if not shape:
+                continue
+            # normalize common shapes to 5-char tags
+            for tag in (
+                "DISKx", "JONCx", "POLYG", "PT2Dx", "PT2DL", "xKSID", "DISKL",
+                "SPHER", "PLANx", "CYLND", "POLYR", "PT3Dx", "DNLYC",
+                "ALpxx", "CLxxx", "ASpxx", "CSxxx", "CSpxx",
+            ):
+                if shape.startswith(tag[:4]) or shape.startswith(tag.rstrip("x")):
+                    present.add(tag if tag != "CSpxx" else "CSxxx")
+                    break
+
+    for pop in getattr(project, "populations", []) or []:
+        at = getattr(getattr(pop, "avatar_type", None), "value", None) or ""
+        for c in av_map.get(at, ()):
+            present.add(c)
+
+    # See-tables / visibility rules
+    for rule in getattr(project, "visibility", None) or []:
+        a = str(getattr(rule, "candidate_contactor", "") or "").strip()
+        b = str(getattr(rule, "antagonist_contactor", "") or "").strip()
+        if not a or not b:
+            continue
+        present.add(a)
+        present.add(b)
+        key = frozenset({a, b})
+        det = pair_map.get(key)
+        if det:
+            flags[f"use_{det}"] = True
+
+    # Infer pairs from co-present contactors (when no explicit see-table)
+    present_list = sorted(present)
+    for i, a in enumerate(present_list):
+        for b in present_list[i:]:
+            det = pair_map.get(frozenset({a, b}))
+            if det:
+                flags[f"use_{det}"] = True
+
+    # Point-point laws
+    pt_laws = {
+        "ELASTIC_WIRE", "BRITTLE_ELASTIC_WIRE", "ELASTIC_ROD", "VOIGT_ROD",
+    }
+    for law in getattr(project, "laws", None) or getattr(project, "contact_laws", None) or []:
+        lt = getattr(getattr(law, "law_type", None), "value", None) or getattr(law, "law", "")
+        if str(lt) in pt_laws:
+            flags["use_PTPT2" if dim == 2 else "use_PTPT3"] = True
+
+    # Bodies / FEM
+    flags["use_RBDY2"] = dim == 2
+    flags["use_RBDY3"] = dim == 3
+    has_mesh = any(
+        getattr(getattr(av, "avatar_type", None), "value", "") == "mesh"
+        for av in (getattr(project, "avatars", None) or [])
+    )
+    flags["use_mecaMAILx"] = has_mesh
+    flags["use_therMAILx"] = False
+    flags["use_poroMAILx"] = False
+    flags["use_multiMAILx"] = False
+
+    # Sensible defaults if nothing inferred but rigid disks present
+    if dim == 2 and not any(flags.get(f"use_{d}") for d in _DET2D_OFFICIAL):
+        if "DISKx" in present:
+            flags["use_DKDKx"] = True
+        if "JONCx" in present and "DISKx" in present:
+            flags["use_DKJCx"] = True
+    if dim == 3 and not any(flags.get(f"use_{d}") for d in _DET3D_OFFICIAL):
+        if "SPHER" in present:
+            flags["use_SPSPx"] = True
+        if "PLANx" in present and "SPHER" in present:
+            flags["use_SPPLx"] = True
+
+    return flags
 
 def generate_command_script(
     project: Project,
