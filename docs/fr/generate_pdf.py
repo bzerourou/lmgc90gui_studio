@@ -1,5 +1,5 @@
 """
-LMGC90_GUI — la documentation en PDF
+LMGC90_GUI Studio — la documentation en PDF
 ============================================
 Usage:
     python generate_pdf.py
@@ -24,7 +24,7 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
 # ══════════════════════════════════════════════════════════════════════════════
 MD_DIR       = Path("./")                     
 CAPTURES_DIR = Path("../captures")            
-OUT_PDF      = Path("LMGC90_GUI_Documentation.pdf")
+OUT_PDF      = Path("LMGC90_GUI Studio_Documentation.pdf")
 # ══════════════════════════════════════════════════════════════════════════════
 
 MAX_IMG_W = 13.5 * cm
@@ -500,7 +500,7 @@ def on_page(canvas, doc):
     canvas.setFillColor(colors.white)
     canvas.setFont('Helvetica', 7.5)
     canvas.drawString(1.5*cm, 0.33*cm,
-                      "LMGC90_GUI — Documentation officielle v0.6.0")
+                      "LMGC90_GUI Studio — Documentation officielle v0.6.0")
     canvas.drawRightString(w - 1.5*cm, 0.33*cm, f"Page {doc.page}")
     # top rule
     canvas.setStrokeColor(colors.HexColor('#1A3A5C'))
@@ -513,13 +513,13 @@ def on_page(canvas, doc):
 def build_cover():
     s = []
     s.append(SP(5))
-    s.append(P("LMGC90_GUI", ST['cov_t']))
+    s.append(P("LMGC90_GUI Studio", ST['cov_t']))
     s.append(SP(0.5))
     s.append(P("Documentation Officielle", ST['cov_s']))
     s.append(SP(0.3))
     s.append(P("Version 0.6.0", ST['cov_v']))
     s.append(SP(1.0))
-    s.append(P("© 2026 LMGC90_GUI", ST['cov_v']))
+    s.append(P("© 2026 LMGC90_GUI Studio", ST['cov_v']))
     s.append(SP(0.3))
     s.append(HRFlowable(width="65%", thickness=2,
                          color=colors.HexColor('#1A3A5C'),
@@ -575,7 +575,7 @@ def build_toc():
 # ─── Main ──────────────────────────────────────────────────────────────────────
 def main():
     print("=" * 60)
-    print("LMGC90_GUI Book Generator")
+    print("LMGC90_GUI Studio Book Generator")
     print("=" * 60)
     print(f"MD_DIR       : {MD_DIR.resolve()}")
     print(f"CAPTURES_DIR : {CAPTURES_DIR.resolve()}")
@@ -593,8 +593,8 @@ def main():
         str(OUT_PDF), pagesize=A4,
         leftMargin=2*cm, rightMargin=2*cm,
         topMargin=2.4*cm, bottomMargin=1.8*cm,
-        title="LMGC90_GUI — Documentation Officielle v0.6.0",
-        author="LMGC90_GUI",
+        title="LMGC90_GUI Studio — Documentation Officielle v0.6.0",
+        author="LMGC90_GUI Studio",
         subject="Documentation technique complète",
     )
 

@@ -28,7 +28,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  lmgc90_gui   (PyQt6)                                        │
+│  lmgc90_gui studio   (PyQt6)                                 │
 │  vues · onglets · assistants · ProjectController (façade)    │
 └───────────────┬──────────────────────────────────────────────┘
                 │ dépend de

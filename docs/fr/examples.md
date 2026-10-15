@@ -279,13 +279,6 @@ Coupe transversale d'un roulement rainuré à billes type 608.
 | Loi | `IQS_CLB`, friction = 0.05 (roulement lubrifié) |
 | Post-pro | `KINETIC ENERGY`, `COORDINATION NUMBER`, `VIOLATION EVOLUTION` |
 
-**Limitation documentée :** LMGC90_GUI ne supporte les disques creux
-(`is_hollow`) qu'en 2D — le roulement est donc représenté en coupe
-transversale plutôt qu'en 3D torique complet (même contrainte que
-[Tambour rotatif](#51-tambour-rotatif)). Les billes ne reçoivent aucune
-vitesse imposée : leur mouvement résulte uniquement du contact avec les
-deux pistes, cohérent avec le principe physique d'un roulement réel.
-
 ---
 
 ## 6. Avancé — Déformable

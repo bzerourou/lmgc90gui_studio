@@ -112,13 +112,13 @@ def sphere_stack(project: Project) -> None:
         project,
         cand_body="RBDY3", cand="SPHER", cand_color="BLUEx",
         ant_body="RBDY3", ant="SPHER", ant_color="BLUEx",
-        law="iqsc0", alert=0.05,
+        law="iqsc0", alert=0.02,
     )
     see_table(
         project,
         cand_body="RBDY3", cand="SPHER", cand_color="BLUEx",
         ant_body="RBDY3", ant="PLANx", ant_color="GRAYx",
-        law="iqsc0", alert=0.05,
+        law="iqsc0", alert=0.02,
     )
 
 

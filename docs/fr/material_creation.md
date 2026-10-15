@@ -24,7 +24,7 @@ Les valeurs initiales servent de point de départ, pas de caractérisation autom
 
 ## Paramètres proposés par type
 
-LMGC90_GUI propose **10 types** de matériaux, correspondant aux types acceptés par `pre.material(materialType=…)` dans pylmgc90.
+LMGC90_GUI Studio propose **10 types** de matériaux, correspondant aux types acceptés par `pre.material(materialType=…)` dans pylmgc90.
  
 > **Note :** les types marqués _(avancé)_ — `DISCRETE`, `USER_MAT`, `EXTERNAL` — ne disposent pas de suggestion automatique dans l'interface. Leurs paramètres doivent être renseignés manuellement.
 

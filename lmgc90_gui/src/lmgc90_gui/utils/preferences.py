@@ -27,6 +27,7 @@ class Preferences:
     freq_write: int = 50
     freq_display: int = 50
     solver_type: str = "Stored_Delassus_Loops         "
+    chipy_options: dict[str, Any] = field(default_factory=dict)
 
     # --- environment ---
     python_executable: str = "python"
@@ -66,7 +67,7 @@ class Preferences:
     language: str = "fr"  # fr | en
 
     def chipy_params(self) -> dict[str, Any]:
-        return {
+        params = {
             "dt": self.dt,
             "nb_steps": self.nb_steps,
             "theta": self.theta,
@@ -81,6 +82,8 @@ class Preferences:
             "deformable": self.deformable,
             "disable_log": self.disable_log,
         }
+        params.update(self.chipy_options or {})
+        return params
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -92,6 +95,8 @@ class Preferences:
         # ensure list type
         if "recent_projects" in cleaned and not isinstance(cleaned["recent_projects"], list):
             cleaned["recent_projects"] = list(cleaned["recent_projects"] or [])
+        if not isinstance(cleaned.get("chipy_options", {}), dict):
+            cleaned["chipy_options"] = {}
         return cls(**cleaned)
 
     def remember_project(self, path: str | Path) -> None:

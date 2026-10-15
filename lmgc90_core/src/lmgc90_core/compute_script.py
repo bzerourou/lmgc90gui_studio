@@ -49,6 +49,47 @@ class ComputeScriptGenerator:
         'use_restart': False, 'restart_step': 0,
         'use_stop_crit': False, 'stop_crit_type': 'energy',
         'stop_crit_val': 1e-6, 'stop_crit_freq': 10,
+        'advanced_assemble_mechanical': False,
+        'advanced_assemble_thermal': False,
+        'advanced_assemble_poro': False,
+        'advanced_assemble_multi': False,
+        'advanced_fd_select_prox': False,
+        'advanced_compute_rnod': False,
+        'advanced_fatal_damping': False,
+        'advanced_smooth_force': False,
+        'advanced_display_out_dof': False,
+        'advanced_display_out_rnod': False,
+        'advanced_display_out_vloc_rloc': False,
+        'advanced_display_prox_tactors': False,
+        'advanced_hdf5': False,
+        'advanced_write_out_dof': False,
+        'advanced_write_out_gpv': False,
+        'advanced_write_out_mp_values': False,
+        'advanced_write_out_rnod': False,
+        'advanced_write_out_vloc_rloc': False,
+        'advanced_write_last': False,
+        'advanced_write_last_dof': False,
+        'advanced_write_last_gpv': False,
+        'advanced_write_last_mp_values': False,
+        'advanced_write_last_rnod': False,
+        'advanced_write_last_vloc_rloc': False,
+        'advanced_add_dof2': False,
+        'advanced_write_bodies': False,
+        'advanced_write_behaviours': False,
+        'advanced_write_driven_dof': False,
+        'advanced_write_mp_behaviours': False,
+        'advanced_add_registers_to_display': False,
+        'advanced_circular_selection': False,
+        'advanced_set_contact_radius': False,
+        'advanced_set_domain_boundary': False,
+        'advanced_set_number_interaction': False,
+        'advanced_set_periodic_condition': False,
+        'advanced_hdf5_filename': 'command.h5',
+        'advanced_circular_selection_args': '0.0, 0.0, 1.0',
+        'advanced_set_contact_radius_args': '',
+        'advanced_set_domain_boundary_args': '',
+        'advanced_set_number_interaction_args': '',
+        'advanced_set_periodic_condition_args': '',
         'use_multi_step': False, 'multi_step_nb': 3,
         'multi_step_sizes': '1e-3, 1e-4, 1e-5',
         'dt': 1e-3, 'nb_steps': 1000, 'theta': 0.5,
@@ -113,7 +154,9 @@ class ComputeScriptGenerator:
 
         dim        = int(getattr(self.project, "dimension", 2) or 2)
         deformable = p['deformable']
-        mhyp       = p['mhyp']
+        mhyp       = int(p.get('mhyp', 1) or 1)
+        if dim == 3 :
+            mhyp = 0  # 3D only 
 
         use_RBDY2   = p['use_RBDY2']   and dim == 2
         use_RBDY3   = p['use_RBDY3']   and dim == 3
@@ -209,6 +252,31 @@ class ComputeScriptGenerator:
         w(f'chipy.ReadDatbox(deformable={deformable})\n')
         w('\n')
 
+        if p.get('advanced_circular_selection'):
+            w('chipy.CircularSelection({})\n'.format(
+                p['advanced_circular_selection_args']
+            ))
+        for _option, _function, _args in (
+            ('advanced_set_contact_radius', 'SetContactRadius',
+             'advanced_set_contact_radius_args'),
+            ('advanced_set_domain_boundary', 'SetDomainBoundary',
+             'advanced_set_domain_boundary_args'),
+            ('advanced_set_number_interaction', 'SetNumberInteractionByContact',
+             'advanced_set_number_interaction_args'),
+            ('advanced_set_periodic_condition', 'SetPeriodicCondition',
+             'advanced_set_periodic_condition_args'),
+        ):
+            if p.get(_option):
+                w('chipy.{}({})\n'.format(_function, p[_args]))
+        if any(p.get(key) for key in (
+            'advanced_circular_selection',
+            'advanced_set_contact_radius',
+            'advanced_set_domain_boundary',
+            'advanced_set_number_interaction',
+            'advanced_set_periodic_condition',
+        )):
+            w('\n')
+
         if p.get('disable_log'):
             w('chipy.utilities_DisableLogMes()\n')
             w('\n')
@@ -224,11 +292,15 @@ class ComputeScriptGenerator:
 
         # ── 6. Ouverture fichiers sortie ──────────────────────────────────────
         w("chipy.utilities_logMes('DISPLAY & WRITE')\n")
+        if p.get('advanced_add_registers_to_display'):
+            w('chipy.addRegistersToDisplay()\n')
         if use_restart and _rs:
             w(f'chipy.OpenDisplayFiles(restart={_rs + 1})\n')
         else:
             w('chipy.OpenDisplayFiles()\n')
         w('chipy.OpenPostproFiles()\n')
+        if p.get('advanced_hdf5'):
+            w('chipy.InitHDF5({!r})\n'.format(p['advanced_hdf5_filename']))
         w('\n')
 
         # ── 6. Masse ──────────────────────────────────────────────────────────
@@ -593,6 +665,11 @@ class ComputeScriptGenerator:
 
         L("chipy.utilities_logMes('INCREMENT STEP')")
         L('chipy.IncrementStep()')
+        if p.get('advanced_fatal_damping'):
+            if use_RBDY2:
+                L('chipy.RBDY2_FatalDamping()')
+            if use_RBDY3:
+                L('chipy.RBDY3_FatalDamping()')
         w('\n')
 
         # ── 8a. Activation des vagues de factory dans la boucle ───────────────
@@ -610,7 +687,8 @@ class ComputeScriptGenerator:
             L('chipy.ComputeBulk()')
             L("chipy.utilities_logMes('COMPUTE Free Velocity - RBDY2')")
             L('chipy.ComputeFreeVelocity()')
-            L('chipy.SelectProxTactors()')
+            if not p.get('advanced_fd_select_prox'):
+                L('chipy.SelectProxTactors()')
         if use_RBDY3:
             # Macros route to RBDY3_* when SetDimension(3); same path as official one_step
             L("chipy.utilities_logMes('COMPUTE Fext/Fint - RBDY3')")
@@ -618,7 +696,8 @@ class ComputeScriptGenerator:
             L('chipy.ComputeBulk()')
             L("chipy.utilities_logMes('COMPUTE Free Velocity - RBDY3')")
             L('chipy.ComputeFreeVelocity()')
-            L('chipy.SelectProxTactors()')
+            if not p.get('advanced_fd_select_prox'):
+                L('chipy.SelectProxTactors()')
         w('\n')
 
         # b. FreeVelocity deformables
@@ -626,23 +705,41 @@ class ComputeScriptGenerator:
             L("chipy.utilities_logMes('mecaMAILx - assembly + FreeVelocity')")
             L('chipy.mecaMAILx_ComputeFext()')
             L('chipy.mecaMAILx_ComputeBulk()')
+            if p.get('advanced_assemble_mechanical'):
+                L('chipy.AssembleMechanicalLHS()')
+                L('chipy.AssembleMechanicalRHS()')
             L('chipy.mecaMAILx_ComputeFreeVelocity()')
         if use_therMAILx:
             L("chipy.utilities_logMes('therMAILx - flux + FreeVelocity')")
             L('chipy.therMAILx_ComputeFext()')
             L('chipy.therMAILx_ComputeBulk()')
+            if p.get('advanced_assemble_thermal'):
+                L('chipy.AssembleThermalLHS()')
+                L('chipy.AssembleThermalRHS()')
             L('chipy.therMAILx_ComputeFreeVelocity()')
         if use_poroMAILx:
             L("chipy.utilities_logMes('poroMAILx - pression + FreeVelocity')")
             L('chipy.poroMAILx_ComputeFext()')
             L('chipy.poroMAILx_ComputeBulk()')
+            if p.get('advanced_assemble_poro'):
+                L('chipy.AssemblePoroLHS()')
+                L('chipy.AssemblePoroRHS()')
             L('chipy.poroMAILx_ComputeFreeVelocity()')
+        if (
+            p.get('advanced_assemble_multi')
+            and deformable
+            and p.get('physics') == 'THMx'
+        ):
+            L('chipy.AssembleMultiLHS()')
+            L('chipy.AssembleMultiRHS()')
         if any_FEM:
             w('\n')
 
         # c. Detection de contact
         L("chipy.utilities_logMes('SELECT PROX TACTORS')")
-        if all_tacts:
+        if p.get('advanced_fd_select_prox'):
+            L('chipy.FdSelectProxTactors()')
+        elif all_tacts:
             for t in tacts_2d:
                 L(f'chipy.{t}_SelectProxTactors()')
             for t in tacts_3d:
@@ -660,6 +757,8 @@ class ComputeScriptGenerator:
         L('chipy.RecupRloc(Rloc_tol)')
         L('chipy.ExSolver(solver_type, norm, tol, relax, gs_it1, gs_it2)')
         L('chipy.UpdateTactBehav()')
+        if p.get('advanced_smooth_force'):
+            L('chipy.SmoothForceComputation()')
         L('chipy.StockRloc()')
         w('\n')
 
@@ -687,6 +786,8 @@ class ComputeScriptGenerator:
             L('chipy.therMAILx_UpdateStep()')
         if use_poroMAILx:
             L('chipy.poroMAILx_UpdateStep()')
+        if p.get('advanced_compute_rnod'):
+            L('chipy.ComputeRnod()')
         w('\n')
 
         # g. Extraction
@@ -761,8 +862,28 @@ class ComputeScriptGenerator:
         # i. Ecriture resultats
         L("chipy.utilities_logMes('WRITE OUT')")
         L('chipy.WriteOut(freq_write)')
-        if use_RBDY3:
+        if p.get('advanced_hdf5'):
+            L('chipy.WriteHDF5()')
+        if p.get('advanced_write_out_dof') and use_RBDY2:
+            L('chipy.RBDY2_WriteOutDof(freq_write)')
+        if p.get('advanced_write_out_dof') and use_RBDY3:
             L('chipy.RBDY3_WriteOutDof(freq_write)')
+        for _key, _function in (
+            ('advanced_write_out_gpv', 'WriteOutGPV'),
+            ('advanced_write_out_mp_values', 'WriteOutMpValues'),
+            ('advanced_write_out_rnod', 'WriteOutRnod'),
+            ('advanced_write_out_vloc_rloc', 'WriteOutVlocRloc'),
+        ):
+            if p.get(_key):
+                L('chipy.{}(freq_write)'.format(_function))
+        for _key, _function in (
+            ('advanced_display_prox_tactors', 'DisplayProxTactors'),
+            ('advanced_display_out_dof', 'DisplayOutDof'),
+            ('advanced_display_out_rnod', 'DisplayOutRnod'),
+            ('advanced_display_out_vloc_rloc', 'DisplayOutVlocRloc'),
+        ):
+            if p.get(_key):
+                L('chipy.{}()'.format(_function))
         w('\n')
 
         # Visualisation dans la boucle
@@ -822,6 +943,36 @@ class ComputeScriptGenerator:
             w('# ── Inspection apres boucle ──────\n')
             for _eo in _all_insp_out:
                 _emit_insp_outside(_eo)
+
+        for _key, _function in (
+            ('advanced_write_last', 'WriteLast'),
+            ('advanced_write_last_dof', 'WriteLastDof'),
+            ('advanced_write_last_gpv', 'WriteLastGPV'),
+            ('advanced_write_last_mp_values', 'WriteLastMpValues'),
+            ('advanced_write_last_rnod', 'WriteLastRnod'),
+            ('advanced_write_last_vloc_rloc', 'WriteLastVlocRloc'),
+        ):
+            if p.get(_key):
+                w('chipy.{}()\n'.format(_function))
+        if p.get('advanced_write_bodies'):
+            if p.get('advanced_add_dof2'):
+                w('chipy.AddDof2InBodies()\n')
+            w('chipy.WriteBodies()\n')
+        for _key, _function in (
+            ('advanced_write_behaviours', 'WriteBehaviours'),
+            ('advanced_write_driven_dof', 'WriteDrivenDof'),
+            ('advanced_write_mp_behaviours', 'WriteMpBehaviours'),
+        ):
+            if p.get(_key):
+                w('chipy.{}()\n'.format(_function))
+        if any(p.get(key) for key in (
+            'advanced_write_last', 'advanced_write_last_dof',
+            'advanced_write_last_gpv', 'advanced_write_last_mp_values',
+            'advanced_write_last_rnod', 'advanced_write_last_vloc_rloc',
+            'advanced_write_bodies', 'advanced_write_behaviours',
+            'advanced_write_driven_dof', 'advanced_write_mp_behaviours',
+        )):
+            w('\n')
 
         # ── Visibilite apres boucle (step_mode="after") ───────────────────────
         if _vis_after:

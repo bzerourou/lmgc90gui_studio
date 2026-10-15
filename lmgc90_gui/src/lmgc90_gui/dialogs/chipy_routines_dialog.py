@@ -154,7 +154,7 @@ class ChipyRoutinesDialog(QDialog):
         "use_ALpMECAx":       False,  # alias → use_CLALp
         "use_SPMECAx":        False,  # alias → use_CSASp
         "use_CLALp":         False,  # IGNORE (n existe pas)
-        "use_NODES":          False,  # IGNORE (n existe pas)
+
         "use_bulk_behav":     False,
         # Routines avancees optionnelles (les etapes du cycle restent automatiques)
         "advanced_assemble_mechanical": False,
@@ -339,7 +339,7 @@ class ChipyRoutinesDialog(QDialog):
         vb_h = QVBoxLayout()
         self._rb_cp = QRadioButton("Contraintes planes       (mhyp = 1)  -- 2D")
         self._rb_dp = QRadioButton("Deformations planes      (mhyp = 2)  -- 2D")
-        self._rb_3d = QRadioButton("Tridimensionnel          (mhyp = 3)  -- 3D")
+        self._rb_3d = QRadioButton("Tridimensionnel          (mhyp = 0)  -- 3D")
         self._mhyp_grp = QButtonGroup(self)
         for rb in (self._rb_cp, self._rb_dp, self._rb_3d):
             self._mhyp_grp.addButton(rb)
@@ -1970,7 +1970,7 @@ class ChipyRoutinesDialog(QDialog):
         p = self._params
 
         # Modele
-        {1: self._rb_cp, 2: self._rb_dp}.get(p["mhyp"], self._rb_3d).setChecked(True)
+        {0: self._rb_3d, 1: self._rb_cp, 2: self._rb_dp}.get(p.get("mhyp", 1), self._rb_cp).setChecked(True)
         self._cb_deformable.setChecked(p["deformable"])
         self._combo_phys.setCurrentIndex(
             {"MECAx": 0, "THERx": 1, "POROx": 2, "THMx": 3}.get(p["physics"], 0)
@@ -1979,7 +1979,8 @@ class ChipyRoutinesDialog(QDialog):
 
         # Routines (mapping attr -> cle)
         _routine_map = {
-            "_cb_RBDY2": "use_RBDY2", "_cb_RBDY3": "use_RBDY3",
+            "_cb_RBDY2": "use_RBDY2", 
+            "_cb_RBDY3": "use_RBDY3",
             "_cb_CLALp": "use_CLALp",
             "_cb_CLJCx": "use_CLJCx",
             "_cb_DKALp": "use_DKALp",
@@ -2731,10 +2732,13 @@ class ChipyRoutinesDialog(QDialog):
         p: Dict[str, Any] = {}
 
         # Modele
-        p["mhyp"] = (
-            3 if self._rb_3d.isChecked()
-            else (2 if self._rb_dp.isChecked() else 1)
-        )
+        if self._rb_3d.isChecked():
+            p["mhyp"] = 0
+        elif self._rb_dp.isChecked():
+            p["mhyp"] = 2
+        else:
+            p["mhyp"] = 1
+        
         p["deformable"] = self._cb_deformable.isChecked()
         p["physics"] = ["MECAx", "THERx", "POROx", "THMx"][
             self._combo_phys.currentIndex()
@@ -2743,7 +2747,8 @@ class ChipyRoutinesDialog(QDialog):
 
         # Routines — detecteurs officiels + FEM
         _routine_map = {
-            "_cb_RBDY2": "use_RBDY2", "_cb_RBDY3": "use_RBDY3",
+            "_cb_RBDY2": "use_RBDY2", 
+            "_cb_RBDY3": "use_RBDY3",
             "_cb_CLALp": "use_CLALp",
             "_cb_CLJCx": "use_CLJCx",
             "_cb_DKALp": "use_DKALp",
@@ -2796,7 +2801,7 @@ class ChipyRoutinesDialog(QDialog):
         p["use_PT2Dx"] = bool(p.get("use_PTPT2"))
         p["use_PT3Dx"] = bool(p.get("use_PTPT3"))
         p["use_ALpALp"] = False  # n existe pas
-        p["use_NODES"] = False
+
 
         # Extraction — cases simples
         for attr, key in {

@@ -20,7 +20,12 @@ def test_journal_ring():
 
 
 def test_preferences_roundtrip(tmp_path: Path):
-    prefs = Preferences(dt=2e-3, nb_steps=50, python_executable="python3")
+    prefs = Preferences(
+        dt=2e-3,
+        nb_steps=50,
+        python_executable="python3",
+        chipy_options={"advanced_write_out_dof": False, "use_RBDY3": True},
+    )
     path = tmp_path / "prefs.json"
     save_preferences(prefs, path)
     loaded = load_preferences(path)
@@ -28,6 +33,8 @@ def test_preferences_roundtrip(tmp_path: Path):
     assert loaded.nb_steps == 50
     assert loaded.python_executable == "python3"
     assert "dt" in loaded.chipy_params()
+    assert loaded.chipy_params()["advanced_write_out_dof"] is False
+    assert loaded.chipy_params()["use_RBDY3"] is True
 
 
 def test_prepare_run_directory(tmp_path: Path):

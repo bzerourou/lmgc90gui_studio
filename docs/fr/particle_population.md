@@ -1,6 +1,6 @@
 # Populations de particules (SoA) et granulométrie
 
-Une **population de particules** (`ParticlePopulation`) est la façon dont LMGC90_GUI stocke **un grand nombre de grains identiques** (même type, même matériau, même modèle, même couleur) : au lieu de créer un avatar par grain, le projet garde deux tableaux (positions, rayons). C'est ce qui permet de manipuler des dizaines de milliers de grains sans ralentir l'interface.
+Une **population de particules** (`ParticlePopulation`) est la façon dont LMGC90_GUI Studio stocke **un grand nombre de grains identiques** (même type, même matériau, même modèle, même couleur) : au lieu de créer un avatar par grain, le projet garde deux tableaux (positions, rayons). C'est ce qui permet de manipuler des dizaines de milliers de grains sans ralentir l'interface.
 
 - **Partie A — Utilisateur** : créer, contrôler, visualiser, sauvegarder et supprimer une population ; relier les grains au contact ; dépannage.
 - **Partie B — Développeur** : modèle de données, génération, persistance, consommateurs, extension.

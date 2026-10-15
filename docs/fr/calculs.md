@@ -1,6 +1,6 @@
 # Préparer et lancer un calcul
 
-L’onglet **Compute** configure le script de calcul `command.py`, prépare le répertoire de travail et peut lancer le processus chipy. La disponibilité de pylmgc90 dans l’environnement qui exécute LMGC90_GUI détermine les fonctions natives accessibles.
+L’onglet **Compute** configure le script de calcul `command.py`, prépare le répertoire de travail et peut lancer le processus chipy. La disponibilité de pylmgc90 dans l’environnement qui exécute LMGC90_GUI Studio détermine les fonctions natives accessibles.
 
 ![](../captures/calcul_tab.png)
 
@@ -56,7 +56,7 @@ Dossiers produits par un calcul (créés par `chipy.checkDirectories()`) : `OUTB
 | Bouton | Action |
 |---|---|
 | **📥 Charger préférences** | recharge dans le formulaire les valeurs enregistrées (dt, nb_steps, theta, tol, relax, gs_it1/2, norme, solveur, fréquences, déformable, log) et le répertoire de travail |
-| **💾 Sauver → préférences** | enregistre ces valeurs et le répertoire dans `~/.lmgc90_gui/preferences.json` |
+| **💾 Sauver → préférences** | enregistre ces valeurs et le répertoire dans `~/.LMGC90_GUI Studio/preferences.json` |
 | **📦 Préparer DATBOX / scripts** | écrit `pre.py`, `command.py` et (si possible) `DATBOX/` |
 | **▶ Lancer le calcul (F5)** | exécute `command.py` |
 | **⏹ Stop** | demande l'arrêt du processus |

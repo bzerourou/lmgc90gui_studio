@@ -25,7 +25,7 @@ L’onglet **Models** associe une famille physique et un élément fini à une d
 
 ## Choisir la physique et l’élément
 
-Les quatre physiques sont toutes implémentées dans LMGC90_GUI.
+Les quatre physiques sont toutes implémentées dans LMGC90_GUI Studio.
 
 | Code | Nom complet | Description | Matériaux compatibles |
 |------|-------------|-------------|----------------------|

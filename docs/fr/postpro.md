@@ -30,6 +30,6 @@ Pour régler les sorties avancées, ouvrez **Compute**, puis **Configurer les ro
 ## Consulter les journaux
 
 - Le journal de l’onglet **Compute** affiche la sortie du processus de calcul.
-- **Computation → Application journal** (`F7`) affiche les erreurs et événements internes de LMGC90_GUI.
+- **Computation → Application journal** (`F7`) affiche les erreurs et événements internes de LMGC90_GUI Studio.
 
 Ces journaux ne sont pas un visualiseur des résultats calculés. Pour inspecter la scène de prétraitement, utilisez [Visualisation](visualisation.md).

@@ -60,7 +60,7 @@ def create_compute_tab(parent=None):
             self.tol_input = QLineEdit("1.666e-4")
             self.relax_input = QLineEdit("1.0")
             self.norm_combo = QComboBox()
-            self.norm_combo.addItems(["Quad ", "QM   ", "Maxim"])
+            self.norm_combo.addItems(["Quad ", "QM   ", "Maxm "])
             self.gs_it1_input = QLineEdit("50")
             self.gs_it2_input = QLineEdit("1000")
             self.solver_combo = QComboBox()
@@ -271,7 +271,9 @@ def create_compute_tab(parent=None):
             if self.controller is None:
                 return
             pr = self.controller.prefs
+            self._chipy_params = dict(pr.chipy_options or {})
             self._apply_params_to_form(pr.chipy_params())
+            self._update_chipy_summary()
             if pr.work_directory:
                 self.work_edit.setText(pr.work_directory)
             self.status_lbl.setText("Paramètres chargés depuis les préférences.")
@@ -301,6 +303,15 @@ def create_compute_tab(parent=None):
                 pr.deformable = p["deformable"]
             if hasattr(pr, "disable_log"):
                 pr.disable_log = p["disable_log"]
+            _compute_keys = {
+                "dt", "nb_steps", "theta", "tol", "relax", "norm",
+                "gs_it1", "gs_it2", "solver_type", "freq_write",
+                "freq_display", "disable_log", "deformable", "dimension",
+            }
+            pr.chipy_options = {
+                key: value for key, value in p.items()
+                if key not in _compute_keys
+            }
             pr.work_directory = self.work_edit.text().strip()
             try:
                 self.controller.save_preferences()
@@ -449,6 +460,8 @@ def create_compute_tab(parent=None):
             )
             if dlg.exec():
                 self._chipy_params = dlg.get_params()
+                if self.controller is not None:
+                    self.controller.prefs.chipy_options = dict(self._chipy_params)
                 self._update_chipy_summary()
                 # sync deformable checkbox
                 if self._chipy_params.get("deformable"):

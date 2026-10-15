@@ -1,6 +1,6 @@
 # Créer, ouvrir et organiser un projet
 
-Cette section parlera de tout ce qui est création/ouverture et sauvegarde d’un projet.
+Cette section parlera de tout ce qui est création/ouverture et sauvegarde d’un projet dans LMGC90_GUI Studio.
 
 ## Créer un projet
 

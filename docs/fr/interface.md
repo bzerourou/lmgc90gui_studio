@@ -1,13 +1,13 @@
 # Découverte de l'interface graphique
-LMGC90_GUI est une interface graphique moderne conçue pour faciliter la création de modèles numériques avec le module **pre** (pré-processeur) de **LMGC90**.
+LMGC90_GUI Studio Studio est une interface graphique moderne conçue pour faciliter la création de modèles numériques avec le module **pre** (pré-processeur) de **LMGC90**.
 
-Il est également possible de configurer et lancer vos calculs directement depuis LMGC90_GUI via le module **chipy**.
+Il est également possible de configurer et lancer vos calculs directement depuis LMGC90_GUI Studio Studio via le module **chipy**.
 
 L'interface est organisée de manière claire et ergonomique pour accompagner l'utilisateur du début à la fin du processus de modélisation : création des éléments, conditions aux limites, post-traitement, génération des fichiers et enfin lancement des calculs.
 
 La vidéo suivante présente une vue d'ensemble des différentes parties de l'interface.
 
-[![Introduction LMGC90_GUI](https://img.youtube.com/vi/2lVIGg3VboA/0.jpg)](https://www.youtube.com/watch?v=WSS62MTns1w)
+[![Introduction LMGC90_GUI Studio](https://img.youtube.com/vi/2lVIGg3VboA/0.jpg)](https://www.youtube.com/watch?v=WSS62MTns1w)
 
 
 ## Fenêtre principale
@@ -101,7 +101,7 @@ La duplication des éléments qui portent le même nom entraîne des erreurs, pe
 |--------|-----------|-------------|
 | **Générer DATBOX et scripts** | `Ctrl+F5` | Génère le DATBOX et les scripts modèle/calcul  |
 | **Lancer calcul** | `F5` | Ouvrel'onglet calcul et lance le calcul chipy directement depuis l'interface, dans un processus séparé pour ne pas bloquer l'interface. |
-| **Journal de l'application** | `F7` | Affiche le journal interne de LMGC90_GUI : erreurs non gérées, avertissements Python, appels pylmgc90 échoués. Utile pour diagnostiquer les problèmes qui ne génèrent pas de message visible dans l'interface. |
+| **Journal de l'application** | `F7` | Affiche le journal interne de LMGC90_GUI Studio : erreurs non gérées, avertissements Python, appels pylmgc90 échoués. Utile pour diagnostiquer les problèmes qui ne génèrent pas de message visible dans l'interface. |
   
 ![](../captures/journal.png)
 
@@ -135,7 +135,7 @@ Afin de charger un exemple, il vous suffit simplement donc de le sélectionner e
 | Action | Description |
 |--------|-------------|
 | **Palette des commandes** | Ouvre la palette des commandes. |
-| **À propos** | Affiche les informations sur la version de LMGC90_GUI et les dépendances. |
+| **À propos** | Affiche les informations sur la version de LMGC90_GUI Studio et les dépendances. |
 | **Aide en ligne** | Ouvre la documentation en ligne dans le navigateur par défaut. |
  
 ---
@@ -279,7 +279,7 @@ Accessible via **Outils → Préférences** ou le raccourci `Ctrl+,`. La boîte 
 ---
 
  
-LMGC90_GUI est conçue pour être **intuitive** et **entièrement visuelle**, tout en conservant une compatibilité totale avec les scripts Python traditionnels de LMGC90.
+LMGC90_GUI Studio est conçue pour être **intuitive** et **entièrement visuelle**, tout en conservant une compatibilité totale avec les scripts Python traditionnels de LMGC90.
 
 
 Pour apprendre les opérations spécifiques, consultez les chapitres de [l’index français](overview.md).

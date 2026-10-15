@@ -1,8 +1,8 @@
 # Visualisation de la scène
 
-LMGC90_GUI propose deux voies pour inspecter le modèle : le **visualiseur 3D intégré** (PyVista) et le visualiseur natif de pylmgc90 lancé avec **pre.visuAvatars**. Ces outils montrent la scène préparée ; ils ne remplacent pas un outil d’analyse des résultats de calcul.
+LMGC90_GUI Studio propose deux voies pour inspecter le modèle : le **visualiseur 3D intégré** (PyVista) et le visualiseur natif de pylmgc90 lancé avec **pre.visuAvatars**. Ces outils montrent la scène préparée ; ils ne remplacent pas un outil d’analyse des résultats de calcul.
 
-![](../captures/viewer_3d.png)
+![](../captures/interface.png)
 
 ## Ouvrir et actualiser le visualiseur intégré
 
@@ -51,7 +51,7 @@ Les couleurs par matériau et par origine servent à l’inspection visuelle ; e
 
 1. Dans l’onglet **Visualisation 3D**, cliquez sur **pre.visuAvatars**.
 2. Si pylmgc90 est disponible, l’application matérialise la scène puis ouvre le visualiseur natif.
-3. Si le bouton indique que `pylmgc90` est indisponible, vérifiez que l’environnement Python utilisé pour lancer LMGC90_GUI contient bien cette bibliothèque.
+3. Si le bouton indique que `pylmgc90` est indisponible, vérifiez que l’environnement Python utilisé pour lancer LMGC90_GUI Studio contient bien cette bibliothèque.
 
 Ce mode utilise les objets pylmgc90 réels et est distinct du rendu paramétrique PyVista. Il est indisponible sans pylmgc90 et peut désactiver la sélection individuelle du viewer intégré pendant son utilisation.
 
