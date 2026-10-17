@@ -1,11 +1,70 @@
-# Parametric ForLoop
+# Parametric generation with ForLoop
 
-The **ForLoop** tab builds parametric repetition of operations (copy along a path, repeated transforms).
+The **ForLoop** tab repeats an operation from a value range and expressions. Unlike **Loops**, which places avatar clones along a geometric pattern, ForLoop accepts different targets: avatars, materials, models, DOF operations, visibility tables, granulometric deposits or radius distributions.
 
 ![](../captures/for_loops.png)
 
-1. Open **Tabs → Open → ForLoop** (`Ctrl+5`).
-2. Set iteration range and source avatar(s) or group.
-3. Set parametric law and **Add**.
+## Prepare the loop
 
-Prefer groups for large patterns. Check the viewer after generation.
+1. Create the base objects the target depends on. For example, an avatar loop needs a model avatar; a material loop needs an existing material.
+2. Open **Tabs → Open → ForLoop**.
+3. Choose **Loop target**.
+4. Fill in **Variable**. The name `i` is suggested by default; form expressions can use this variable.
+5. Enter **start**, **stop (exclusive)** and **step**.
+6. Select **Template** when the target type requires it.
+7. Fill only the expressions that match the target. Irrelevant fields are disabled.
+8. Click **Apply loop**. The application shows the number of elements produced or a message indicating the invalid value.
+
+`stop` is exclusive. With `start=0`, `stop=5` and `step=1`, the variable runs through `0, 1, 2, 3, 4`: five repetitions.
+
+## Delete a loop
+
+Select the loop in the list, then click **Delete selected loop** and confirm. The loop and the elements it generated are removed, without touching other project objects. Deletion can be undone or redone with **Undo** and **Redo**.
+
+## Targets and expressions
+
+| Target | Required template | Variable fields offered |
+|---|---|---|
+| `avatar` | Model avatar | `expr X`, `expr Y`, `expr Z`, `expr radius` |
+| `material` | Model material | `expr density (material)` |
+| `model` | Model template | Copy of the selected model over the range |
+| `dof` | Existing DOF operation | Parameters of the selected operation |
+| `visibility` | Existing see-table | `expr alert (see)` |
+| `granulo` | Granulometric configuration, or Granulo tab parameters | `expr N`, `expr rmin`, `expr rmax` |
+| `granulo_dist` | Granulometric configuration, or default values | `expr N`, `expr rmin`, `expr rmax` |
+
+Fields use safe numeric expressions. A series can for example place avatars with `expr X = i * 0.1` and `expr Y = 0.0`. For an avatar target, also choose a **Group** to gather the creations if needed.
+
+## Setup examples
+
+### Row of avatars
+
+1. Choose the `avatar` target.
+2. Select the avatar to clone in **Template**.
+3. Set `start=0`, `stop=10`, `step=1`.
+4. Enter `i * 0.2` for `expr X`, `0.0` for `expr Y`, and `0.0` for `expr Z` in 3D.
+5. Give a group name, for example `ligne1`.
+6. Click **Apply loop** and check that 10 avatars were created.
+
+### Series of materials with variable density
+
+1. Choose the `material` target and a model material.
+2. Define the iteration range.
+3. Enter a density expression such as `2500 + 100*i`.
+4. Apply the loop and check names and densities in **Materials**.
+
+### Radius distribution
+
+1. Choose `granulo_dist` to produce a distribution only, or `granulo` to create a population.
+2. Set the range and the expressions for particle count and radii.
+3. Apply the loop; check the result in **Granulo** and in the viewer after refresh.
+
+## Checks and precautions
+
+- Check that `step` is not zero and that the range direction is consistent.
+- Because `stop` is exclusive, check the number of iterations before a large generation.
+- Expressions depending on `i` must produce valid values for each iteration.
+- The application adds results to the project; a new run does not replace previous creations.
+- A target that depends on a template cannot be applied if no suitable item is selected.
+
+For strictly geometric arrangements (circle, grid, line, spiral), see [Geometric loops](loops.md).
