@@ -8,6 +8,8 @@ GUI and engine call this via ``emit_chipy`` / ``generate_command_script``.
 """
 from __future__ import annotations
 
+import ast
+import keyword
 from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
@@ -46,6 +48,7 @@ class ComputeScriptGenerator:
         'insp2d_entries': [],
         'insp3d_entries': [],
         'inspi_entries':  [],
+        'set_entries': [],
         'use_restart': False, 'restart_step': 0,
         'use_stop_crit': False, 'stop_crit_type': 'energy',
         'stop_crit_val': 1e-6, 'stop_crit_freq': 10,
@@ -523,6 +526,55 @@ class ComputeScriptGenerator:
             """True si l'entrée doit être émise une seule fois après la boucle."""
             return _normalize_mode(e) == 'after'
 
+        def _emit_set_entry(entry: dict, in_loop_context: bool = False) -> None:
+            func = entry.get('func', '')
+            args = entry.get('args', '').strip()
+            if (
+                not func
+                or not func.isidentifier()
+                or keyword.iskeyword(func)
+                or 'Set' not in func
+            ):
+                raise ValueError('invalid chipy function name')
+            try:
+                ast.parse('chipy.{}({})'.format(func, args), mode='eval')
+            except SyntaxError as exc:
+                raise ValueError('invalid Python arguments') from exc
+
+            mode = entry.get('step_mode') or 'all'
+            if mode not in ('before', 'all', 'every_n', 'at_k', 'after'):
+                raise ValueError('invalid step mode')
+            try:
+                step_val = int(entry.get('step_val', entry.get('freq', 1)))
+            except (TypeError, ValueError) as exc:
+                raise ValueError('invalid step value') from exc
+            if (mode == 'every_n' and step_val < 1) or (
+                mode == 'at_k' and step_val < 0
+            ):
+                raise ValueError('invalid step value')
+
+            group = entry.get('group', '').strip()
+            id_list = _resolve_group_ids(group) if group else []
+            if group and not id_list:
+                return
+
+            if in_loop_context:
+                guard, call_ind = _timing_guard({
+                    'step_mode': mode,
+                    'step_val': step_val,
+                })
+                if guard:
+                    w(guard)
+            else:
+                call_ind = ''
+
+            if id_list:
+                w(call_ind + 'for _id in [{}]:\n'.format(', '.join(id_list)))
+                w(call_ind + '    chipy.{}({})\n'.format(func, args))
+            else:
+                w(call_ind + 'chipy.{}({})\n'.format(func, args))
+            w('\n')
+
         # ── 6b. Visibilite des avatars avant la boucle ────────────────────────
         # "before" (ou ancien step_mode vide) → une seule fois avant for k
         # "all" / "every_n" / "at_k"          → dans la boucle
@@ -647,6 +699,15 @@ class ComputeScriptGenerator:
             for _ebi in _all_insp_before:
                 _emit_insp_outside(_ebi)
 
+        _set_before = [
+            entry for entry in p.get('set_entries', [])
+            if (entry.get('step_mode') or 'all') == 'before'
+        ]
+        if _set_before:
+            w('# ── Actions SET avant boucle ──────\n')
+            for entry in _set_before:
+                _emit_set_entry(entry)
+
         # ── 8. Boucle(s) de calcul ────────────────────────────────────────────
         if use_multi:
             w('# ── Boucle multi-pas ────────────────────────────────────\n')
@@ -662,6 +723,13 @@ class ComputeScriptGenerator:
 
         def L(line: str) -> None:
             w(ind + line + '\n')
+
+        _set_in_loop = [
+            entry for entry in p.get('set_entries', [])
+            if (entry.get('step_mode') or 'all') not in ('before', 'after')
+        ]
+        for entry in _set_in_loop:
+            _emit_set_entry(entry, in_loop_context=True)
 
         L("chipy.utilities_logMes('INCREMENT STEP')")
         L('chipy.IncrementStep()')
@@ -909,6 +977,15 @@ class ComputeScriptGenerator:
                 L('chipy.WriteDisplayFiles(freq_display)')
             L('chipy.WritePostproFiles()')
             w('\n')
+
+        _set_after = [
+            entry for entry in p.get('set_entries', [])
+            if (entry.get('step_mode') or 'all') == 'after'
+        ]
+        if _set_after:
+            w('# ── Actions SET après boucle ──────\n')
+            for entry in _set_after:
+                _emit_set_entry(entry)
 
         # ── GetBodyVector après boucle (step_mode="after") ───────────────────
         for _gbv_key2, _gbv_func2, _gbv_flag2 in [
