@@ -1,22 +1,36 @@
-# Geometric loops
+# Geometric avatar loops
 
-The **Loops** tab applies geometric transformations (translation, rotation, scaling) to one or more avatars, either once or repeatedly.
+The **Loops** tab clones a model avatar and distributes its copies along a regular geometry. These loops are distinct from the multi-target parametric loops of the [ForLoop](for_loop.md) tab.
 
 ![](../captures/loops.png)
 
-## Create a geometric loop
+## Prepare the model
 
-1. Open **Tabs → Open → Loops** (`Ctrl+4`).
-2. Choose the transformation type.
-3. Select the target avatars or a group.
-4. Fill in the geometric parameters (vector, angle, centre, scale factors).
-5. Set the number of repetitions if needed.
-6. Click **Add**.
+1. Create an avatar in **Avatars** with its material, model, colour and geometric parameters.
+2. Check its initial position: it is the base for cloning.
+3. Open **Tabs → Open → Loops** (`Ctrl+4`).
 
-## Common uses
+## Define the generation
 
-- Regular spacing of identical bodies
-- Rotation of a set of contactors around a centre
-- Scaling of a sub-assembly before contact definition
+1. Choose **Type**: `circle`, `grid`, `line` or `spiral`.
+2. Choose **Template avatar**.
+3. Set **Count**, the number of copies to create.
+4. Fill in the fields suited to the pattern:
+   - `circle`: **Radius** sets the placement radius; also use the offsets to move the layout centre;
+   - `grid`: **Step** sets the spacing; offsets move the grid;
+   - `line`: **Step** sets the spacing; **Invert axis (line)** reverses the line orientation;
+   - `spiral`: **Radius** and **Spiral factor** set the opening and progression, with position offsets.
+5. In 3D, fill in the required X, Y and Z offsets; in 2D, the Z offset has no geometric effect.
+6. Fill in **Group** to register generated avatars in a group.
+7. Click **Apply loop**.
+8. Read the confirmation of the number of bodies created and check the result in **Avatars** or the 3D viewer after **Refresh scene**.
 
-Loops modify the geometry already present in the scene. Save the project before applying a large number of transformations.
+## Delete a loop
+
+Select the loop in the list, then click **Delete selected loop** and confirm. The loop and the avatars it generated are removed; other project avatars stay in place. This action can be undone or redone with **Undo** and **Redo**.
+
+## Result and repetition
+
+Each copy is added to the project as an independent avatar. Applying a loop again adds a new series; it does not replace the previous generation. Give a distinct group name if you need to distinguish several series.
+
+Geometric loops do not directly change the physical properties of the model. To vary materials, models, DOF, visibility or granulometric parameters with an iteration expression, use **ForLoop**.
