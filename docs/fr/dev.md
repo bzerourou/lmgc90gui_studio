@@ -435,6 +435,33 @@ GranuloTab._on_deposit()
                                    └─ sinon        → Project.deposit → NumpyGranulo
 ```
 
+## 9. Checklist contributeur
+
+- [ ] Création uniquement via `ParticlePopulation.create`
+- [ ] Insertion via `Project.add(pop)` / `Project.deposit` (commande annulable)
+- [ ] `population_groups` mis à jour (fait par `_insert_population`)
+- [ ] Sidecar : rien à faire si l'on passe par `Project.save`
+- [ ] `pre_script`, `avatar_factory`, `viewer_3d` gèrent le nouveau type
+- [ ] Tests : `create`, `to_dict/from_dict`, `to_meta_dict` + aller-retour sidecar, dépôt déterministe (`seed`)
+
+---
+
+## 10. Fichiers concernés
+
+| Fichier | Rôle |
+|---|---|
+| `lmgc90_core/population.py` | dataclass SoA, validation, vues, sérialisation |
+| `lmgc90_core/io.py` | sidecar `.populations.npz`, save/load projet |
+| `lmgc90_core/generate.py` | `NumpyGranulo`, `GranuloResult` |
+| `lmgc90_core/project.py`, `commands.py` | `deposit`, `AddPopulation`, `_insert/_drop_population` |
+| `lmgc90_core/pre_script.py` | `_emit_population` |
+| `lmgc90_engine/granulo.py` | dépôt pylmgc90 → population |
+| `lmgc90_engine/avatar_factory.py`, `materialize.py` | corps pylmgc90 par particule |
+| `lmgc90_gui/controller/project_controller.py` | `deposit`, `run_granulo_pylmgc`, `remove_population` |
+| `lmgc90_gui/views/tabs/granulo_tab.py` | formulaire de dépôt |
+| `lmgc90_gui/views/viewer_3d.py` | rendu (expansion O(N)) |
+| `lmgc90_gui/utils/scene_geometry.py` | aperçu 2D sous-échantillonné |
+
 ### 6.3 Sauvegarde / chargement
 
 ```

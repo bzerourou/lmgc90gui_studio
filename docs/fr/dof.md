@@ -1,6 +1,6 @@
 # Conditions aux limites et opérations DOF
 
-L’onglet **DOF** enregistre des opérations cinématiques qui seront appliquées aux corps ciblés lors du calcul. Une opération est définie par une loi, une cible et une chaîne de paramètres.
+L'onglet **DOF** enregistre des opérations cinématiques appliquées aux corps ciblés : blocage ou pilotage d'un degré de liberté, valeur initiale, translation ou rotation géométrique. Une opération est définie par une **loi**, une **cible** et une chaîne de **paramètres**.
 
 ![](../captures/DOF.png)
 
@@ -12,7 +12,19 @@ L’onglet **DOF** enregistre des opérations cinématiques qui seront appliqué
 4. Choisissez **Target type** : `avatar`, `group` ou `color`.
 5. Sélectionnez ou saisissez **Target value**. La liste est réapprovisionnée à partir des avatars, groupes et couleurs du projet ; le champ peut aussi être édité.
 6. Renseignez **Params** en adaptant les composantes et valeurs à la dimension du projet.
-7. Cliquez sur **Add**. L’opération doit apparaître dans la liste.
+7. Cliquez sur **➕ Add**. L’opération doit apparaître dans la liste.
+
+Colonnes de la liste : `#` (index), `Law`, `Target type`, `Target value`, `Params` (tronqué à 48 caractères).
+
+### Autres boutons
+ 
+| Bouton | Effet |
+|---|---|
+| **💾 Update** | remplace l'opération sélectionnée (par son index) par le contenu du formulaire |
+| **🗑️ Delete** | supprime l'opération sélectionnée |
+| **Clear form** | désélectionne et remet la loi par défaut avec ses paramètres types |
+ 
+Cliquer une ligne recharge la loi, la cible et les paramètres dans le formulaire.
 
 ## Opérations disponibles
 
@@ -32,6 +44,19 @@ Ces chaînes sont des exemples de syntaxe affichés par l’interface. Utilisez 
 - **color** : cible les avatars portant ce code couleur. La liste propose les couleurs présentes dans les avatars/populations et quelques codes LMGC90 usuels.
 
 La cible `avatar` utilise l’identifiant stable du corps, et non sa position dans le tableau. Si un avatar a été supprimé puis recréé, sélectionnez le nouvel avatar dans la liste.
+
+## Types de grandeur (`dofty`)
+ 
+| Physique | `dofty` | Signification |
+|---|---|---|
+| MECAx | `'vlocy'` | vitesse imposée |
+| MECAx | `'force'` | force imposée |
+| THERx | `'temp'` | température |
+| THERx | `'flux'` | flux |
+| POROx | `'vlocy'` / `'force'` | vitesse de filtration / pression |
+| MULTI | `'prim_'` / `'dual_'` | variable primale / duale |
+ 
+La liste des valeurs n'est pas contrôlée par l'onglet.
 
 ## Modifier et supprimer
 

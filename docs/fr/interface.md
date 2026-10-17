@@ -88,7 +88,7 @@ Afin de rendre la dimension la même dans tout votre projet vous pouvez cliquer 
 | **Assistant maçonnerie** | `Ctrl+Shift+M` | Spécialisé dans la création d'empilements de briques 2D et 3D (`brick2D` / `brick3D`) selon différents appareillages (standard, running bond, paneresse simple, paneresse double, etc.). |
 | **Variables dynamiques** | `Ctrl+V` | Ouvre une boîte de dialogue permettant de définir des variables réutilisables dans les champs numériques de l'interface (rayon, espacement, offset, etc.). C'est également une fenêtre d'inspection des propriétés des objets LMGC90 présents en mémoire. Voir la page [Variables dynamiques](dynam_variables.md). |
 | **visuAvatars (pylmgc90)** | — | Permet de visualiser votre modèle avec la fonction native de LMGC90 ``visuAvatars``
-| **Préférences** | `Ctrl+,` | Ouvre la boîte de dialogue de configuration de l'application. Voir section [Préférences](#5-préférences). |
+| **Préférences** | `Ctrl+,` | Ouvre la boîte de dialogue de configuration de l'application. Voir section [Préférences](#préférences). |
 
 > **Remarque :** les assistants peuvent être relancés à tout moment pendant la session. Chaque exécution ajoute les éléments générés à la suite du projet existant, sans effacer ce qui a été créé auparavant. 
 La duplication des éléments qui portent le même nom entraîne des erreurs, pensez à nommer différemment vos éléments.
