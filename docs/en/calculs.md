@@ -1,65 +1,97 @@
 # Prepare and run a computation
 
-The **Compute** tab configures the `command.py` computation script, prepares the working directory and can launch the chipy process. Availability of pylmgc90 in the environment that runs LMGC90_GUI determines which native functions are accessible.
+The **Compute** tab configures the `command.py` computation script, prepares the working directory and can launch the chipy process. Availability of *pylmgc90* in the environment that runs LMGC90_GUI Studio determines which native functions are accessible.
+
+![](../captures/calcul_tab.png)
 
 ## Open the Compute tab
 
-- Choose **Tabs → Open → Compute** when that entry is available in your application build.
-- The `F5` shortcut from the main window also opens the tab and triggers the computation action.
+- **Computation → Run computation** opens the **Compute** tab and starts the computation action.
+- The `F5` shortcut from the main window also opens the tab and triggers computation.
 
-The tab shows a summary of dimension, number of avatars and particles, laws, visibility tables, DOF and detected deformable bodies. Check that it matches the prepared project.
+From top to bottom the tab includes: the **model summary**, groups **Time parameters**, **Contact solver**, **Outputs**, **Chipy routines**, **Computation directory**, action buttons, a status line and the **computation log**.
 
 ## Set basic parameters
 
-1. Under **Time parameters**, set **Time step (dt)**, **Number of iterations** and **Integrator Theta**.
-2. Under **Contact solver**, set **Tolerance**, **Relaxation**, **Norm**, **GS1 iterations**, **GS2 iterations** and **Solver type**.
-3. Under **Outputs**, set **WriteOut** and **Display** frequencies.
-4. Enable or disable **Disable chipy log messages** depending on whether you want to reduce standard output.
-5. Enable **ReadDatbox(deformable=True)** if the scene has deformable bodies. The summary may also detect a mesh.
+### 1. Time parameters
 
-The interface initial values are starting parameters, not a guarantee of stability or convergence. Adapt the time step, solver and frequencies to the problem scale.
+| Field | Key | Default | Description |
+|---|---|---|---|
+| **Time step (dt)** | `dt` | `1e-3` | integration step (s) |
+| **Number of steps** | `nb_steps` | `1000` | number of steps; simulated duration = `dt × nb_steps` |
+| **Integrator theta** | `theta` | `0.5` | θ-scheme parameter (`Integrator_InitTheta`): 0.5 = Crank–Nicolson, 1 = implicit Euler |
 
-## Configure chipy routines
+All fields are text; a **decimal comma** is accepted (`1e-3`, `0,5`). Expressions and dynamic variables are **not** accepted here.
 
-1. Click **Configure chipy routines…**.
-2. Under **Model**, check the hypothesis, physics and proposed model parameters.
-3. Under **Routines**, enable the body families and detectors needed for the project's contact pairs. For deformable bodies, also enable the relevant FEM routines and mixed contactors.
-4. Under **Extraction**, choose visualisation, avatar visibility, state vectors, forces and energies required.
-5. Under **Control**, configure restart, stop criterion and multiple time steps if needed.
-6. Set the **Inspect. 2D**, **Inspect. 3D** and **Inspect. Interact.** tabs if inspection functions are needed.
-7. Use **Preview command.py script** to examine the generated script.
-8. Confirm with **OK** or cancel with **Cancel**. **Restore Defaults** restores the dialog default values.
+**Choosing `dt`:** displacement per step should stay small compared with the smallest radius (e.g. `v_max × dt ≲ 0.1 × r_min`). Start small, then increase.
 
-Checked detectors must cover the contactor types actually present and the project's visibility tables. A table is not enough if the corresponding detector is not enabled.
+### 2. Contact solver
 
-## Choose the directory and prepare files
+| Field | Key | Default | Description |
+|---|---|---|---|
+| **Tolerance** | `tol` | `1.666e-4` | contact solver convergence criterion |
+| **Relaxation** | `relax` | `1.0` | relaxation factor |
+| **Norm** | `norm` | `Quad ` | `Quad ` · `QM   ` · `Maxm ` (5-character strings including spaces) |
+| **GS iterations 1** | `gs_it1` | `50` | Gauss–Seidel outer loop |
+| **GS iterations 2** | `gs_it2` | `1000` | Gauss–Seidel inner loop |
+| **Solver type** | `solver_type` | `Stored_Delassus_Loops` | `Stored_Delassus_Loops` · `Exchange_Local_Global` · `Conjugate_Gradient` |
 
-1. Under **Computation directory**, enter the working path or click **Browse…**.
-2. Click **💾 Save → preferences** if you want to reuse these settings later.
-3. Click **📦 Prepare DATBOX / scripts**.
-4. The application writes `pre.py` and `command.py` in the selected directory.
-5. Creation of `DATBOX` depends on automatic write preferences and pylmgc90 availability.
-6. Check the confirmation message and the preparation log.
+### 3. Outputs
 
-The **Computation → Generate DATBOX / scripts…** menu (`Ctrl+F5`) also offers a prepare/export action. To export only scripts or everything from save dialogs, use **Tools → Generate pre.py…**, **Generate command.py…** or **Export all…**.
+| Field | Key | Default | Description |
+|---|---|---|---|
+| **Write frequency** | `freq_write` | `50` | write every N steps |
+| **Display frequency** | `freq_display` | `50` | display files every N steps |
+| **Disable log** | `disable_log` | unchecked | calls `utilities_DisableLogMes()` |
 
-## Run and stop the computation
+### 4. Computation directory
 
-1. Check the working directory path.
-2. Click **▶ Run computation (F5)** or use `F5`.
-3. If `command.py` is missing, accept its preparation if you want to continue.
-4. Confirm the directory and command if launch confirmation is enabled in preferences.
-5. Follow the log lines in the Compute tab.
-6. Click **⏹ Stop** to request process termination.
-7. At the end, check the status and return code (`rc`).
+Set the working directory where `command.py`, DATBOX and results are written. It can be stored in preferences.
 
-The process runs separately so the interface stays responsive. A launch requires a working Python interpreter and LMGC90 dependencies in the selected environment.
+## Chipy routines dialog
 
-## Preferences and diagnostics
+Open **Chipy routines** to configure advanced options used when generating `command.py`.
 
-- **📥 Load preferences** reloads saved parameters.
-- **💾 Save → preferences** stores computation parameters and the working directory.
-- The computation log contains process outputs.
-- **Computation → Application journal** (`F7`) provides the application internal log.
+### Model tab
 
-The [Post-processing](postpro.md) page describes extraction commands; the [Visualisation](visualisation.md) page describes scene inspection before computation. The current application does not provide a full browser for computed result files.
+On open, contact detectors are **inferred from project visibility tables**. Mechanical hypothesis: plane stress (`mhyp=1`), plane strain (`mhyp=2`), 3D (`mhyp=0`). Deformable bodies: MAILx physics (`MECAx`, `THERx`, `POROx`, `THMx`), `Rloc_tol`.
+
+Notes: 3D uses `mhyp = 0`. Checking **deformable** enables the matching MAILx writers.
+
+### Routines tab
+
+Only **interaction detectors** are checked (official `SelectProxTactors` modules). Contactors are loaded via `LoadTactors`.
+
+Rigid: `RBDY2` (2D), `RBDY3` (3D).
+
+2D detectors include `DKDKx`, `DKJCx`, `CLALp`, `PLPLx`, `PTPT2`, etc. 3D detectors include `SPSPx`, `CDCDx`, `PRPRx`, `PTPT3`, etc.
+
+### Extraction / inspection / SET
+
+Configure GetBodyVector, GET inspection and SET actions in the corresponding dialog tabs.
+
+### Advanced options placement
+
+* **Before the time loop**: `CircularSelection`, `SetContactRadius`, `SetDomainBoundary`, `SetPeriodicCondition`, `InitHDF5`, …
+* **Inside the loop**: `Assemble*`, `WriteOutDof`, `FatalDamping`, `WriteHDF5`, …
+* **After the loop**: `WriteLast*`, `WriteBodies`, `WriteBehaviours`, …
+
+Configuration arguments are free Python literals validated with `ast.parse`.
+
+## Generation workflow
+
+1. Adjust time, solver and output parameters.
+2. Configure chipy routines if needed.
+3. Choose the computation directory.
+4. `command.py` is written with form **and** chipy settings.
+5. If DATBOX live is enabled and pylmgc90 is available: materialise `DATBOX/`.
+6. Run chipy and follow the log.
+
+## Troubleshooting
+
+* Keep exact padded `norm` / `solver_type` strings.
+* `mhyp` in 3D must be `0`.
+* No contacts → check Visibility and detectors.
+* Missing pylmgc90 → script generation still works; live DATBOX may be limited.
+
+See also [Discover the interface](interface.md), [Contact laws](contact_laws.md), [Visibility tables](visibility.md).
