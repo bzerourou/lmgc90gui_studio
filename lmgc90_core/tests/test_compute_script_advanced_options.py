@@ -145,3 +145,24 @@ def test_advanced_calls_are_absent_by_default():
         "chipy.addRegistersToDisplay()",
     ):
         assert call not in script
+
+
+def test_prox_tactors_are_selected_once_per_step_with_fallback_or_detector():
+    project = Project(name="prox_selection", dimension=3)
+    base_params = {
+        "use_RBDY2": False,
+        "use_RBDY3": True,
+        "use_DKDKx": False,
+        "use_SPSPx": False,
+        "use_SPPLx": False,
+    }
+
+    fallback_script = ComputeScriptGenerator(project).generate_string(base_params)
+    assert fallback_script.count("chipy.SelectProxTactors()") == 1
+
+    detector_script = ComputeScriptGenerator(project).generate_string({
+        **base_params,
+        "use_SPSPx": True,
+    })
+    assert detector_script.count("chipy.SelectProxTactors()") == 0
+    assert detector_script.count("chipy.SPSPx_SelectProxTactors()") == 1

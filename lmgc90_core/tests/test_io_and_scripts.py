@@ -135,6 +135,37 @@ def test_pre_script_compacts_repeated_avatars_when_requested():
     ast.parse(compact)
 
 
+def test_pre_script_dof_fields_and_color_target():
+    p = Project(name="dof_options", dimension=2)
+    p.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    p.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    red = p.add(pre.rigidDisk(
+        r=0.1, center=[0.0, 0.0], model="rigid", material="STEEL", color="REDxx"
+    ))
+    blue = p.add(pre.rigidDisk(
+        r=0.1, center=[1.0, 0.0], model="rigid", material="STEEL", color="BLUEx"
+    ))
+    p.add(DOFOperation(
+        "imposeInitValue", "color", "REDxx",
+        {"group": "all", "component": 1, "value": 0.25},
+    ))
+    p.add(DOFOperation(
+        "rotate", "avatar", blue.avatar_id,
+        {"description": "Euler", "phi": 0.1, "theta": 0.2, "psi": 0.3},
+    ))
+
+    script = p.to_pre_script()
+    red_target = f"av_{red.avatar_id[:8]}"
+    blue_target = f"av_{blue.avatar_id[:8]}"
+    assert f"{red_target}.imposeInitValue(group='all', component=1, value=0.25)" in script
+    assert f"{blue_target}.imposeInitValue(" not in script
+    assert (
+        f"{blue_target}.rotate(description='Euler', phi=0.1, theta=0.2, psi=0.3)"
+        in script
+    )
+    ast.parse(script)
+
+
 def test_chipy_script_enables_detectors_required_by_demo_visibility():
     project_2d = Project(name="falling_disks", dimension=2)
     falling_disks(project_2d)

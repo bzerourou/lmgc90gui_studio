@@ -507,31 +507,32 @@ def _emit_dof(
 ) -> str:
     avatar_refs = avatar_refs or {}
     if op.target_type == "avatar":
-        target = avatar_refs.get(
+        target_refs = [avatar_refs.get(
             str(op.target_value), f"av_{_ident(str(op.target_value))}"
-        )
+        )]
     elif op.target_type == "group":
         ids = project.avatar_groups.get(str(op.target_value), [])
         if not ids:
-            return f"# DOF on empty group {op.target_value!r}"
-        targets = [
+            raise ValueError(f"DOF target group {op.target_value!r} is empty.")
+        target_refs = [
             avatar_refs.get(aid, f"av_{_ident(aid)}")
             for aid in ids
         ]
+    elif op.target_type == "color":
+        color = str(op.target_value)
+        target_refs = [
+            avatar_refs.get(avatar.avatar_id, f"av_{_ident(avatar.avatar_id)}")
+            for avatar in project.avatars
+            if avatar.color == color or any(
+                contactor.get("color") == color for contactor in avatar.contactors
+            )
+        ]
+        if not target_refs:
+            raise ValueError(f"No avatars have contactor color {color!r}.")
     else:
-        target = "bodies"
+        raise ValueError(f"Unsupported DOF target type {op.target_type!r}.")
     params = ", ".join(f"{k}={v!r}" for k, v in op.parameters.items())
-    if op.target_type == "group":
-        return "\n".join(
-            f"{target}.{op.operation_type}({params})"
-            for target in targets
-        )
-    if op.operation_type == "imposeDrivenDof":
-        return f"{target}.imposeDrivenDof({params})"
-    if op.operation_type == "imposeInitValue":
-        return f"{target}.imposeInitValue({params})"
-    if op.operation_type == "translate":
-        return f"{target}.translate({params})"
-    if op.operation_type == "rotate":
-        return f"{target}.rotate({params})"
-    return f"{target}.{op.operation_type}({params})"
+    return "\n".join(
+        f"{target}.{op.operation_type}({params})"
+        for target in target_refs
+    )

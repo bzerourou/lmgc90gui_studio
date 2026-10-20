@@ -755,8 +755,6 @@ class ComputeScriptGenerator:
             L('chipy.ComputeBulk()')
             L("chipy.utilities_logMes('COMPUTE Free Velocity - RBDY2')")
             L('chipy.ComputeFreeVelocity()')
-            if not p.get('advanced_fd_select_prox'):
-                L('chipy.SelectProxTactors()')
         if use_RBDY3:
             # Macros route to RBDY3_* when SetDimension(3); same path as official one_step
             L("chipy.utilities_logMes('COMPUTE Fext/Fint - RBDY3')")
@@ -764,8 +762,6 @@ class ComputeScriptGenerator:
             L('chipy.ComputeBulk()')
             L("chipy.utilities_logMes('COMPUTE Free Velocity - RBDY3')")
             L('chipy.ComputeFreeVelocity()')
-            if not p.get('advanced_fd_select_prox'):
-                L('chipy.SelectProxTactors()')
         w('\n')
 
         # b. FreeVelocity deformables

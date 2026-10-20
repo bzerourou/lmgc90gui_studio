@@ -359,11 +359,7 @@ def _make_see(pre, rule: VisibilityRule) -> Any:
 
 
 def _apply_dof(project: Project, scene: MaterializedScene, op) -> None:
-    """Apply one DOFOperation onto the corresponding live body(ies).
-
-    Supports ``imposeDrivenDof`` with ``description='predefined'`` (cell spreading).
-    Studio-only keys (``phase``, …) are stripped before calling pylmgc.
-    """
+    """Apply one DOFOperation onto the corresponding live body(ies)."""
     targets: list[Any] = []
     if op.target_type == "avatar":
         body = scene.body_by_avatar_id.get(str(op.target_value))
@@ -378,30 +374,41 @@ def _apply_dof(project: Project, scene: MaterializedScene, op) -> None:
             body = scene.body_by_avatar_id.get(aid)
             if body is not None:
                 targets.append(body)
+        if not targets:
+            raise MaterializationError(
+                f"DOF target group {op.target_value!r} has no avatars in the scene"
+            )
+    elif op.target_type == "color":
+        color = str(op.target_value)
+        for avatar in project.avatars:
+            has_color = avatar.color == color or any(
+                isinstance(contactor, dict) and contactor.get("color") == color
+                for contactor in avatar.contactors
+            )
+            if has_color:
+                body = scene.body_by_avatar_id.get(avatar.avatar_id)
+                if body is not None:
+                    targets.append(body)
+        if not targets:
+            raise MaterializationError(
+                f"No avatars with contactor color {color!r} are present in the scene"
+            )
     else:
-        return
+        raise MaterializationError(
+            f"Unsupported DOF target type {op.target_type!r}"
+        )
 
     method = op.operation_type
     raw = dict(op.parameters or {})
-    # drop studio metadata
-    raw.pop("phase", None)
-    raw.pop("protein_target", None)
-
-    # allowed kwargs for common body methods
-    allowed = {
-        "component", "dofty", "ct", "description", "amp", "omega", "phi",
-        "rampi", "ramp", "dx", "dy", "dz", "axis", "alpha", "center",
-        "evolutionFile", "evolution_file",
-    }
-    params = {k: v for k, v in raw.items() if k in allowed}
-    # normalize evolution_file → evolutionFile (pylmgc spelling)
+    params = raw
     if "evolution_file" in params and "evolutionFile" not in params:
         params["evolutionFile"] = params.pop("evolution_file")
-    # evolution BC requires a non-empty filename
     if str(params.get("description", "")).lower() == "evolution":
         evo = params.get("evolutionFile")
         if not evo or not str(evo).strip():
-            params["evolutionFile"] = "vx.dat"
+            raise MaterializationError(
+                "imposeDrivenDof with description='evolution' requires evolutionFile"
+            )
         else:
             params["evolutionFile"] = str(evo).strip()
 
@@ -413,21 +420,7 @@ def _apply_dof(project: Project, scene: MaterializedScene, op) -> None:
             )
         try:
             fn(**params)
-        except TypeError:
-            # older API: component as list, or fewer kwargs
-            p2 = dict(params)
-            if "component" in p2 and not isinstance(p2["component"], (list, tuple)):
-                p2["component"] = [p2["component"]]
-            try:
-                fn(**p2)
-            except TypeError as exc:
-                # last resort: only component + dofty + ct
-                minimal = {
-                    k: p2[k] for k in ("component", "dofty", "ct") if k in p2
-                }
-                try:
-                    fn(**minimal)
-                except Exception as exc2:
-                    raise MaterializationError(
-                        f"DOF {method} failed on {op.target_value!r}: {exc2}"
-                    ) from exc2
+        except Exception as exc:
+            raise MaterializationError(
+                f"DOF {method} failed on {op.target_value!r}: {exc}"
+            ) from exc

@@ -233,26 +233,54 @@ ORTHOTROPIC_FIELDS_3D = (
 )
 ISOTROPIC_FIELDS = ("young", "nu", "G")
 
-# Contact-law type → extra kwargs beyond name / law / fric
+# Contact-law type → kwargs accepted by pylmgc90.pre.tact_behav
 CONTACT_LAW_PROPERTY_SCHEMA: dict[str, tuple[tuple[str, object, str], ...]] = {
     "IQS_CLB": (("fric", 0.3, "float"),),
-    "IQS_CLB_g0": (("fric", 0.3, "float"), ("g0", 0.0, "float")),
-    "IQS_DS_CLB": (("fric", 0.3, "float"), ("Rest", 0.0, "float")),
-    "IQS_MOHR_DS_CLB": (("fric", 0.3, "float"), ("cohes", 0.0, "float"), ("Rest", 0.0, "float")),
-    "IQS_MAC_CZM": (("W", 100.0, "float"), ("dn", 1e-4, "float"), ("dt", 1e-4, "float")),
-    "RST_CLB": (("fric", 0.3, "float"), ("Rest", 0.0, "float")),
+    "IQS_CLB_g0": (("fric", 0.3, "float"),),
+    "IQS_DS_CLB": (("dyfr", 0.3, "float"), ("stfr", 0.3, "float")),
+    "IQS_MOHR_DS_CLB": (
+        ("cohn", 0.0, "float"), ("coht", 0.0, "float"),
+        ("dyfr", 0.3, "float"), ("stfr", 0.3, "float"),
+    ),
+    "IQS_MAC_CZM": (
+        ("dyfr", 0.3, "float"), ("stfr", 0.3, "float"),
+        ("cn", 1e10, "float"), ("ct", 1e10, "float"),
+        ("b", 0.0, "float"), ("w", 100.0, "float"),
+    ),
+    "RST_CLB": (
+        ("rstn", 0.0, "float"), ("rstt", 0.0, "float"),
+        ("fric", 0.3, "float"),
+    ),
     "GAP_SGR_CLB": (("fric", 0.3, "float"),),
-    "GAP_SGR_CLB_g0": (("fric", 0.3, "float"), ("g0", 0.0, "float")),
-    "GAP_MOHR_DS_CLB": (("fric", 0.3, "float"), ("cohes", 0.0, "float")),
-    "MAC_CZM": (("W", 100.0, "float"), ("dn", 1e-4, "float"), ("dt", 1e-4, "float")),
-    "MAL_CZM": (("W", 100.0, "float"), ("dn", 1e-4, "float"), ("dt", 1e-4, "float")),
+    "GAP_SGR_CLB_g0": (("fric", 0.3, "float"),),
+    "GAP_MOHR_DS_CLB": (
+        ("cohn", 0.0, "float"), ("coht", 0.0, "float"),
+        ("dyfr", 0.3, "float"), ("stfr", 0.3, "float"),
+    ),
+    "MAC_CZM": (
+        ("dyfr", 0.3, "float"), ("stfr", 0.3, "float"),
+        ("cn", 1e10, "float"), ("ct", 1e10, "float"),
+        ("b", 0.0, "float"), ("w", 100.0, "float"),
+    ),
+    "MAL_CZM": (
+        ("dyfr", 0.3, "float"), ("stfr", 0.3, "float"),
+        ("cn", 1e10, "float"), ("ct", 1e10, "float"),
+        ("s1", 0.0, "float"), ("s2", 0.0, "float"),
+        ("G1", 0.0, "float"), ("G2", 0.0, "float"),
+    ),
     "ELASTIC_WIRE": (("stiffness", 1e5, "float"), ("prestrain", 0.0, "float")),
-    "BRITTLE_ELASTIC_WIRE": (("stiffness", 1e5, "float"), ("force_max", 1e3, "float")),
-    "ELASTIC_ROD": (("stiffness", 1e5, "float"),),
-    "VOIGT_ROD": (("stiffness", 1e5, "float"), ("viscosity", 10.0, "float")),
+    "BRITTLE_ELASTIC_WIRE": (
+        ("stiffness", 1e5, "float"), ("prestrain", 0.0, "float"),
+        ("Fmax", 1e3, "float"),
+    ),
+    "ELASTIC_ROD": (("stiffness", 1e5, "float"), ("prestrain", 0.0, "float")),
+    "VOIGT_ROD": (
+        ("stiffness", 1e5, "float"), ("prestrain", 0.0, "float"),
+        ("viscosity", 10.0, "float"),
+    ),
     "COUPLED_DOF": (),
     "NORMAL_COUPLED_DOF": (),
-    "ELASTIC_REPELL_CLB": (("stiffness", 1e6, "float"),),
+    "ELASTIC_REPELL_CLB": (("stiffness", 1e6, "float"), ("fric", 0.3, "float")),
 }
 
 # Model option fields common in pylmgc90.pre.model
