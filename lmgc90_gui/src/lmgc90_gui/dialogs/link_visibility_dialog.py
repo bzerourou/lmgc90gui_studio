@@ -36,8 +36,8 @@ def create_link_visibility_dialog(controller, parent=None):
             dim = int(getattr(pr, "dimension", 2) or 2)
             bodies = list(_BODY_2D if dim == 2 else _BODY_3D)
             colors = _project_colors(pr)
-            shapes_c = _project_shapes(pr, role="candidate")
-            shapes_a = _project_shapes(pr, role="antagonist")
+            shapes_c = _project_shapes(pr)
+            shapes_a = _project_shapes(pr)
             laws = _project_laws(pr)
 
             def _cb(items, editable=False, default=None):

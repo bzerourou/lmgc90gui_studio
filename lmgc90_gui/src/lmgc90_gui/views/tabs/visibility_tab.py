@@ -186,12 +186,11 @@ def _project_colors(project) -> list[str]:
     return colors
 
 
-def _project_shapes(project, *, role: str = "both") -> list[str]:
-    """Formes présentes dans le projet et compatibles avec le rôle demandé."""
+def _project_shapes(project) -> list[str]:
+    """Formes de contact réellement présentes dans le projet."""
     shapes = list(dict.fromkeys(
         shape
-        for _body, shape, _color, option_role in _project_contact_options(project)
-        if role == "both" or option_role in (role, "both")
+        for _body, shape, _color, _role in _project_contact_options(project)
     ))
     if shapes:
         return shapes
@@ -349,8 +348,8 @@ def create_visibility_tab(parent=None):
             self.a_shape.currentTextChanged.connect(
                 lambda _text: self._refresh_side("antagonist", reset_color=True)
             )
-            self.c_shape.setToolTip("Formes de contact compatibles présentes sur les corps candidats du projet")
-            self.a_shape.setToolTip("Formes de contact compatibles présentes sur les corps antagonistes du projet")
+            self.c_shape.setToolTip("Formes de contact présentes dans le projet")
+            self.a_shape.setToolTip("Formes de contact présentes dans le projet")
             self.c_color.setToolTip("Couleurs réellement associées à la forme candidate sélectionnée")
             self.a_color.setToolTip("Couleurs réellement associées à la forme antagoniste sélectionnée")
 
@@ -417,11 +416,10 @@ def create_visibility_tab(parent=None):
             body_box = self.c_body if candidate else self.a_body
             shape_box = self.c_shape if candidate else self.a_shape
             color_box = self.c_color if candidate else self.a_color
-            requested_role = "candidate" if candidate else "antagonist"
             body = body_box.currentText().strip()
             options = [
                 option for option in _project_contact_options(self.controller.project)
-                if option[0] == body and option[3] in (requested_role, "both")
+                if option[0] == body
             ]
             shape_items = list(dict.fromkeys(option[1] for option in options))
             if not shape_items:
@@ -554,17 +552,16 @@ def create_visibility_tab(parent=None):
                 return True
             options = _project_contact_options(project)
             pairs = (
-                ("candidat", self._body_text(self.c_body), self._combo_text(self.c_shape), self._combo_text(self.c_color), "candidate"),
-                ("antagoniste", self._body_text(self.a_body), self._combo_text(self.a_shape), self._combo_text(self.a_color), "antagonist"),
+                ("candidat", self._body_text(self.c_body), self._combo_text(self.c_shape), self._combo_text(self.c_color)),
+                ("antagoniste", self._body_text(self.a_body), self._combo_text(self.a_shape), self._combo_text(self.a_color)),
             )
             missing = []
-            for label, body, shape, color, role in pairs:
+            for label, body, shape, color in pairs:
                 if not any(
                     item_body == body
                     and item_shape == shape
                     and item_color == color
-                    and item_role in (role, "both")
-                    for item_body, item_shape, item_color, item_role in options
+                    for item_body, item_shape, item_color, _item_role in options
                 ):
                     missing.append(f"{label} : {body} / {shape} / {color}")
             if not missing:

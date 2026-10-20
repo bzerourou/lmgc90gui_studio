@@ -93,7 +93,7 @@ def test_population_suggestions_match_its_dimension_type_and_color():
     ]
 
 
-def test_shapes_for_link_dialog_are_filtered_by_candidate_or_antagonist_role():
+def test_shapes_for_link_dialog_include_project_shapes_on_either_side():
     project = SimpleNamespace(
         dimension=2,
         avatars=[
@@ -103,5 +103,17 @@ def test_shapes_for_link_dialog_are_filtered_by_candidate_or_antagonist_role():
         populations=[],
     )
 
-    assert _project_shapes(project, role="candidate") == ["DISKx"]
-    assert _project_shapes(project, role="antagonist") == ["JONCx"]
+    assert _project_shapes(project) == ["DISKx", "JONCx"]
+
+
+def test_antagonist_shapes_include_created_spheres_and_planes():
+    project = SimpleNamespace(
+        dimension=3,
+        avatars=[
+            _avatar("rigidSphere", [0.0, 0.0, 0.0], "BLUEx"),
+            _avatar("rigidPlan", [0.0, 0.0, 0.0], "GRAYx"),
+        ],
+        populations=[],
+    )
+
+    assert _project_shapes(project) == ["SPHER", "PLANx"]

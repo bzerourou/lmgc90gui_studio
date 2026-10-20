@@ -9,6 +9,20 @@ def test_schemas_present():
     assert "young" in [n for n, *_ in MATERIAL_PROPERTY_SCHEMA["ELAS"]]
     assert "MULTI" in ELEMENTS_BY_PHYSICS
     assert "IQS_DS_CLB" in CONTACT_LAW_PROPERTY_SCHEMA
+    expected_contact_fields = {
+        "IQS_CLB_g0": ["fric"],
+        "IQS_DS_CLB": ["dyfr", "stfr"],
+        "IQS_MOHR_DS_CLB": ["cohn", "coht", "dyfr", "stfr"],
+        "IQS_MAC_CZM": ["dyfr", "stfr", "cn", "ct", "b", "w"],
+        "RST_CLB": ["rstn", "rstt", "fric"],
+        "GAP_SGR_CLB_g0": ["fric"],
+        "GAP_MOHR_DS_CLB": ["cohn", "coht", "dyfr", "stfr"],
+        "MAC_CZM": ["dyfr", "stfr", "cn", "ct", "b", "w"],
+        "MAL_CZM": ["dyfr", "stfr", "cn", "ct", "s1", "s2", "G1", "G2"],
+        "BRITTLE_ELASTIC_WIRE": ["stiffness", "prestrain", "Fmax"],
+    }
+    for law, expected in expected_contact_fields.items():
+        assert [name for name, *_ in CONTACT_LAW_PROPERTY_SCHEMA[law]] == expected
 
 
 def test_elas_multi_forloop_law_props():
@@ -37,7 +51,7 @@ def test_elas_multi_forloop_law_props():
     assert len(gens) == 4
     assert "fline" in ctrl.project.avatar_groups
 
-    law = pre.tact_behav(name="ds1", law="IQS_DS_CLB", fric=0.25, Rest=0.05)
+    law = pre.tact_behav(name="ds1", law="IQS_DS_CLB", dyfr=0.25, stfr=0.35)
     ctrl.add_law(law)
-    assert ctrl.project.laws[0].properties["Rest"] == 0.05
+    assert ctrl.project.laws[0].properties == {"dyfr": 0.25, "stfr": 0.35}
     assert ctrl.project.materials[0].properties["young"] == 30e9
