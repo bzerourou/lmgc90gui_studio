@@ -117,6 +117,20 @@ def test_contactor_form_parses_shape_specific_options():
         "radius": 0.4,
     }
 
+    expression_polygon = _read_contactor_params(
+        "POLYG",
+        {
+            "generation_type": "full",
+            "vertices": "0,0; width,0; 0,height",
+        },
+        evaluate_float=lambda expression, _name: {
+            "0": 0.0, "width": 2.0, "height": 3.0,
+        }[expression],
+    )
+    assert expression_polygon["vertices"] == [
+        [0.0, 0.0], [2.0, 0.0], [0.0, 3.0],
+    ]
+
 
 def test_pipeline_sbatch_export(tmp_path: Path):
     ctrl = ProjectController()

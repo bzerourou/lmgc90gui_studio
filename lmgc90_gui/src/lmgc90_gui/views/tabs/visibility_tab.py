@@ -280,7 +280,7 @@ def validate_visibility_project(project) -> list[str]:
 
 def create_visibility_tab(parent=None):
     from PyQt6.QtWidgets import (
-        QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
+        QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
         QMessageBox, QPushButton, QVBoxLayout, QWidget,
     )
 
@@ -318,10 +318,9 @@ def create_visibility_tab(parent=None):
             self.behav = QComboBox()
             self.behav.setEditable(True)
 
-            self.alert = QDoubleSpinBox()
-            self.alert.setRange(0, 1e3)
-            self.alert.setDecimals(6)
-            self.alert.setValue(0.02)
+            self.alert = QLineEdit("0.02")
+            self.alert.setPlaceholderText("nombre ou expression")
+            self.mark_expr_field(self.alert)
 
             for lab, w in (
                 ("Corps candidat", self.c_body),
@@ -513,7 +512,7 @@ def create_visibility_tab(parent=None):
             self._set_combo(self.a_shape, r.antagonist_contactor)
             self._set_combo(self.a_color, r.antagonist_color)
             self._set_combo(self.behav, r.behavior_name)
-            self.alert.setValue(float(r.alert))
+            self.alert.setText(str(r.alert))
 
         def _clear_form(self) -> None:
             self._editing_index = None
@@ -534,7 +533,7 @@ def create_visibility_tab(parent=None):
                 antagoniste=self._combo_text(self.a_shape),
                 colorAntagoniste=self._combo_text(self.a_color),
                 behav=self._combo_text(self.behav),
-                alert=self.alert.value(),
+                alert=self.eval_float(self.alert.text(), 0.02, "alert"),
             )
 
         @staticmethod

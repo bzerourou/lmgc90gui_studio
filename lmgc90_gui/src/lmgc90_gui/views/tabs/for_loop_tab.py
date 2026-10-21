@@ -23,7 +23,7 @@ _TARGETS = [
 def create_for_loop_tab(parent=None):
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import (
-        QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
+        QComboBox, QFormLayout, QHBoxLayout, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
         QVBoxLayout, QWidget,
     )
@@ -47,11 +47,10 @@ def create_for_loop_tab(parent=None):
             self.kind.currentIndexChanged.connect(self._on_kind_changed)
 
             self.var_edit = QLineEdit("i")
-            self.start = QDoubleSpinBox(); self.stop = QDoubleSpinBox(); self.step = QDoubleSpinBox()
-            self.start.setRange(-1e6, 1e6); self.stop.setRange(-1e6, 1e6)
-            self.step.setRange(-1e6, 1e6)
-            self.start.setValue(0); self.stop.setValue(10); self.step.setValue(1)
-            self.step.setDecimals(6)
+            self.start = QLineEdit("0"); self.stop = QLineEdit("10"); self.step = QLineEdit("1")
+            for field in (self.start, self.stop, self.step):
+                field.setPlaceholderText("nombre ou expression")
+                self.mark_expr_field(field)
 
             self.template_combo = QComboBox()  # avatar / material / model / dof / see
             self.expr_x = QLineEdit("i * 0.1")
@@ -68,6 +67,12 @@ def create_for_loop_tab(parent=None):
             self.expr_rmin = QLineEdit("")
             self.expr_rmax = QLineEdit("")
             self.group_edit = QLineEdit("")
+            for field in (
+                self.expr_x, self.expr_y, self.expr_z, self.expr_r,
+                self.expr_density, self.expr_alert, self.expr_nb,
+                self.expr_rmin, self.expr_rmax,
+            ):
+                self.mark_expr_field(field)
 
             form.addRow("Cible de la boucle", self.kind)
             form.addRow("Variable", self.var_edit)
@@ -206,22 +211,34 @@ def create_for_loop_tab(parent=None):
             if self.expr_rmax.text().strip():
                 expressions["radius_max"] = self.expr_rmax.text().strip()
 
-            fl = ForLoop(
-                var_name=self.var_edit.text().strip() or "i",
-                start=self.start.value(),
-                stop=self.stop.value(),
-                step=self.step.value(),
-                target_kind=k,
-                model_avatar_id=str(tid) if k == "avatar" and tid else "",
-                template_name=str(tid) if k in ("material", "model") and tid is not None else "",
-                template_index=int(tid) if k in ("dof", "visibility", "granulo", "granulo_dist") and isinstance(tid, int) else -1,
-                expr_x=self.expr_x.text().strip() or "0",
-                expr_y=self.expr_y.text().strip() or "0",
-                expr_z=self.expr_z.text().strip() or "0",
-                expr_radius=(self.expr_r.text().strip() or None),
-                expressions=expressions,
-                group_name=self.group_edit.text().strip() or None,
-            )
+            try:
+                start = self.eval_float(self.start.text(), 0.0, "start")
+                stop = self.eval_float(self.stop.text(), 10.0, "stop")
+                step = self.eval_float(self.step.text(), 1.0, "step")
+            except ValueError as exc:
+                QMessageBox.warning(self, "ForLoop", str(exc))
+                return
+
+            try:
+                fl = ForLoop(
+                    var_name=self.var_edit.text().strip() or "i",
+                    start=start,
+                    stop=stop,
+                    step=step,
+                    target_kind=k,
+                    model_avatar_id=str(tid) if k == "avatar" and tid else "",
+                    template_name=str(tid) if k in ("material", "model") and tid is not None else "",
+                    template_index=int(tid) if k in ("dof", "visibility", "granulo", "granulo_dist") and isinstance(tid, int) else -1,
+                    expr_x=self.expr_x.text().strip() or "0",
+                    expr_y=self.expr_y.text().strip() or "0",
+                    expr_z=self.expr_z.text().strip() or "0",
+                    expr_radius=(self.expr_r.text().strip() or None),
+                    expressions=expressions,
+                    group_name=self.group_edit.text().strip() or None,
+                )
+            except ValueError as exc:
+                QMessageBox.warning(self, "ForLoop", str(exc))
+                return
             if k == "avatar" and not fl.model_avatar_id:
                 QMessageBox.warning(self, "ForLoop", "Sélectionnez un avatar template")
                 return

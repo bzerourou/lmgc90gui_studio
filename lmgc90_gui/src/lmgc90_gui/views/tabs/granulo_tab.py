@@ -40,8 +40,8 @@ def _lmgc5(name: str, default: str = "XXXXX") -> str:
 
 def create_granulo_tab(parent=None):
     from PyQt6.QtWidgets import (
-        QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-        QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton, QSpinBox,
+        QCheckBox, QComboBox, QFormLayout, QHBoxLayout,
+        QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton,
         QVBoxLayout, QWidget,
     )
 
@@ -57,21 +57,15 @@ def create_granulo_tab(parent=None):
             layout.addWidget(self.list)
 
             form = QFormLayout()
-            self.n_spin = QSpinBox()
-            self.n_spin.setRange(1, 500_000)
-            self.n_spin.setValue(200)
-            self.rmin = QDoubleSpinBox()
-            self.rmax = QDoubleSpinBox()
-            for s, v in ((self.rmin, 0.05), (self.rmax, 0.15)):
-                s.setRange(1e-6, 1e3)
-                s.setDecimals(6)
-                s.setValue(v)
+            self.n_spin = QLineEdit("200")
+            self.rmin = QLineEdit("0.05")
+            self.rmax = QLineEdit("0.15")
 
             self.container = QComboBox()
             self.container.currentIndexChanged.connect(self._on_container_changed)
 
             # dynamic param widgets
-            self._param_widgets: dict[str, QDoubleSpinBox] = {}
+            self._param_widgets: dict[str, QLineEdit] = {}
             self.param_host = QWidget()
             self.param_form = QFormLayout(self.param_host)
 
@@ -82,10 +76,8 @@ def create_granulo_tab(parent=None):
             self.color_edit.setMaxLength(5)
             self.group_edit = QLineEdit("granx")
             self.group_edit.setMaxLength(5)
-            self.seed_spin = QSpinBox()
-            self.seed_spin.setRange(-1, 2**31 - 1)
-            self.seed_spin.setValue(42)
-            self.seed_spin.setSpecialValueText("random")
+            self.seed_spin = QLineEdit("42")
+            self.seed_spin.setPlaceholderText("entier, expression ou random")
             self.pylmgc_check = QCheckBox(
                 "Utiliser dépôt pylmgc (engine) si disponible — sinon numpy SoA"
             )
@@ -113,6 +105,10 @@ def create_granulo_tab(parent=None):
             form.addRow("Couleur (5 car.)", self.color_edit)
             form.addRow("Groupe (5 car.)", self.group_edit)
             form.addRow("Seed", self.seed_spin)
+            for field in (self.n_spin, self.rmin, self.rmax):
+                field.setPlaceholderText("nombre ou expression")
+                self.mark_expr_field(field)
+            self.mark_expr_field(self.seed_spin)
             form.addRow("", self.pylmgc_check)
             form.addRow("", self.distrib_only)
             layout.addLayout(form)
@@ -196,10 +192,9 @@ def create_granulo_tab(parent=None):
                 return
             _k, _lab, _cdim, params = meta
             for pname, default in params:
-                sp = QDoubleSpinBox()
-                sp.setRange(1e-6, 1e6)
-                sp.setDecimals(6)
-                sp.setValue(float(default))
+                sp = QLineEdit(str(default))
+                sp.setPlaceholderText("nombre ou expression")
+                self.mark_expr_field(sp)
                 self._param_widgets[pname] = sp
                 self.param_form.addRow(pname, sp)
 
@@ -211,7 +206,23 @@ def create_granulo_tab(parent=None):
             if not mat or not mod:
                 QMessageBox.warning(self, "Granulo", "Matériau et modèle requis")
                 return
-            if self.rmin.value() >= self.rmax.value():
+            try:
+                radius_min = self.eval_float(self.rmin.text(), 0.05, "radius_min")
+                radius_max = self.eval_float(self.rmax.text(), 0.15, "radius_max")
+                seed_text = self.seed_spin.text().strip()
+                seed_value = (
+                    -1 if seed_text.lower() == "random"
+                    else self.eval_int(seed_text, 42, "seed")
+                )
+                params = {
+                    k: self.eval_float(w.text(), 0.0, k)
+                    for k, w in self._param_widgets.items()
+                }
+                nb_particles = self.eval_int(self.n_spin.text(), 200, "nb_particles")
+            except (ValidationError, ValueError) as exc:
+                QMessageBox.warning(self, "Granulo", str(exc))
+                return
+            if radius_min >= radius_max:
                 QMessageBox.warning(self, "Granulo", "rmin doit être < rmax")
                 return
             ctype = self.container.currentData()
@@ -219,8 +230,7 @@ def create_granulo_tab(parent=None):
                 QMessageBox.warning(self, "Granulo", "Conteneur requis")
                 return
             atype = self.type_combo.currentData()
-            seed = None if self.seed_spin.value() < 0 else self.seed_spin.value()
-            params = {k: w.value() for k, w in self._param_widgets.items()}
+            seed = None if seed_value < 0 else seed_value
             dim = int(self.controller.project.dimension)
             # container dim consistency
             meta = next((c for c in _CONTAINERS if c[0] == ctype), None)
@@ -233,9 +243,9 @@ def create_granulo_tab(parent=None):
             color = _lmgc5(self.color_edit.text(), "BLUEx")
             group = _lmgc5(self.group_edit.text(), "granx")
             cfg = GranuloConfig(
-                nb_particles=self.n_spin.value(),
-                radius_min=self.rmin.value(),
-                radius_max=self.rmax.value(),
+                nb_particles=nb_particles,
+                radius_min=radius_min,
+                radius_max=radius_max,
                 container_type=ctype,
                 container_params=params,
                 material_name=mat,

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from lmgc90_core import ContactLaw, ValidationError, pre
-from lmgc90_core.types import CONTACT_LAW_PROPERTY_SCHEMA, ContactLawType
+from lmgc90_core.types import (
+    CONTACT_LAW_CATEGORIES, CONTACT_LAW_PROPERTY_SCHEMA, ContactLawType,
+)
 
 from .base_tab import BaseTab
 from ...utils.field_forms import clear_layout
@@ -12,7 +14,7 @@ from ..widgets.entity_tree import create_entity_tree
 
 def create_contact_tab(parent=None):
     from PyQt6.QtWidgets import (
-        QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout,
+        QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
         QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
     )
 
@@ -32,9 +34,16 @@ def create_contact_tab(parent=None):
             form = QFormLayout()
             self.name_edit = QLineEdit()
             self.name_edit.setMaxLength(5)
+            self.category_combo = QComboBox()
+            self.category_combo.addItems([
+                "Toutes les familles", "rigid/rigid", "any/defo",
+                "point/point", "any/any",
+            ])
             self.law_combo = QComboBox()
-            for t in ContactLawType:
-                self.law_combo.addItem(t.value, t)
+            for law in ContactLawType:
+                self.law_combo.addItem(law.value, law)
+            self.category_combo.currentTextChanged.connect(self._filter_laws)
+            form.addRow("Contact family", self.category_combo)
             form.addRow("Name", self.name_edit)
             form.addRow("Law type", self.law_combo)
             layout.addLayout(form)
@@ -55,18 +64,39 @@ def create_contact_tab(parent=None):
             ):
                 b = QPushButton(text); b.clicked.connect(slot); row.addWidget(b)
             layout.addLayout(row)
+            self._filter_laws(self.category_combo.currentText())
+
+        def _filter_laws(self, category: str) -> None:
+            selected = self.law_combo.currentData()
+            if category == "Toutes les familles":
+                law_values = [law.value for law in ContactLawType]
+            else:
+                law_values = list(CONTACT_LAW_CATEGORIES[category])
+            self.law_combo.blockSignals(True)
+            self.law_combo.clear()
+            for value in law_values:
+                law = ContactLawType(value)
+                self.law_combo.addItem(value, law)
+            index = self.law_combo.findData(selected)
+            if index >= 0:
+                self.law_combo.setCurrentIndex(index)
+            self.law_combo.blockSignals(False)
+            self._rebuild_props()
+            self._suggest_name()
 
         def _rebuild_props(self, *_a) -> None:
             clear_layout(self.props_form)
             self._prop_widgets.clear()
             law = self.law_combo.currentData()
             key = law.value if law else "IQS_CLB"
-            schema = CONTACT_LAW_PROPERTY_SCHEMA.get(key, (("fric", "float", 0.3),))
+            schema = CONTACT_LAW_PROPERTY_SCHEMA.get(key)
+            if schema is None:
+                schema = ()
             for name, default, kind in schema:
                 if kind == "float":
-                    w = QDoubleSpinBox()
-                    w.setRange(-1e30, 1e30); w.setDecimals(8)
-                    w.setValue(float(default) if default not in (None, "") else 0.0)
+                    w = QLineEdit(str(default) if default not in (None, "") else "0")
+                    w.setPlaceholderText("nombre ou expression")
+                    self.mark_expr_field(w)
                 else:
                     w = QLineEdit(str(default or ""))
                 self.props_form.addRow(name, w)
@@ -87,7 +117,10 @@ def create_contact_tab(parent=None):
         def _collect(self) -> dict:
             props = {}
             for k, (w, kind) in self._prop_widgets.items():
-                props[k] = float(w.value()) if kind == "float" else w.text().strip()
+                props[k] = (
+                    self.eval_float(w.text(), 0.0, k)
+                    if kind == "float" else w.text().strip()
+                )
             return props
 
         def on_state_changed(self) -> None:
@@ -112,7 +145,8 @@ def create_contact_tab(parent=None):
             self.name_edit.setText(law.name)
             idx = self.law_combo.findData(law.law_type)
             if idx < 0:
-                idx = self.law_combo.findText(law.law_type.value)
+                self.category_combo.setCurrentText("Toutes les familles")
+                idx = self.law_combo.findData(law.law_type)
             if idx >= 0:
                 self.law_combo.setCurrentIndex(idx)
             self._rebuild_props()
@@ -121,8 +155,7 @@ def create_contact_tab(parent=None):
                 if val is None:
                     continue
                 if kind == "float":
-                    try: w.setValue(float(val))
-                    except Exception: pass
+                    w.setText(str(val))
                 else:
                     w.setText(str(val))
 

@@ -18,7 +18,7 @@ _COMMON = (
 def create_postpro_tab(parent=None):
     from PyQt6.QtWidgets import (
         QComboBox, QFormLayout, QHBoxLayout, QListWidget, QMessageBox,
-        QPushButton, QSpinBox, QVBoxLayout, QWidget,
+        QPushButton, QLineEdit, QVBoxLayout, QWidget,
     )
 
     class PostProTab(QWidget, BaseTab):
@@ -32,9 +32,9 @@ def create_postpro_tab(parent=None):
             self.name_combo = QComboBox()
             self.name_combo.setEditable(True)
             self.name_combo.addItems(_COMMON)
-            self.step_spin = QSpinBox()
-            self.step_spin.setRange(1, 1_000_000)
-            self.step_spin.setValue(1)
+            self.step_spin = QLineEdit("1")
+            self.step_spin.setPlaceholderText("entier ou expression")
+            self.mark_expr_field(self.step_spin)
             self.target_type = QComboBox()
             self.target_type.addItems(["global", "avatar", "group"])
             self.target_value = QComboBox()
@@ -90,7 +90,7 @@ def create_postpro_tab(parent=None):
             try:
                 cmd = PostProCommand(
                     name=self.name_combo.currentText().strip(),
-                    step=self.step_spin.value(),
+                    step=self.eval_int(self.step_spin.text(), 1, "step"),
                     target_type=tt,
                     target_value=tv,
                 )

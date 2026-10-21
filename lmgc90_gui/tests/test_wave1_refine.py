@@ -1,6 +1,9 @@
 """Vague 1 refined — ELAS, MULTI, rich avatars, ForLoop, law props."""
 from lmgc90_core import ForLoop, pre
-from lmgc90_core.types import CONTACT_LAW_PROPERTY_SCHEMA, ELEMENTS_BY_PHYSICS, MATERIAL_PROPERTY_SCHEMA
+from lmgc90_core.types import (
+    CONTACT_LAW_CATEGORIES, CONTACT_LAW_PROPERTY_SCHEMA, ContactLawType,
+    ELEMENTS_BY_PHYSICS, MATERIAL_PROPERTY_SCHEMA,
+)
 from lmgc90_gui import ProjectController
 
 
@@ -23,6 +26,16 @@ def test_schemas_present():
     }
     for law, expected in expected_contact_fields.items():
         assert [name for name, *_ in CONTACT_LAW_PROPERTY_SCHEMA[law]] == expected
+    supported = {law.value for law in ContactLawType}
+    categorized = {
+        law
+        for category, laws in CONTACT_LAW_CATEGORIES.items()
+        if category != "rigid/deformable"
+        for law in laws
+    }
+    assert len(supported) == 53
+    assert set(CONTACT_LAW_PROPERTY_SCHEMA) == supported
+    assert categorized == supported
 
 
 def test_elas_multi_forloop_law_props():

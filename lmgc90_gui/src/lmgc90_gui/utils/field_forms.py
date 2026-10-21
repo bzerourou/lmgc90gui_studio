@@ -122,7 +122,10 @@ DOF_PARAM_SCHEMA: dict[str, tuple[tuple[str, object, str], ...]] = {
 }
 
 
-def parse_vertices(text: str) -> Optional[list[list[float]]]:
+def parse_vertices(
+    text: str,
+    evaluate: Optional[Callable[[str, str], float]] = None,
+) -> Optional[list[list[float]]]:
     text = (text or "").strip()
     if not text:
         return None
@@ -131,7 +134,10 @@ def parse_vertices(text: str) -> Optional[list[list[float]]]:
         part = part.strip()
         if not part:
             continue
-        coords = [float(x) for x in part.replace(",", " ").split()]
+        coords = [
+            evaluate(x, "vertices") if evaluate else float(x)
+            for x in part.replace(",", " ").split()
+        ]
         if len(coords) < 2:
             raise ValueError(f"bad vertex line: {part!r}")
         pts.append(coords)

@@ -62,7 +62,7 @@ _LABELS = {
 
 def create_material_tab(parent=None):
     from PyQt6.QtWidgets import (
-        QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout,
+        QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
         QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget,
     )
 
@@ -91,6 +91,8 @@ def create_material_tab(parent=None):
             for mt in MaterialType:
                 self.type_combo.addItem(mt.value, mt)
             self.density_edit = QLineEdit("7800")
+            self.density_edit.setPlaceholderText("nombre ou expression")
+            self.mark_expr_field(self.density_edit)
             form.addRow("Name", self.name_edit)
             form.addRow("Type", self.type_combo)
             form.addRow("Density", self.density_edit)
@@ -163,20 +165,19 @@ def create_material_tab(parent=None):
                     self._prop_widgets[name] = (w, "combo")
                     continue
                 if kind == "float":
-                    w = QDoubleSpinBox()
-                    w.setRange(0.0, 1e30)
-                    w.setDecimals(6)
-                    if name.startswith(("young", "G", "sigc")):
-                        w.setDecimals(4)
-                    w.setValue(float(default) if default not in (None, "") else 0.0)
+                    w = QLineEdit(str(default) if default not in (None, "") else "0")
+                    w.setPlaceholderText("nombre ou expression")
+                    self.mark_expr_field(w)
                 elif kind == "float_or_field":
                     w = QLineEdit(str(default))
-                    w.setPlaceholderText("valeur numérique ou field")
+                    w.setPlaceholderText("nombre, expression ou field")
+                    self.mark_expr_field(w)
                 elif kind == "vector":
                     dim = self._project_dim()
                     values = tuple(default)
                     w = QLineEdit(", ".join(str(v) for v in values[:dim]))
-                    w.setPlaceholderText("valeurs séparées par des virgules")
+                    w.setPlaceholderText("valeurs / expressions séparées par des virgules")
+                    self.mark_expr_field(w)
                 else:
                     w = QLineEdit(str(default) if default is not None else "")
                 self.props_form.addRow(_LABELS.get(name, name), w)
@@ -256,16 +257,15 @@ def create_material_tab(parent=None):
                 if kind == "float":
                     if not w.isEnabled():
                         continue
-                    props[key] = float(w.value())
+                    props[key] = self.eval_float(w.text(), 0.0, key)
                 elif kind == "float_or_field":
                     text = w.text().strip()
                     props[key] = "field" if text.lower() == "field" else self.eval_float(text, 0.0, key)
                 elif kind == "vector":
-                    parts = [part.strip() for part in w.text().replace(";", ",").split(",") if part.strip()]
                     dim = self._project_dim()
-                    if len(parts) != dim:
-                        raise ValidationError(f"{key} doit contenir {dim} valeurs pour un projet {dim}D")
-                    props[key] = [self.eval_float(part, 0.0, key) for part in parts]
+                    props[key] = self.eval_list(
+                        w.text().replace(";", ","), dim, field_name=key
+                    )
                 elif kind == "combo":
                     props[key] = w.currentText().strip()
                 else:
@@ -336,7 +336,7 @@ def create_material_tab(parent=None):
                     continue
                 if kind == "float":
                     try:
-                        w.setValue(float(val))
+                        w.setText(str(val))
                     except Exception:
                         pass
                 elif kind == "combo":

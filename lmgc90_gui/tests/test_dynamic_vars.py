@@ -5,6 +5,7 @@ from lmgc90_core import pre
 from lmgc90_gui import ProjectController
 from lmgc90_gui.utils.eval_context import build_eval_context, resolve_dynamic_vars
 from lmgc90_gui.utils.safe_eval import safe_eval
+from lmgc90_gui.views.tabs.base_tab import BaseTab
 
 
 def test_resolve_chain_and_avatar_access():
@@ -25,6 +26,19 @@ def test_resolve_chain_and_avatar_access():
     assert abs(safe_eval("material['STEEL'].density", ctx) - 7800) < 1e-9
     assert safe_eval("len(avatar)", ctx) == 1
     assert safe_eval("avatars_by_color('BLUEx')[0].radius", ctx) == 0.1
+
+
+def test_tab_numeric_fields_evaluate_dynamic_variables():
+    ctrl = ProjectController()
+    ctrl.new_project("numeric-expressions", 2)
+    ctrl.set_dynamic_var("spacing", "0.25")
+    ctrl.set_dynamic_var("count", "spacing * 20")
+
+    tab = BaseTab()
+    tab.controller = ctrl
+
+    assert tab.eval_float("2 * spacing", field_name="radius") == 0.5
+    assert tab.eval_int("count", field_name="particles") == 5
 
 
 def test_persistence_roundtrip(tmp_path):

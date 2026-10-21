@@ -8,6 +8,7 @@ from lmgc90_core.types import AvatarType
 from lmgc90_core.validate import compatible_contactors
 
 from .base_tab import BaseTab
+from ...utils.safe_eval import safe_eval
 
 
 _CONTACTOR_PARAMS: dict[str, tuple[tuple[str, str, object, str], ...]] = {
@@ -82,9 +83,13 @@ def _read_contactor_params(
     fields: dict[str, object],
     *,
     dimension: int = 2,
+    evaluate_float=None,
+    evaluate_expression=None,
 ) -> dict[str, object]:
     """Convert the visible shape-specific form fields to pylmgc90 option values."""
     parsed: dict[str, object] = {}
+    number = evaluate_float or (lambda expression, _name: float(expression))
+    expression = evaluate_expression or ast.literal_eval
     generation_type = str(fields.get("generation_type", "regular"))
     if shape in ("POLYG", "POLYR") and generation_type not in ("regular", "full"):
         raise ValueError("generation_type must be 'regular' or 'full'")
@@ -100,22 +105,28 @@ def _read_contactor_params(
         if kind in ("shift", "choice"):
             continue
         if kind == "float":
-            number = float(value)
-            if number <= 0:
+            evaluated = number(value, name)
+            if evaluated <= 0:
                 raise ValueError(f"{name} must be greater than zero")
-            parsed[name] = number
+            parsed[name] = evaluated
         elif kind == "int":
-            number = int(value)
+            evaluated = number(value, name)
+            if not evaluated.is_integer():
+                raise ValueError(f"{name} must be an integer")
+            evaluated = int(evaluated)
             minimum = 3 if shape == "POLYG" else 4 if shape == "POLYR" else 1
-            if number < minimum:
+            if evaluated < minimum:
                 raise ValueError(f"{name} must be at least {minimum}")
-            parsed[name] = number
+            parsed[name] = evaluated
         elif kind in ("vertices2d", "vertices3d"):
             dimension = 2 if kind == "vertices2d" else 3
             rows = []
             for row in value.replace("\n", ";").split(";"):
                 if row.strip():
-                    coordinates = [float(part) for part in row.replace(",", " ").split()]
+                    coordinates = [
+                        number(part, name)
+                        for part in row.replace(",", " ").split()
+                    ]
                     if len(coordinates) != dimension:
                         raise ValueError(
                             f"{name} needs {dimension} coordinates per vertex"
@@ -125,12 +136,14 @@ def _read_contactor_params(
                 raise ValueError(f"{name} needs at least {dimension + 1} vertices")
             parsed[name] = rows
         elif kind == "triangles":
-            faces = ast.literal_eval(value)
+            faces = expression(value)
             if not isinstance(faces, list) or not faces:
                 raise ValueError("connectivity must be a non-empty list of triangular faces")
             if any(not isinstance(face, (list, tuple)) or len(face) != 3 for face in faces):
                 raise ValueError("each connectivity row must contain 3 vertex indices")
-            parsed[name] = [[int(index) for index in face] for face in faces]
+            parsed[name] = [
+                [int(number(str(index), name)) for index in face] for face in faces
+            ]
         else:
             parsed[name] = value
 
@@ -156,7 +169,10 @@ def _read_contactor_params(
             raise ValueError("connectivity indices must refer to the listed vertices")
     shift = fields.get("shift")
     if shift:
-        coordinates = [float(part) for part in str(shift).replace(",", " ").split()]
+        coordinates = [
+            number(part, "shift")
+            for part in str(shift).replace(",", " ").split()
+        ]
         if len(coordinates) != dimension:
             raise ValueError(f"shift must contain exactly {dimension} coordinates")
         parsed["shift"] = coordinates
@@ -279,6 +295,8 @@ def create_contactors_tab(parent=None):
                         )
                     field = QLineEdit(str(default))
                     field.setPlaceholderText(placeholder)
+                    if kind in ("float", "int", "shift"):
+                        self.mark_expr_field(field)
                     self._param_layout.addRow(name, field)
                     self._param_fields[name] = field
             is_mesh = shape in _MESH_CONTACTORS
@@ -307,6 +325,7 @@ def create_contactors_tab(parent=None):
             ]:
                 field = QLineEdit(str(default))
                 field.setPlaceholderText(placeholder)
+                self.mark_expr_field(field)
                 self._param_layout.addRow(name, field)
                 self._param_fields[name] = field
             dimension = self.controller.project.dimension if self.controller else (
@@ -316,6 +335,7 @@ def create_contactors_tab(parent=None):
             shift.setPlaceholderText(
                 f"{dimension}D offset, e.g. " + ", ".join(["0.0"] * dimension)
             )
+            self.mark_expr_field(shift)
             self._param_layout.addRow("shift", shift)
             self._param_fields["shift"] = shift
 
@@ -345,6 +365,8 @@ def create_contactors_tab(parent=None):
                         for name, field in self._param_fields.items()
                     },
                     dimension=dim,
+                    evaluate_float=lambda text, name: self.eval_float(text, 0.0, name),
+                    evaluate_expression=lambda text: safe_eval(text, self._get_context()),
                 )
                 if params:
                     entry["params"] = params

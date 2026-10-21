@@ -13,13 +13,14 @@ import keyword
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QGroupBox, QFormLayout, QLabel, QLineEdit, QComboBox,
-    QCheckBox, QSpinBox, QDoubleSpinBox, QDialogButtonBox,
+    QCheckBox, QDialogButtonBox,
     QScrollArea, QFrame, QButtonGroup, QRadioButton,
     QMessageBox, QPushButton, QTextEdit,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from typing import Dict, Any, Optional
+from ..views.tabs.base_tab import BaseTab
 
 
 # ── Helpers UI ────────────────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ _GBV_VECTORS_2D = _GBV_VECTORS
 _GBV_VECTORS_3D = _GBV_VECTORS
 
 
-class ChipyRoutinesDialog(QDialog):
+class ChipyRoutinesDialog(QDialog, BaseTab):
     """\n    Dialogue de configuration des routines chipy.    Utilisation :        dlg = ChipyRoutinesDialog(current_params, controller, parent)        if dlg.exec() == QDialog.DialogCode.Accepted:            params = dlg.get_params()    """
 
     # ── Valeurs par defaut ────────────────────────────────────────────────────
@@ -370,11 +371,9 @@ class ChipyRoutinesDialog(QDialog):
         ])
         fl_d.addRow("Physique MAILx :", self._combo_phys)
 
-        self._dspin_rloc = QDoubleSpinBox()
-        self._dspin_rloc.setRange(1e-8, 1.0)
-        self._dspin_rloc.setDecimals(4)
-        self._dspin_rloc.setSingleStep(1e-3)
-        self._dspin_rloc.setValue(5e-2)
+        self._dspin_rloc = QLineEdit("0.05")
+        self._dspin_rloc.setPlaceholderText("nombre ou expression")
+        self.mark_expr_field(self._dspin_rloc)
         self._dspin_rloc.setToolTip(
             "Tolerance sur les efforts de contact pour la reprise de Rloc. "
             "Typiquement 5e-2."
@@ -1013,9 +1012,9 @@ class ChipyRoutinesDialog(QDialog):
             ),
         )
         fl_rs.addRow(self._cb_restart)
-        self._spin_rs_step = QSpinBox()
-        self._spin_rs_step.setRange(0, 9_999_999)
-        self._spin_rs_step.setValue(0)
+        self._spin_rs_step = QLineEdit("0")
+        self._spin_rs_step.setPlaceholderText("entier ou expression")
+        self.mark_expr_field(self._spin_rs_step)
         self._spin_rs_step.setEnabled(False)
         self._spin_rs_step.setToolTip(
             "Numero du pas de temps a partir duquel reprendre."
@@ -1047,16 +1046,14 @@ class ChipyRoutinesDialog(QDialog):
         ])
         self._combo_stop_type.setEnabled(False)
         fl_sc.addRow("Type de critere :", self._combo_stop_type)
-        self._dspin_stop_val = QDoubleSpinBox()
-        self._dspin_stop_val.setRange(1e-16, 1.0)
-        self._dspin_stop_val.setDecimals(2)
-        self._dspin_stop_val.setValue(1e-6)
-        self._dspin_stop_val.setSingleStep(1e-7)
+        self._dspin_stop_val = QLineEdit("1e-6")
+        self._dspin_stop_val.setPlaceholderText("nombre ou expression")
+        self.mark_expr_field(self._dspin_stop_val)
         self._dspin_stop_val.setEnabled(False)
         fl_sc.addRow("Seuil :", self._dspin_stop_val)
-        self._spin_stop_freq = QSpinBox()
-        self._spin_stop_freq.setRange(1, 100_000)
-        self._spin_stop_freq.setValue(10)
+        self._spin_stop_freq = QLineEdit("10")
+        self._spin_stop_freq.setPlaceholderText("entier ou expression")
+        self.mark_expr_field(self._spin_stop_freq)
         self._spin_stop_freq.setEnabled(False)
         self._spin_stop_freq.setToolTip("Evaluer le critere tous les N pas.")
         fl_sc.addRow("Frequence d'evaluation (pas) :", self._spin_stop_freq)
@@ -1074,9 +1071,9 @@ class ChipyRoutinesDialog(QDialog):
             ),
         )
         fl_mp.addRow(self._cb_multi)
-        self._spin_mp_nb = QSpinBox()
-        self._spin_mp_nb.setRange(2, 20)
-        self._spin_mp_nb.setValue(3)
+        self._spin_mp_nb = QLineEdit("3")
+        self._spin_mp_nb.setPlaceholderText("entier ou expression")
+        self.mark_expr_field(self._spin_mp_nb)
         self._spin_mp_nb.setEnabled(False)
         fl_mp.addRow("Nombre de phases :", self._spin_mp_nb)
         self._edit_mp_sizes = QLineEdit("1e-3, 1e-4, 1e-5")
@@ -1947,13 +1944,15 @@ class ChipyRoutinesDialog(QDialog):
     def _read_insp_row(self, row: dict) -> dict:
         """Lit une ligne d'inspection et retourne un dict serialisable."""
         _mode = row["combo_mode"].currentData()
+        step_value = self.eval_int(row["spin_val"].text(), 1, "inspection step")
+        self._validate_step_value(_mode, step_value)
         values = {
             "func":      row["combo_func"].currentText(),
             "step_mode": _mode,
-            "step_val":  row["spin_val"].value(),
+            "step_val":  step_value,
             # compat ascendante
             "in_loop":   _mode not in ("before", "after"),
-            "freq":      row["spin_val"].value() if _mode == "every_n" else 1,
+            "freq":      step_value if _mode == "every_n" else 1,
         }
 
         values["ids"] = row["edit_ids"].text().strip()
@@ -1977,7 +1976,7 @@ class ChipyRoutinesDialog(QDialog):
         self._combo_phys.setCurrentIndex(
             {"MECAx": 0, "THERx": 1, "POROx": 2, "THMx": 3}.get(p["physics"], 0)
         )
-        self._dspin_rloc.setValue(p["Rloc_tol"])
+        self._dspin_rloc.setText(str(p["Rloc_tol"]))
 
         # Routines (mapping attr -> cle)
         _routine_map = {
@@ -2104,19 +2103,19 @@ class ChipyRoutinesDialog(QDialog):
 
         # Pilotage
         self._cb_restart.setChecked(p["use_restart"])
-        self._spin_rs_step.setValue(p["restart_step"])
+        self._spin_rs_step.setText(str(p["restart_step"]))
         self._spin_rs_step.setEnabled(p["use_restart"])
         self._cb_stop.setChecked(p["use_stop_crit"])
         self._combo_stop_type.setCurrentIndex(
             {"energy": 0, "disp_max": 1, "force_res": 2}.get(p["stop_crit_type"], 0)
         )
         self._combo_stop_type.setEnabled(p["use_stop_crit"])
-        self._dspin_stop_val.setValue(p["stop_crit_val"])
+        self._dspin_stop_val.setText(str(p["stop_crit_val"]))
         self._dspin_stop_val.setEnabled(p["use_stop_crit"])
-        self._spin_stop_freq.setValue(p["stop_crit_freq"])
+        self._spin_stop_freq.setText(str(p["stop_crit_freq"]))
         self._spin_stop_freq.setEnabled(p["use_stop_crit"])
         self._cb_multi.setChecked(p["use_multi_step"])
-        self._spin_mp_nb.setValue(p["multi_step_nb"])
+        self._spin_mp_nb.setText(str(p["multi_step_nb"]))
         self._spin_mp_nb.setEnabled(p["use_multi_step"])
         self._edit_mp_sizes.setText(p["multi_step_sizes"])
         self._edit_mp_sizes.setEnabled(p["use_multi_step"])
@@ -2299,18 +2298,25 @@ class ChipyRoutinesDialog(QDialog):
     def _read_vis_row(self, row: dict) -> dict:
         """Lit une ligne de visibilite et retourne un dict serialisable."""
         _mode = row["combo_mode"].currentData()
+        step_value = self.eval_int(row["spin_val"].text(), 1, "visibility step")
+        self._validate_step_value(_mode, step_value)
         return {
             "action":    row["combo_action"].currentData(),
             "dim":       row["combo_dim"].currentData(),
             "ids":       row["edit_ids"].text().strip(),
             "group":     row["combo_grp"].currentText().strip(),
             "step_mode": _mode,
-            "step_val":  row["spin_val"].value(),
+            "step_val":  step_value,
             "in_loop":   _mode not in ("before", "after"),
         }
 
     @staticmethod
-    def _make_timing_widget(entry: dict, default_mode: str = "all"):
+    def _validate_step_value(mode: str, value: int) -> None:
+        minimum = 0 if mode == "at_k" else 1
+        if value < minimum:
+            raise ValueError(f"Cette valeur de pas doit être supérieure ou égale à {minimum}.")
+
+    def _make_timing_widget(self, entry: dict, default_mode: str = "all"):
         """
         [ComboBox mode] [SpinBox valeur]
         step_mode : "before" | "all" | "every_n" | "at_k" | "after"
@@ -2335,9 +2341,9 @@ class ChipyRoutinesDialog(QDialog):
             "Apres boucle    : appel unique apres la boucle."
         )
 
-        spin = QSpinBox()
-        spin.setRange(1, 9_999_999)
+        spin = QLineEdit("1")
         spin.setFixedWidth(72)
+        self.mark_expr_field(spin)
         spin.setToolTip("N (frequence) ou k (indice du pas, debutant a 0)")
 
         mode = entry.get("step_mode", default_mode)
@@ -2356,12 +2362,9 @@ class ChipyRoutinesDialog(QDialog):
 
         order = ["before", "all", "every_n", "at_k", "after"]
         combo.setCurrentIndex(order.index(mode) if mode in order else order.index(default_mode))
-        if mode == "at_k":
-            spin.setMinimum(0)
-        spin.setValue(int(val))
+        spin.setText(str(val))
 
         def _on_mode(i, s=spin):
-            s.setMinimum(0 if i == 3 else 1)
             s.setEnabled(i in (2, 3))  # every_n, at_k
         combo.currentIndexChanged.connect(_on_mode)
         _on_mode(combo.currentIndex())
@@ -2473,15 +2476,17 @@ class ChipyRoutinesDialog(QDialog):
     def _read_gbv_row(self, row: dict) -> dict:
         """Lit les valeurs d'une ligne GBV et retourne un dict serialisable."""
         _mode = row["combo_mode"].currentData()
+        step_value = self.eval_int(row["spin_val"].text(), 1, "GBV step")
+        self._validate_step_value(_mode, step_value)
         return {
             "vec":       row["combo_vec"].currentText(),
             "ids":       row["edit_ids"].text().strip(),
             "group":     row["combo_grp"].currentText().strip(),
             "step_mode": _mode,
-            "step_val":  row["spin_val"].value(),
+            "step_val":  step_value,
             # compat ascendante
             "in_loop":   _mode not in ("before", "after"),
-            "freq":      row["spin_val"].value() if _mode == "every_n" else 1,
+            "freq":      step_value if _mode == "every_n" else 1,
         }
 
     def _pick_avatar_ids(self, target_edit: "QLineEdit", dim: str):
@@ -2745,7 +2750,7 @@ class ChipyRoutinesDialog(QDialog):
         p["physics"] = ["MECAx", "THERx", "POROx", "THMx"][
             self._combo_phys.currentIndex()
         ]
-        p["Rloc_tol"] = self._dspin_rloc.value()
+        p["Rloc_tol"] = self.eval_float(self._dspin_rloc.text(), 0.05, "Rloc_tol")
 
         # Routines — detecteurs officiels + FEM
         _routine_map = {
@@ -2838,16 +2843,20 @@ class ChipyRoutinesDialog(QDialog):
 
         # Pilotage
         p["use_restart"]      = self._cb_restart.isChecked()
-        p["restart_step"]     = self._spin_rs_step.value()
+        p["restart_step"]     = self.eval_int(self._spin_rs_step.text(), 0, "restart_step")
         p["use_stop_crit"]    = self._cb_stop.isChecked()
         p["stop_crit_type"]   = ["energy", "disp_max", "force_res"][
             self._combo_stop_type.currentIndex()
         ]
-        p["stop_crit_val"]    = self._dspin_stop_val.value()
-        p["stop_crit_freq"]   = self._spin_stop_freq.value()
+        p["stop_crit_val"]    = self.eval_float(self._dspin_stop_val.text(), 1e-6, "stop_crit_val")
+        p["stop_crit_freq"]   = self.eval_int(self._spin_stop_freq.text(), 10, "stop_crit_freq")
         p["use_multi_step"]   = self._cb_multi.isChecked()
-        p["multi_step_nb"]    = self._spin_mp_nb.value()
-        p["multi_step_sizes"] = self._edit_mp_sizes.text().strip()
+        p["multi_step_nb"]    = self.eval_int(self._spin_mp_nb.text(), 3, "multi_step_nb")
+        p["multi_step_sizes"] = ", ".join(
+            format(self.eval_float(value, 0.0, "multi_step_sizes"), ".16g")
+            for value in self._edit_mp_sizes.text().split(",")
+            if value.strip()
+        )
 
         return p
 
@@ -2856,12 +2865,46 @@ class ChipyRoutinesDialog(QDialog):
     # =========================================================================
 
     def _on_accept(self):
-        p = self.get_params()
+        try:
+            p = self.get_params()
+            p["vis_entries"] = [
+                self._read_vis_row(row) for row in self._vis_rows
+            ]
+            p["insp2d_entries"] = [
+                self._read_insp_row(row) for row in self._insp2d_rows
+            ]
+            p["insp3d_entries"] = [
+                self._read_insp_row(row) for row in self._insp3d_rows
+            ]
+            p["inspi_entries"] = [
+                self._read_insp_row(row) for row in self._inspi_rows
+            ]
+            p["set_entries"] = [
+                self._read_insp_row(row) for row in self._set_rows
+            ]
+            p["gbv2_entries"] = [self._read_gbv_row(row) for row in self._gbv2_rows]
+            p["gbv3_entries"] = [self._read_gbv_row(row) for row in self._gbv3_rows]
+        except ValueError as exc:
+            QMessageBox.warning(self, "Paramètres numériques", str(exc))
+            return
         errors = []
+
+        for key, minimum, maximum in (
+            ("Rloc_tol", 1e-8, 1.0),
+            ("restart_step", 0, 9_999_999),
+            ("stop_crit_val", 1e-16, 1.0),
+            ("stop_crit_freq", 1, 100_000),
+            ("multi_step_nb", 2, 20),
+        ):
+            if not minimum <= p[key] <= maximum:
+                errors.append(f"{key} doit être compris entre {minimum} et {maximum}.")
 
         if p["use_multi_step"]:
             try:
-                sizes = [float(x) for x in p["multi_step_sizes"].split(",")]
+                sizes = [
+                    self.eval_float(x, 0.0, "multi_step_sizes")
+                    for x in p["multi_step_sizes"].split(",")
+                ]
                 if len(sizes) != p["multi_step_nb"]:
                     errors.append(
                         "{} phases declarees mais {} valeur(s) de dt fournies.".format(
@@ -2870,6 +2913,7 @@ class ChipyRoutinesDialog(QDialog):
                     )
                 if any(s <= 0 for s in sizes):
                     errors.append("Multi-pas : tous les dt doivent etre > 0.")
+                p["multi_step_sizes"] = ", ".join(format(size, ".16g") for size in sizes)
             except ValueError:
                 errors.append(
                     "Multi-pas : format invalide pour les dt "

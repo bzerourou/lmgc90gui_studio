@@ -47,7 +47,7 @@ def create_avatar_tab(parent=None):
             self.cz = QLineEdit("0")
             for s in (self.cx, self.cy, self.cz):
                 s.setPlaceholderText("0  |  expr")
-                s.setProperty("class", "exprField")
+                self.mark_expr_field(s)
             self.mat_combo = QComboBox()
             self.mod_combo = QComboBox()
             self.color_edit = QLineEdit("BLUEx")
@@ -139,14 +139,18 @@ def create_avatar_tab(parent=None):
                 if kind == "float":
                     w = QLineEdit(str(default))
                     w.setPlaceholderText("number or expression")
+                    self.mark_expr_field(w)
                 elif kind == "int":
-                    w = QSpinBox(); w.setRange(0, 1_000_000); w.setValue(int(default))
+                    w = QLineEdit(str(default))
+                    w.setPlaceholderText("integer or expression")
+                    self.mark_expr_field(w)
                 elif kind == "bool":
                     w = QCheckBox(); w.setChecked(bool(default))
                 else:
                     w = QLineEdit(str(default))
                     if name == "vertices":
                         w.setPlaceholderText("x1,y1; x2,y2; …")
+                        self.mark_expr_field(w)
                 self.params_form.addRow(name, w)
                 self._param_widgets[name] = (w, kind)
             self._param_type_key = key
@@ -279,7 +283,10 @@ def create_avatar_tab(parent=None):
                         nb_vertices=int(p.get("nb_vertices") or 6),
                         radius=float(p.get("radius") or 0.1),
                     )
-                vertices = parse_vertices(p.get("vertices") or "")
+                vertices = parse_vertices(
+                    p.get("vertices") or "",
+                    evaluate=lambda text, name: self.eval_float(text, 0.0, name),
+                )
                 if vertices is None:
                     raise ValueError("At least 3 vertices are required")
                 return pre.rigidPolygon(
@@ -287,7 +294,14 @@ def create_avatar_tab(parent=None):
                     generation_type="full", vertices=vertices,
                 )
             if t == AvatarType.RIGID_OVOID:
-                return pre.rigidOvoidPolygon(center=center, model=mod, material=mat, color=color, radius=p.get("radius"), vertices=parse_vertices(p.get("vertices") or ""))
+                return pre.rigidOvoidPolygon(
+                    center=center, model=mod, material=mat, color=color,
+                    radius=p.get("radius"),
+                    vertices=parse_vertices(
+                        p.get("vertices") or "",
+                        evaluate=lambda text, name: self.eval_float(text, 0.0, name),
+                    ),
+                )
             if t == AvatarType.RIGID_CLUSTER:
                 return pre.rigidCluster(r=p.get("r", 0.05), center=center, model=mod, material=mat, color=color, nb_disk=int(p.get("nb_disk", 3)))
             if t == AvatarType.RIGID_CYLINDER:
@@ -302,7 +316,10 @@ def create_avatar_tab(parent=None):
                         nb_vertices=int(p.get("nb_vertices") or 8),
                         radius=float(p.get("radius") or 0.1),
                     )
-                vertices = parse_vertices(p.get("vertices") or "")
+                vertices = parse_vertices(
+                    p.get("vertices") or "",
+                    evaluate=lambda text, name: self.eval_float(text, 0.0, name),
+                )
                 if vertices is None:
                     raise ValueError("At least 4 vertices are required")
                 return pre.rigidPolyhedron(

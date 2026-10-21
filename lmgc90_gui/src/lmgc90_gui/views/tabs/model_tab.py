@@ -2,7 +2,14 @@
 from __future__ import annotations
 
 from lmgc90_core import Model, ValidationError
-from lmgc90_core.types import ELEMENTS_BY_PHYSICS
+from lmgc90_core.types import (
+    ELEMENTS_BY_PHYSICS,
+    MODEL_COMMON_OPTIONS_BY_PHYSICS,
+    MODEL_OPTION_CHOICES,
+    MODEL_OPTION_CHOICES_BY_PHYSICS,
+    MODEL_OPTION_DEFAULTS,
+    MODEL_OPTIONS_BY_PHYSICS,
+)
 
 from .base_tab import BaseTab
 from ...utils.naming import suggest_model_name
@@ -11,9 +18,10 @@ from ..widgets.entity_tree import create_entity_tree
 
 def create_model_tab(parent=None):
     from PyQt6.QtWidgets import (
-        QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+        QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
         QMessageBox, QPushButton, QVBoxLayout, QWidget,
     )
+    from ...utils.field_forms import clear_layout
 
     class ModelTab(QWidget, BaseTab):
         def __init__(self, parent=None):
@@ -39,9 +47,24 @@ def create_model_tab(parent=None):
             form.addRow("Element", self.element_combo)
             form.addRow("Dimension (project)", self.dim_label)
             layout.addLayout(form)
+            self.options_box = QGroupBox("Paramètres de l'élément")
+            self.options_form = QFormLayout(self.options_box)
+            self.option_widgets: dict[str, QComboBox] = {}
+            self._option_values: dict[str, str] = {}
+            layout.addWidget(self.options_box)
+            advanced_options_form = QFormLayout()
+            self.advanced_options_edit = QLineEdit()
+            self.advanced_options_edit.setPlaceholderText(
+                "Options LMGC90 supplémentaires : option=valeur, ..."
+            )
+            advanced_options_form.addRow("Autres options", self.advanced_options_edit)
+            layout.addLayout(advanced_options_form)
             self.physics_combo.currentTextChanged.connect(self._refresh_elements)
+            self.physics_combo.currentTextChanged.connect(self._refresh_option_fields)
             self.physics_combo.currentTextChanged.connect(self._suggest_name)
+            self.element_combo.currentTextChanged.connect(self._refresh_option_fields)
             self.element_combo.currentTextChanged.connect(self._suggest_name)
+            self._refresh_elements()
 
             row = QHBoxLayout()
             for text, slot in (
@@ -58,19 +81,8 @@ def create_model_tab(parent=None):
         def _refresh_elements(self, *_a) -> None:
             phys = self.physics_combo.currentText()
             dim = self.controller.project.dimension if self.controller else 2
-            elems = []
-            table = ELEMENTS_BY_PHYSICS.get(phys) or ELEMENTS_BY_PHYSICS.get("MECAx") or {}
-            if isinstance(table, dict):
-                elems = list(table.get(dim) or table.get(str(dim)) or ())
-            elif isinstance(table, (list, tuple)):
-                elems = list(table)
-            # fallback from types
-            if not elems:
-                try:
-                    from lmgc90_core.types import elements_for
-                    elems = list(elements_for(phys, dim))
-                except Exception:
-                    elems = ["Rxx2D", "T3xxx"] if dim == 2 else ["Rxx3D", "TE4xx"]
+            table = ELEMENTS_BY_PHYSICS.get(phys) or {}
+            elems = list(table.get(dim) or table.get(str(dim)) or ())
             cur = self.element_combo.currentText()
             self.element_combo.blockSignals(True)
             self.element_combo.clear()
@@ -80,6 +92,45 @@ def create_model_tab(parent=None):
                 if i >= 0:
                     self.element_combo.setCurrentIndex(i)
             self.element_combo.blockSignals(False)
+            self._refresh_option_fields()
+
+        def _refresh_option_fields(self, *_a) -> None:
+            previous = {
+                name: widget.currentText()
+                for name, widget in self.option_widgets.items()
+            }
+            self._option_values.update(previous)
+            clear_layout(self.options_form)
+            self.option_widgets.clear()
+            physics = self.physics_combo.currentText()
+            element = self.element_combo.currentText()
+            option_names = () if element in ("Rxx2D", "Rxx3D") else (
+                *MODEL_OPTIONS_BY_PHYSICS.get(physics, {}).get(element, ()),
+                *MODEL_COMMON_OPTIONS_BY_PHYSICS.get(physics, ()),
+            )
+            for name in dict.fromkeys(option_names):
+                choices = MODEL_OPTION_CHOICES_BY_PHYSICS.get(
+                    physics, {}
+                ).get(name, MODEL_OPTION_CHOICES[name])
+                widget = QComboBox()
+                widget.setEditable(True)
+                widget.addItems(choices)
+                default = (
+                    "class"
+                    if physics == "THERx" and name == "formulation"
+                    else MODEL_OPTION_DEFAULTS[name]
+                )
+                value = self._option_values.get(name, default)
+                if value not in choices:
+                    value = default
+                index = widget.findText(value)
+                if index >= 0:
+                    widget.setCurrentIndex(index)
+                else:
+                    widget.setCurrentText(value)
+                self.options_form.addRow(name, widget)
+                self.option_widgets[name] = widget
+            self.options_box.setVisible(bool(option_names))
 
         def _suggest_name(self, *_a) -> None:
             if self.controller is None or self._editing_name:
@@ -121,6 +172,7 @@ def create_model_tab(parent=None):
             if not mod:
                 return
             self._editing_name = mod.name
+            self._option_values = {}
             self.name_edit.setText(mod.name)
             i = self.physics_combo.findText(mod.physics)
             if i >= 0:
@@ -129,11 +181,35 @@ def create_model_tab(parent=None):
             j = self.element_combo.findText(mod.element)
             if j >= 0:
                 self.element_combo.setCurrentIndex(j)
+            self._refresh_option_fields()
+            self.advanced_options_edit.clear()
+            known = set(self.option_widgets)
+            unknown = {
+                key: value for key, value in mod.options.items()
+                if key not in known and key != "discrete"
+            }
+            self.advanced_options_edit.setText(", ".join(
+                f"{key}={value!r}" for key, value in unknown.items()
+            ))
+            for key, widget in self.option_widgets.items():
+                if key in mod.options:
+                    widget.setCurrentText(str(mod.options[key]))
+                    self._option_values[key] = str(mod.options[key])
 
         def _clear_form(self) -> None:
             self._editing_name = None
             self.name_edit.clear()
             self._last_auto_name = ""
+            self._option_values.clear()
+            self.advanced_options_edit.clear()
+            for name, widget in self.option_widgets.items():
+                default = (
+                    "class"
+                    if self.physics_combo.currentText() == "THERx"
+                    and name == "formulation"
+                    else MODEL_OPTION_DEFAULTS[name]
+                )
+                widget.setCurrentText(default)
             self._suggest_name()
             self.tree.clearSelection()
 
@@ -141,12 +217,32 @@ def create_model_tab(parent=None):
             name = self.name_edit.text().strip()
             if not name:
                 raise ValidationError("Name required")
+            physics = self.physics_combo.currentText()
+            element = self.element_combo.currentText()
+            options = {
+                key: widget.currentText().strip()
+                for key, widget in self.option_widgets.items()
+                if widget.currentText().strip()
+            }
+            custom_options = self.eval_dict(
+                self.advanced_options_edit.text(), "Autres options"
+            )
+            duplicate_options = options.keys() & custom_options.keys()
+            if duplicate_options:
+                raise ValidationError(
+                    "Options renseignées deux fois : "
+                    + ", ".join(sorted(duplicate_options))
+                )
+            options.update(custom_options)
+            if element in ("SPRG2", "SPRG3"):
+                options["discrete"] = "yes__"
             dim = self.controller.project.dimension
             return Model(
                 name=name,
-                physics=self.physics_combo.currentText(),
-                element=self.element_combo.currentText(),
+                physics=physics,
+                element=element,
                 dimension=dim,
+                options=options,
             )
 
         def _on_add(self) -> None:

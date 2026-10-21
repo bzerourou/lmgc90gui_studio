@@ -260,6 +260,7 @@ def create_dof_tab(parent=None):
                 self._advanced_params = self._line_edit(
                     _format_params(values)
                 )
+                self.mark_expr_field(self._advanced_params)
                 self.params_form.addRow("Arguments avancés", self._advanced_params)
                 return
 
@@ -273,6 +274,8 @@ def create_dof_tab(parent=None):
                         widget.setCurrentIndex(current)
                 else:
                     widget = self._line_edit(value)
+                    if kind in ("number", "value", "components"):
+                        self.mark_expr_field(widget)
                 self._param_widgets[key] = widget
                 self.params_form.addRow(label, widget)
 
@@ -364,7 +367,35 @@ def create_dof_tab(parent=None):
 
         def _collect_params(self) -> dict[str, Any]:
             if self._advanced_params is not None:
-                return _parse_params(self._advanced_params.text())
+                params = _parse_params(self._advanced_params.text())
+                fields = _PARAM_FIELDS.get(self.law_combo.currentText(), ())
+                for key, value in tuple(params.items()):
+                    field = next(
+                        (item for item in fields if item[0] == key),
+                        None,
+                    )
+                    if field is None:
+                        continue
+                    kind = field[2]
+                    if kind == "number":
+                        params[key] = self.eval_float(str(value), 0.0, key)
+                    elif kind in ("value", "components") and isinstance(value, str):
+                        value = self._eval_dof_value(value, key)
+                    if kind == "components":
+                        components = value if isinstance(value, (list, tuple)) else [value]
+                        if not all(
+                            isinstance(component, (int, float))
+                            and not isinstance(component, bool)
+                            and float(component).is_integer()
+                            for component in components
+                        ):
+                            raise ValueError(
+                                "Les composantes doivent être un entier ou une liste."
+                            )
+                        params[key] = [int(component) for component in components]
+                    elif kind == "value":
+                        params[key] = value
+                return params
             params = {}
             for key, widget in self._param_widgets.items():
                 if key in self._hidden_params:
@@ -380,23 +411,19 @@ def create_dof_tab(parent=None):
                 if not text and key in {"center", "evolutionFile", "plot_time_range"}:
                     continue
                 if kind == "number":
-                    try:
-                        params[key] = float(text)
-                    except ValueError as exc:
-                        raise ValueError(f"{key} doit être un nombre.") from exc
+                    params[key] = self.eval_float(text, 0.0, key)
                 elif kind in ("value", "components"):
-                    parsed = _parse_value(text)
+                    parsed = self._eval_dof_value(text, key)
                     if kind == "components":
-                        if isinstance(parsed, str):
-                            parsed = [
-                                int(part.strip()) for part in text.split(",") if part.strip()
-                            ]
                         components = parsed if isinstance(parsed, (list, tuple)) else [parsed]
                         if not all(
-                            isinstance(component, int) and not isinstance(component, bool)
+                            isinstance(component, (int, float))
+                            and not isinstance(component, bool)
+                            and float(component).is_integer()
                             for component in components
                         ):
                             raise ValueError("Les composantes doivent être un entier ou une liste.")
+                        parsed = [int(component) for component in components]
                     elif key in {"axis", "center", "plot_time_range"}:
                         values = parsed if isinstance(parsed, (list, tuple)) else [parsed]
                         if not all(isinstance(value, (int, float)) for value in values):
@@ -415,6 +442,14 @@ def create_dof_tab(parent=None):
             elif not params.get("evolutionFile"):
                 raise ValueError("Le mode evolution exige un fichier d’évolution.")
             return params
+
+        def _eval_dof_value(self, text: str, field_name: str) -> Any:
+            raw = text.strip()
+            if not raw:
+                return []
+            if raw.startswith(("[", "(")) or "," in raw:
+                return self.eval_list(raw, field_name=field_name)
+            return self.eval_float(raw, 0.0, field_name)
 
         def _clear_form(self) -> None:
             self._editing_index = None

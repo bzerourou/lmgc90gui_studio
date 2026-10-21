@@ -109,7 +109,12 @@ class BaseTab:
             raise ValueError(str(e)) from e
 
     def eval_int(self, text: str, default: int = 0, field_name: str = "") -> int:
-        return int(round(self.eval_float(text, float(default), field_name)))
+        value = self.eval_float(text, float(default), field_name)
+        if not value.is_integer():
+            raise ValueError(
+                f"{field_name or 'value'} must evaluate to an integer, got {value}"
+            )
+        return int(value)
 
     def eval_list(self, text: str, expected_length: int | None = None,
                   default: list | None = None, field_name: str = "") -> list:
@@ -132,7 +137,7 @@ class BaseTab:
             return out
         except Exception as e:
             self._show_eval_error(text, e, field_name)
-            raise
+            raise ValueError(str(e)) from e
 
     def eval_dict(self, text: str, field_name: str = "") -> dict:
         """Parse key=val, key=val with nested expressions."""

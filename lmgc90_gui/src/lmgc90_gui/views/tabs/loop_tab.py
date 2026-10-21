@@ -12,8 +12,8 @@ _KINDS = ("circle", "grid", "line", "spiral")
 
 def create_loop_tab(parent=None):
     from PyQt6.QtWidgets import (
-        QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-        QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSpinBox,
+        QCheckBox, QComboBox, QFormLayout, QHBoxLayout,
+        QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
         QVBoxLayout, QWidget,
     )
     from PyQt6.QtCore import Qt
@@ -30,25 +30,17 @@ def create_loop_tab(parent=None):
             self.kind_combo = QComboBox()
             self.kind_combo.addItems(_KINDS)
             self.template_combo = QComboBox()
-            self.count_spin = QSpinBox()
-            self.count_spin.setRange(1, 100_000)
-            self.count_spin.setValue(8)
-            self.radius_spin = QDoubleSpinBox()
-            self.radius_spin.setRange(0.0, 1e6)
-            self.radius_spin.setValue(0.5)
-            self.radius_spin.setDecimals(4)
-            self.step_spin = QDoubleSpinBox()
-            self.step_spin.setRange(0.0, 1e6)
-            self.step_spin.setValue(0.2)
-            self.step_spin.setDecimals(4)
-            self.ox = QDoubleSpinBox(); self.oy = QDoubleSpinBox(); self.oz = QDoubleSpinBox()
-            for s in (self.ox, self.oy, self.oz):
-                s.setRange(-1e6, 1e6)
-                s.setDecimals(4)
-            self.spiral = QDoubleSpinBox()
-            self.spiral.setRange(0.0, 10.0)
-            self.spiral.setValue(0.1)
-            self.spiral.setDecimals(4)
+            self.count_spin = QLineEdit("8")
+            self.radius_spin = QLineEdit("0.5")
+            self.step_spin = QLineEdit("0.2")
+            self.ox = QLineEdit("0"); self.oy = QLineEdit("0"); self.oz = QLineEdit("0")
+            self.spiral = QLineEdit("0.1")
+            for field in (
+                self.count_spin, self.radius_spin, self.step_spin, self.ox,
+                self.oy, self.oz, self.spiral,
+            ):
+                field.setPlaceholderText("nombre ou expression")
+                self.mark_expr_field(field)
             self.invert = QCheckBox("Invert axis (line)")
             self.group_edit = QLineEdit()
             self.group_edit.setPlaceholderText("optional group name")
@@ -127,20 +119,20 @@ def create_loop_tab(parent=None):
                 QMessageBox.warning(self, "Loop", "Select a template avatar first")
                 return
             kind = self.kind_combo.currentText()
-            loop = Loop(
-                loop_type=kind,
-                model_avatar_id=tid,
-                count=self.count_spin.value(),
-                radius=self.radius_spin.value(),
-                step=self.step_spin.value(),
-                offset_x=self.ox.value(),
-                offset_y=self.oy.value(),
-                offset_z=self.oz.value(),
-                spiral_factor=self.spiral.value(),
-                invert_axis=self.invert.isChecked(),
-                group_name=self.group_edit.text().strip() or None,
-            )
             try:
+                loop = Loop(
+                    loop_type=kind,
+                    model_avatar_id=tid,
+                    count=self.eval_int(self.count_spin.text(), 8, "count"),
+                    radius=self.eval_float(self.radius_spin.text(), 0.5, "radius"),
+                    step=self.eval_float(self.step_spin.text(), 0.2, "step"),
+                    offset_x=self.eval_float(self.ox.text(), 0.0, "offset X"),
+                    offset_y=self.eval_float(self.oy.text(), 0.0, "offset Y"),
+                    offset_z=self.eval_float(self.oz.text(), 0.0, "offset Z"),
+                    spiral_factor=self.eval_float(self.spiral.text(), 0.1, "spiral factor"),
+                    invert_axis=self.invert.isChecked(),
+                    group_name=self.group_edit.text().strip() or None,
+                )
                 generated = self.controller.apply_loop(loop)
                 QMessageBox.information(
                     self, "Loop",
