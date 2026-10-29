@@ -11,9 +11,9 @@ Une table de visibilité (see-table) déclare une paire de contacteurs susceptib
 3. Créez une loi dans **Contact**.
 4. Ouvrez **Onglets → Ouvrir → Visibility** (`Ctrl+8`).
 5. Dans **Corps candidat**, choisissez le type de corps mobile. Les choix suivent la dimension du projet et les types de corps présents.
-6. Choisissez **Shape candidat (mobile)**. La liste privilégie les contacteurs réels des corps compatibles avec le rôle candidat.
+6. Choisissez **Shape candidat (mobile)** parmi les contacteurs réellement présents sur les avatars du projet.
 7. Choisissez **Color candidat**. Pour la forme sélectionnée, l’application propose les couleurs effectivement associées à ces contacteurs.
-8. Choisissez **Corps antagoniste**, **Shape antagoniste (obstacle)** et **Color antagoniste** de la même manière.
+8. Choisissez **Corps antagoniste**, **Shape antagoniste (obstacle)** et **Color antagoniste** de la même manière. Les formes sont proposées des deux côtés : par exemple, `SPHER` peut être choisi comme candidat ou antagoniste pour une paire grains↔grains.
 9. Sélectionnez **Law (behav)** parmi les lois du projet.
 10. Réglez **Alert**, distance de détection avant contact, en unités cohérentes avec la géométrie.
 11. Cliquez sur **Add**.

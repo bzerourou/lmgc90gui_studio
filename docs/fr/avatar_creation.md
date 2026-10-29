@@ -1,6 +1,9 @@
 # Créer et modifier un avatar
 
-Un avatar est un corps de la scène. Il référence un matériau et un modèle, possède un centre et une couleur, puis des paramètres géométriques propres à son type. Créez d’abord le matériau et le modèle.
+Onglet Avatar Permet de créer, modifier et supprimer les corps rigides du projet : disques, sphères, joncs, polygones, murs, cylindres, polyèdres et plus encore.
+Chaque avatar est défini par un type, un centre, un matériau, un modèle et des paramètres géométriques spécifiques à son type.
+
+---
 
 ![](../captures/avatars.png)
 
@@ -15,68 +18,49 @@ Un avatar est un corps de la scène. Il référence un matériau et un modèle, 
 7. Cliquez sur **Add**. Une boîte d’avertissement précise les références manquantes ou paramètres invalides.
 8. Actualisez le visualiseur 3D si vous souhaitez contrôler le placement.
 
-## Types et paramètres géométriques
+## Liste des avatars par dimension
 
 Les noms de paramètres sont ceux présentés dans **Type parameters**.
 
-### Formes 2D
+### Avatars 2D
 
-| Type | Paramètres spécifiques |
-|---|---|
-| `rigidDisk` | `r`, `is_Hollow` |
-| `rigidDiscreteDisk` | `r` |
-| `rigidJonc` | `axe1`, `axe2` |
-| `rigidPolygon` | `generation_type`, `nb_vertices`, `radius`, `vertices` |
-| `rigidOvoidPolygon` | `radius`, `vertices` |
-| `rigidCluster` | `r`, `nb_disk` |
+| Type pylmgc90 | Description courte | Paramètres clés |
+|---------------|--------------------|-----------------|
+| `rigidDisk` | Disque rigide | `r`, `is_hollow` |
+| `rigidJonc` | Ellipse rigide | `axe1`, `axe2` |
+| `rigidPolygon` | Polygone rigide | `generation_type`, `nb_vertices`, `radius` ou `vertices` |
+| `rigidOvoidPolygon` | Ovoïde rigide | `ra`, `rb`, `nb_vertices` |
+| `rigidDiscreteDisk` | Disque discret | `r` |
+| `rigidCluster` | Cluster de disques | `r`, `nb_disk` |
 | `roughWall` | Mur rugueux | `l`, `r`, `nb_vertex` |
 | `fineWall` | Mur fin | `l`, `r`, `nb_vertex` |
 | `smoothWall` | Mur lisse | `l`, `h`, `nb_polyg` |
 | `granuloRoughWall` | Mur granulaire | `l`, `rmin`, `rmax`, `nb_vertex` |
 
+### Avatars 3D
 
-### Formes 3D
-
-| Type | Paramètres spécifiques |
-|---|---|
-| `rigidSphere` | `r`, `is_Hollow` |
-| `rigidCylinder` | `r`, `h`, `is_Hollow` |
-| `rigidPlan` | `axe1`, `axe2`, `axe3` |
-| `rigidPolyhedron` | `generation_type`, `nb_vertices`, `radius`, `vertices` |
-| `roughWall3D` | `lx`, `ly`, `lz` |
-| `granuloRoughWall3D` | `lx`, `ly`, `lz`, `rmin`, `rmax` |
-
-`emptyAvatar` et `mesh` apparaissent également dans la liste. Leurs procédures sont détaillées dans [Avatar vide](empty_avatar.md) et [Corps déformable](empty_avatar.md#avatar-mesh) ou [Assistant des déformables](meshed.md).
+| Type pylmgc90 | Description courte | Paramètres clés |
+|---------------|--------------------|-----------------|
+| `rigidSphere` | Sphère rigide | `r`, `is_hollow` |
+| `rigidPlan` | Plan rigide | `axe1`, `axe2`, `axe3` |
+| `rigidCylinder` | Cylindre rigide | `r`, `h`, `is_hollow` |
+| `rigidPolyhedron` | Polyèdre rigide | `generation_type`, `nb_vertices`, `radius` ou `vertices` + `faces` |
+| `roughWall3D` | Mur rugueux 3D | `lx`, `ly`, `r` |
+| `granuloRoughWall3D` | Mur granulaire 3D | `lx`, `ly`, `rmin`, `rmax` |
 
 
-## Polygones et sommets personnalisés
 
-Pour un polygone ou un polyèdre régulier, gardez `generation_type` à `regular`, puis renseignez le nombre de sommets et le rayon. Pour une géométrie explicite, saisissez les coordonnées dans **vertices**, séparées par des points-virgules :
+### Champs communs à tous les types
 
-```text
-x1,y1; x2,y2; x3,y3
-```
+| Champ | Description |
+|-------|-------------|
+| **Type** | Type d'avatar pylmgc90. Détermine les champs supplémentaires affichés. |
+| **Centre** | Coordonnées du centre de référence. Format `x, y` en 2D ou `x, y, z` en 3D. Accepte les expressions Python (`avatar[0].x + 0.5`). |
+| **Matériau** | Sélection parmi les matériaux définis dans l'onglet Matériaux. |
+| **Modèle** | Sélection parmi les modèles définis dans l'onglet Modèles. |
+| **Couleur** | Couleur d'affichage LMGC90 en 5 caractères. Voir liste des couleurs ci-dessous. |
 
-En 3D, chaque sommet doit contenir ses coordonnées `x,y,z`. Les sommets doivent former une géométrie valide et contenir au moins trois points en 2D ou quatre en 3D.
-
-## Expressions et dimension
-
-Les champs numériques de centre et plusieurs paramètres acceptent une valeur numérique ou une expression du projet. Par exemple, un rayon peut réutiliser une variable définie dans **Tools → Variables dynamiques…**. Une expression non résolue provoque un avertissement au moment de l’ajout.
-
-En 2D, le centre contient deux coordonnées. En 3D, il en contient trois. Utilisez un modèle de la même dimension ; les types rigides doivent être associés à l’élément rigide de cette dimension (`Rxx2D` ou `Rxx3D`).
-
-## Modifier un avatar
-
-1. Sélectionnez la ligne de l’avatar dans la liste supérieure.
-2. Les champs communs et les paramètres disponibles pour son type se rechargent.
-3. Modifiez les valeurs nécessaires.
-4. Cliquez sur **Update**.
-
-## Supprimer un avatar
-
-Sélectionnez l’avatar puis cliquez sur **Delete**. Vérifiez les groupes, conditions DOF et autres règles qui pouvaient le cibler. La suppression de l’avatar ne signifie pas nécessairement que toutes les références fonctionnelles du projet ont été réinterprétées.
-
-## Couleur et contact
+### Couleur et contact
 
 La couleur sert aussi à sélectionner des corps dans les tables **Visibility** et les opérations DOF ciblées par couleur. Gardez un code de couleur cohérent entre l’avatar, son contacteur et la table de visibilité. L’ajout de formes de contact supplémentaires est documenté dans [Contacteurs](contactors.md).
 
@@ -96,6 +80,10 @@ Exemples de couleurs que vous pourriez utiliser :
 | `MAGEx` | Magenta |
 | `VIOLx` | Violet |
 | `ROSEx` | Rose |
+
+`emptyAvatar` et `mesh` apparaissent également dans la liste. Leurs procédures sont détaillées dans [Avatar vide](empty_avatar.md) et [Corps déformable](empty_avatar.md#avatar-mesh) ou [Assistant des déformables](meshed.md).
+
+---
 
 ## Types d'avatars 2D
 
@@ -306,3 +294,21 @@ Paroi 3D rugueuse avec sphères de tailles aléatoires.
 | `rmin` | Rayon minimal des sphères (m). | `0.01` |
 | `rmax` | Rayon maximal des sphères (m). | `0.05` |
 
+---
+
+## Expressions et dimension
+
+Les champs numériques de centre et plusieurs paramètres acceptent une valeur numérique ou une expression du projet. Par exemple, un rayon peut réutiliser une variable définie dans **Tools → Variables dynamiques…**. Une expression non résolue provoque un avertissement au moment de l’ajout.
+
+En 2D, le centre contient deux coordonnées. En 3D, il en contient trois. Utilisez un modèle de la même dimension ; les types rigides doivent être associés à l’élément rigide de cette dimension (`Rxx2D` ou `Rxx3D`).
+
+## Modifier un avatar
+
+1. Sélectionnez la ligne de l’avatar dans la liste supérieure.
+2. Les champs communs et les paramètres disponibles pour son type se rechargent.
+3. Modifiez les valeurs nécessaires.
+4. Cliquez sur **Update**.
+
+## Supprimer un avatar
+
+Sélectionnez l’avatar puis cliquez sur **Delete**. Vérifiez les groupes, conditions DOF et autres règles qui pouvaient le cibler. La suppression de l’avatar ne signifie pas nécessairement que toutes les références fonctionnelles du projet ont été réinterprétées.

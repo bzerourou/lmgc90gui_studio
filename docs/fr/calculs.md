@@ -542,7 +542,7 @@ En cas d'erreur, la boîte liste toutes les anomalies et le dialogue reste ouver
  
 Écarts entre dialogue, générateur et tests (à corriger ou à signaler) :
  
-1. **Macro `use_SelectProx_macro`** : le dialogue la transmet, mais `generate_string` ne la lit pas. Sans détecteur coché, le script appelle `chipy.SelectProxTactors()` seul ; avec des détecteurs cochés, la macro n'a pas d'effet.
+1. **Macro `use_SelectProx_macro`** : lorsqu'elle est activée, les détecteurs individuels sont temporairement désactivés dans le dialogue et le script appelle `chipy.SelectProxTactors()` seul. Les sélections individuelles sont conservées si la macro est ensuite désactivée.
 2. **Actions SET** : le dialogue produit `set_entries`, et `test_compute_script_set_actions.py` attend leur émission et des `ValueError` explicites. L'émission n'apparaît **pas** dans le `compute_script.py` fourni. Vérifiez que le générateur correspond à celui des tests.
 3. **`multiMAILx`** : la case et la clé `use_multiMAILx` existent, mais le générateur ne produit aucun appel `multiMAILx_*`.
 4. **Détecteurs 3D non émis** : le générateur ne lit, en 3D, que `SPSPx`, `SPCDx`, `SPPLx`, `CDCDx`, `CDPLx`, `PRPRx`. Les cases `CSASp`, `CSPRx`, `PRASp`, `PRPLx`, `SPDCx`, `SPPRx` sont cochables mais n'écrivent rien. `PTPT3` n'est émis que par le chemin `use_PT3Dx`, que le dialogue renseigne.
@@ -551,7 +551,7 @@ En cas d'erreur, la boîte liste toutes les anomalies et le dialogue reste ouver
 7. **Textes d'aide obsolètes** :
    - la note de Pilotage cite `chipy.SetStep(restart_step)` alors que le code génère `ReadIni(record=N)` + `OpenDisplayFiles(restart=N+1)` ;
    - la note de l'onglet 2D cite `POLYR` pour les polygones 2D (le contacteur est `POLYG`) et `ALpALp`.
-8. **`_on_3d_toggled`** ne grise que les anciennes cases (`DKDKx`, `DKJCx`, `DKKDx`, `PLPLx`, `CLALp`, `SPSPx`…). Les nouveaux détecteurs ne sont pas désactivés selon la dimension ; l'auto-détection compense.
+8. Les détecteurs 2D et 3D ainsi que leurs raccourcis sont grisés selon la dimension du modèle et l'activation de la macro globale.
 9. **Résumé de l'onglet Compute** (`_update_chipy_summary`) : il liste encore `ALpALp`, `PT2Dx`, `PT3Dx` et `NODES`. À remplacer par la liste officielle.
 10. **Liste `Norme`** : l'onglet Compute propose `Maxm `, tandis que `calculs.md` documente `Maxim`.
 11. **Test d'intégration** : `test_chipy_script_enables_detectors_required_by_demo_visibility` attend `mhyp = 3`, `RBDY3_NewStep()` et `SetDimension(2)`, ce qui diffère de la sortie du générateur fourni (`mhyp = 0` en 3D, `SetDimension(dim, mhyp)`, boucle `IncrementStep`/`ComputeFreeVelocity`). Tests ou générateur sont à réaligner.

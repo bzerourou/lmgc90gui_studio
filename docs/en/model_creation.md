@@ -82,6 +82,7 @@ All four physics are implemented in LMGC90_GUI Studio.
 | `Q9xxx` | Quadrangle 9 nodes | 9 | 2 | Biquadratic Lagrange quadrangle. |
 | `BARxx` | Segment 2 nodes | 2 | 1 | Bar / 1D truss. |
 | `SPRG2` | Segment 2 nodes | 2 | 1 | 2D spring (`discrete=yes__` added automatically). |
+| `S2xth` | Segment 2 nodes | 2 | 1 | 1D thermal element also available in this family. |
 
 ### MECAx — Mechanical elements 3D
 
@@ -159,6 +160,35 @@ Same mixed elements as POROx, plus `H8xxx` in 3D for uniform interpolation of th
 | `H8xxx` | 3D | Trilinear hexahedron (uniform THM interpolation). |
 | `H88xx` | 3D | Mixed Q1/Q1 hexahedron. |
 | `H208x` | 3D | Mixed Q2/Q1 hexahedron. |
+
+## Available model parameters
+
+The tab displays options for the selected physics and element. Rigid elements `Rxx2D` and `Rxx3D` have no options. Springs `SPRG2` and `SPRG3` automatically receive `discrete="yes__"`. Additional options can be entered as `name=value`.
+
+### MECAx
+
+| Option | Offered values |
+|--------|----------------|
+| `kinematic` | `small`, `large` |
+| `formulation` | `UpdtL`, `TotaL` |
+| `mass_storage` | `lump_`, `coher` |
+| `material` | `elas_`, `elasd`, `J2iso`, `J2mix`, `kvisc` |
+| `anisotropy` | `iso__`, `ortho` |
+| `external_model` | `MatL_`, `Demfi`, `Umat_`, `no___`, `yes__` |
+
+The first three options depend on the element; the last three are common options for deformable elements.
+
+### THERx
+
+Deformable thermal elements offer `capacity_storage` (`coher`), `formulation` (`class`), and `convection_type` (`supg_`, `char_`, `center`). `SPRG2` and `SPRG3` offer only `capacity_storage`. `external_model` is common (`no___`, `yes__`). Rigid elements have no options.
+
+### POROx
+
+Poromechanical elements offer `kinematic` (`small`, `large`), `mass_storage` and `capacity_storage` (`lump_`, `coher`), and common `material`, `anisotropy`, `external_model`, `physical_type` (`fluid`, `solid`), and `convection_type` (`supg_`, `char_`, `center`) options.
+
+### MULTI
+
+THM elements offer `kinematic`, `mass_storage`, and `formulation`, with common `material`, `anisotropy`, `external_model`, `fluid_comp_storage` (`lump_`, `coher`), and `convection_type` (`supg_`, `char_`, `center`) options.
 
 ---
 

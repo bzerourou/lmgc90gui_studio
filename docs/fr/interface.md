@@ -1,7 +1,7 @@
 # Découverte de l'interface graphique
-LMGC90_GUI Studio Studio est une interface graphique moderne conçue pour faciliter la création de modèles numériques avec le module **pre** (pré-processeur) de **LMGC90**.
+LMGC90_GUI Studio est une interface graphique moderne conçue pour faciliter la création de modèles numériques avec le module **pre** (pré-processeur) de **LMGC90**.
 
-Il est également possible de configurer et lancer vos calculs directement depuis LMGC90_GUI Studio Studio via le module **chipy**.
+Il est également possible de configurer et lancer vos calculs directement depuis LMGC90_GUI Studio via le module **chipy**.
 
 L'interface est organisée de manière claire et ergonomique pour accompagner l'utilisateur du début à la fin du processus de modélisation : création des éléments, conditions aux limites, post-traitement, génération des fichiers et enfin lancement des calculs.
 

@@ -73,15 +73,20 @@ Les quatre physiques sont toutes implémentées dans LMGC90_GUI Studio.
 | `Rxx2D` | Point | 1 | — | Corps rigide 2D. Aucune option. |
 | `T3xxx` | Triangle 3 nœuds | 3 | 1 | Triangle linéaire standard. |
 | `T3Lxx` | Triangle 3 nœuds | 3 | 1 | Triangle linéaire enrichi (incompatible). |
+| `T33xx` | Triangle 3 nœuds | 3 | 1 | Triangle mixte déplacement-pression. |
 | `T6xxx` | Triangle 6 nœuds | 6 | 2 | Triangle quadratique. |
+| `T63xx` | Triangle 6 nœuds | 6 | 2 | Triangle mixte déplacement-pression. |
 | `DKTxx` | Triangle 3 nœuds | 3 | 1 | Triangle de Kirchhoff discret (plaques minces). |
 | `Q4xxx` | Quadrangle 4 nœuds | 4 | 1 | Quadrangle bilinéaire standard. |
 | `Q4P0x` | Quadrangle 4 nœuds | 4 | 1 | Quadrangle bilinéaire + pression constante (quasi-incompressible). |
+| `Q44xx` | Quadrangle 4 nœuds | 4 | 1 | Quadrangle mixte déplacement-pression. |
 | `Q8xxx` | Quadrangle 8 nœuds | 8 | 2 | Quadrangle sérendipité. |
 | `Q8Rxx` | Quadrangle 8 nœuds | 8 | 2 | Quadrangle sérendipité à intégration réduite. |
+| `Q84xx` | Quadrangle 8 nœuds | 8 | 2 | Quadrangle mixte déplacement-pression. |
 | `Q9xxx` | Quadrangle 9 nœuds | 9 | 2 | Quadrangle Lagrange biquadratique. |
 | `BARxx` | Segment 2 nœuds | 2 | 1 | Barre / treillis 1D. |
 | `SPRG2` | Segment 2 nœuds | 2 | 1 | Ressort 2D (`discrete=yes__` ajouté automatiquement). |
+| `S2xth` | Segment 2 nœuds | 2 | 1 | Élément thermique 1D aussi disponible dans cette famille. |
  
 ### MECAx — Éléments mécaniques 3D
  
@@ -90,10 +95,14 @@ Les quatre physiques sont toutes implémentées dans LMGC90_GUI Studio.
 | `Rxx3D` | Point | 1 | — | Corps rigide 3D. Aucune option. |
 | `TE4xx` | Tétraèdre 4 nœuds | 4 | 1 | Tétraèdre linéaire. |
 | `TE4Lx` | Tétraèdre 4 nœuds | 4 | 1 | Tétraèdre linéaire enrichi (F-bar). |
+| `TE44x` | Tétraèdre 4 nœuds | 4 | 1 | Tétraèdre mixte déplacement-pression. |
 | `TE10x` | Tétraèdre 10 nœuds | 10 | 2 | Tétraèdre quadratique. |
+| `TE104` | Tétraèdre 10 nœuds | 10 | 2 | Tétraèdre mixte déplacement-pression. |
 | `H8xxx` | Hexaèdre 8 nœuds | 8 | 1 | Hexaèdre trilinéaire. |
+| `H88xx` | Hexaèdre 8 nœuds | 8 | 1 | Hexaèdre mixte déplacement-pression. |
 | `H20xx` | Hexaèdre 20 nœuds | 20 | 2 | Hexaèdre sérendipité. |
 | `H20Rx` | Hexaèdre 20 nœuds | 20 | 2 | Hexaèdre sérendipité à intégration réduite. |
+| `H208x` | Hexaèdre 20 nœuds | 20 | 2 | Hexaèdre mixte déplacement-pression. |
 | `PRI6x` | Prisme 6 nœuds | 6 | 1 | Prisme linéaire. |
 | `SHB6x` | Prisme 6 nœuds | 6 | 1 | Prisme solide-coque SHB6. |
 | `PRI15` | Prisme 15 nœuds | 15 | 2 | Prisme quadratique. |
@@ -108,29 +117,29 @@ Les quatre physiques sont toutes implémentées dans LMGC90_GUI Studio.
 | Élément | Nœuds | Ordre | Options thermiques spécifiques |
 |---------|-------|-------|-------------------------------|
 | `Rxx2D` | 1 | — | aucune |
-| `T3xxx` | 3 | 1 | `mass_storage`, `convection`, `radiation` |
-| `T6xxx` | 6 | 2 | `mass_storage`, `convection`, `radiation` |
-| `DKTxx` | 3 | 1 | `mass_storage`, `convection`, `radiation` |
-| `Q4xxx` | 4 | 1 | `mass_storage`, `convection`, `radiation` |
-| `Q4P0x` | 4 | 1 | `mass_storage`, `convection`, `radiation` |
-| `Q8xxx` | 8 | 2 | `mass_storage`, `convection`, `radiation` |
-| `Q8Rxx` | 8 | 2 | `mass_storage`, `convection`, `radiation` |
-| `SPRG2` | 2 | 1 | `mass_storage` uniquement |
-| `S2xth` | 2 | 1 | `mass_storage` uniquement — segment thermique 1D |
+| `T3xxx` | 3 | 1 | `capacity_storage`, `formulation`, `convection_type` |
+| `T6xxx` | 6 | 2 | `capacity_storage`, `formulation`, `convection_type` |
+| `DKTxx` | 3 | 1 | `capacity_storage`, `formulation`, `convection_type` |
+| `Q4xxx` | 4 | 1 | `capacity_storage`, `formulation`, `convection_type` |
+| `Q4P0x` | 4 | 1 | `capacity_storage`, `formulation`, `convection_type` |
+| `Q8xxx` | 8 | 2 | `capacity_storage`, `formulation`, `convection_type` |
+| `Q8Rxx` | 8 | 2 | `capacity_storage`, `formulation`, `convection_type` |
+| `SPRG2` | 2 | 1 | `capacity_storage` uniquement |
+| `S2xth` | 2 | 1 | `capacity_storage`, `formulation`, `convection_type` |
  
 ### THERx — Éléments thermiques 3D
  
 | Élément | Nœuds | Ordre | Options thermiques spécifiques |
 |---------|-------|-------|-------------------------------|
 | `Rxx3D` | 1 | — | aucune |
-| `TE4xx` | 4 | 1 | `mass_storage`, `convection`, `radiation` |
-| `TE10x` | 10 | 2 | `mass_storage`, `convection`, `radiation` |
-| `H8xxx` | 8 | 1 | `mass_storage`, `convection`, `radiation` |
-| `H20xx` | 20 | 2 | `mass_storage`, `convection`, `radiation` |
-| `H20Rx` | 20 | 2 | `mass_storage`, `convection`, `radiation` |
-| `PRI6x` | 6 | 1 | `mass_storage`, `convection`, `radiation` |
-| `PRI15` | 15 | 2 | `mass_storage`, `convection`, `radiation` |
-| `SPRG3` | 2 | 1 | `mass_storage` uniquement |
+| `TE4xx` | 4 | 1 | `capacity_storage`, `formulation`, `convection_type` |
+| `TE10x` | 10 | 2 | `capacity_storage`, `formulation`, `convection_type` |
+| `H8xxx` | 8 | 1 | `capacity_storage`, `formulation`, `convection_type` |
+| `H20xx` | 20 | 2 | `capacity_storage`, `formulation`, `convection_type` |
+| `H20Rx` | 20 | 2 | `capacity_storage`, `formulation`, `convection_type` |
+| `PRI6x` | 6 | 1 | `capacity_storage`, `formulation`, `convection_type` |
+| `PRI15` | 15 | 2 | `capacity_storage`, `formulation`, `convection_type` |
+| `SPRG3` | 2 | 1 | `capacity_storage` uniquement |
  
 ### POROx — Éléments poromécaniques (éléments mixtes déplacement-pression)
  
@@ -160,7 +169,36 @@ Mêmes éléments mixtes que POROx, avec en plus `H8xxx` en 3D pour l'interpolat
 | `H8xxx` | 3D | Hexaèdre trilinéaire (interpolation uniforme THM). |
 | `H88xx` | 3D | Hexaèdre mixte Q1/Q1. |
 | `H208x` | 3D | Hexaèdre mixte Q2/Q1. |
- 
+
+## Paramètres de modèle disponibles
+
+L’onglet affiche les options associées à la physique et à l’élément choisis. Les éléments rigides `Rxx2D` et `Rxx3D` n’ont pas d’option spécifique. Les ressorts `SPRG2` et `SPRG3` reçoivent automatiquement `discrete="yes__"`. Les options supplémentaires peuvent être saisies au format `nom=valeur`.
+
+### MECAx
+
+| Option | Valeurs proposées |
+|--------|-------------------|
+| `kinematic` | `small`, `large` |
+| `formulation` | `UpdtL`, `TotaL` |
+| `mass_storage` | `lump_`, `coher` |
+| `material` | `elas_`, `elasd`, `J2iso`, `J2mix`, `kvisc` |
+| `anisotropy` | `iso__`, `ortho` |
+| `external_model` | `MatL_`, `Demfi`, `Umat_`, `no___`, `yes__` |
+
+Les trois premières options dépendent de l’élément; les trois dernières sont les options communes aux éléments déformables.
+
+### THERx
+
+Les éléments thermiques déformables proposent `capacity_storage` (`coher`), `formulation` (`class`) et `convection_type` (`supg_`, `char_`, `center`). `SPRG2` et `SPRG3` ne proposent que `capacity_storage`. `external_model` est commun (`no___`, `yes__`). Les éléments rigides n’ont pas d’option.
+
+### POROx
+
+Les éléments poromécaniques proposent `kinematic` (`small`, `large`), `mass_storage` et `capacity_storage` (`lump_`, `coher`), ainsi que les options communes `material`, `anisotropy`, `external_model`, `physical_type` (`fluid`, `solid`) et `convection_type` (`supg_`, `char_`, `center`).
+
+### MULTI
+
+Les éléments THM proposent `kinematic`, `mass_storage` et `formulation`, avec les options communes `material`, `anisotropy`, `external_model`, `fluid_comp_storage` (`lump_`, `coher`) et `convection_type` (`supg_`, `char_`, `center`).
+
 ---
  
 ## Tableau récapitulatif par usage
@@ -214,5 +252,3 @@ Mêmes éléments mixtes que POROx, avec en plus `H8xxx` en 3D pour l'interpolat
 | `VISCO_ELAS` | — | — | — | — | ✅ |
 | `ELAS_PLAS` | — | ✅ | ✅ | ✅ | — |
 | `THERMO_ELAS` | ✅ | ✅ | — | — | — |
-
-
