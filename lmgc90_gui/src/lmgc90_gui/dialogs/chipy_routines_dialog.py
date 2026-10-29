@@ -248,7 +248,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         "restart_step":       0,
         # Critere d'arret
         "use_stop_crit":      False,
-        "stop_crit_type":     "energy",
+        "stop_crit_type":     "vel_max",
         "stop_crit_val":      1e-6,
         "stop_crit_freq":     10,
         # Multi-pas
@@ -493,6 +493,12 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         )
         for c in (self._cb_CLALp, self._cb_CLJCx, self._cb_DKALp, self._cb_DKDKL, self._cb_DKDKx, self._cb_DKJCx, self._cb_DKKDx, self._cb_DKPLx, self._cb_P2P2L, self._cb_PLALp, self._cb_PLJCx, self._cb_PLPLx, self._cb_PTPT2):
             vb_t2d.addWidget(c)
+        self._detector_checkboxes_2d = (
+            self._cb_CLALp, self._cb_CLJCx, self._cb_DKALp, self._cb_DKDKL,
+            self._cb_DKDKx, self._cb_DKJCx, self._cb_DKKDx, self._cb_DKPLx,
+            self._cb_P2P2L, self._cb_PLALp, self._cb_PLJCx, self._cb_PLPLx,
+            self._cb_PTPT2,
+        )
         grp_t2d.setLayout(vb_t2d)
         vb.addWidget(grp_t2d)
 
@@ -553,6 +559,12 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         )
         for c in (self._cb_CDCDx, self._cb_CDPLx, self._cb_CSASp, self._cb_CSPRx, self._cb_PRASp, self._cb_PRPLx, self._cb_PRPRx, self._cb_PTPT3, self._cb_SPCDx, self._cb_SPDCx, self._cb_SPPLx, self._cb_SPPRx, self._cb_SPSPx):
             vb_t3d.addWidget(c)
+        self._detector_checkboxes_3d = (
+            self._cb_CDCDx, self._cb_CDPLx, self._cb_CSASp, self._cb_CSPRx,
+            self._cb_PRASp, self._cb_PRPLx, self._cb_PRPRx, self._cb_PTPT3,
+            self._cb_SPCDx, self._cb_SPDCx, self._cb_SPPLx, self._cb_SPPRx,
+            self._cb_SPSPx,
+        )
         grp_t3d.setLayout(vb_t3d)
         vb.addWidget(grp_t3d)
 
@@ -564,6 +576,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
             tip=(
                 "Ignore les cases individuelles et appelle la macro officielle "
                 "qui dispatch vers tous les detecteurs de la dimension. "
+                "Les cases individuelles sont temporairement desactivees. "
                 "Ideal quand le DATBOX contient deja les bonnes see-tables."
             ),
         )
@@ -662,7 +675,8 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         ])
         add_group("Contacts, forces et diagnostic", [
             ("advanced_fd_select_prox", "Utiliser FdSelectProxTactors",
-             "Remplace la selection standard. Reserve aux contacts sphere/sphere."),
+             "Remplace la selection standard et les detecteurs individuels. "
+             "Incompatible avec chipy.SelectProxTactors() uniquement."),
             ("advanced_compute_rnod", "Recalculer les reactions (ComputeRnod)",
              "Recalcule les reactions de contact apres la mise a jour du pas."),
             ("advanced_fatal_damping", "Activer FatalDamping",
@@ -1040,9 +1054,8 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         fl_sc.addRow(self._cb_stop)
         self._combo_stop_type = QComboBox()
         self._combo_stop_type.addItems([
-            "Energie residuelle      ||E_res|| < seuil",
-            "Deplacement max         max|u|   < seuil",
-            "Residu de force         ||F_res|| < seuil",
+            "Vitesse maximale        max|v|   < seuil",
+            "Déplacement maximal     max|x|   < seuil",
         ])
         self._combo_stop_type.setEnabled(False)
         fl_sc.addRow("Type de critere :", self._combo_stop_type)
@@ -1142,7 +1155,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         ("xKSID_GetContactorRadius",   "Rayon du contacteur xKSID i",                         1),
         ("xKSID_GetNbPointOutlines",   "Nombre de points d'outline du contacteur xKSID i",     1),
         ("xKSID_GetNbScalarFields",    "Nombre de champs scalaires du contacteur xKSID i",      1),
-        ("xKSID_GetNbxKSID",           "Nombre total de contacteurs xKSID (disques discrets)", 1),
+        ("xKSID_GetNbxKSID",           "Nombre total de contacteurs xKSID (disques discrets)", 0),
         ("xKSID_GetPtrxKSID2BDYTY",    "Index local du xKSID dans son corps RBDY2",            1),
         # ---- Rigid Body Dynamics 2 (RBDY2) -------------------------------------
         ("RBDY2_GetAllArea", "Aires de tous les corps RBDY2", 0),
@@ -1314,7 +1327,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         # ---- Comportements de contact ------------------------------------------
         ("tact_behav_GetInternalComment", "Commentaires sur les données internes de contact", 1),
         ("tact_behav_GetLawInternalComment", "Commentaires sur les lois de contact", 1),
-        ("tact_behav_GetNbTactBehav", "Nombre de comportements de contact", 1),
+        ("tact_behav_GetNbTactBehav", "Nombre de comportements de contact", 0),
         ("tact_behav_GetParam", "Paramètres du comportement de contact", 1),
         ("tact_behav_GetParamRankFromName", "Rang du paramètre du comportement de contact à partir de son nom", 1),
         ("tact_behav_GetTactBehav", "Comportement de contact", 1),
@@ -1333,7 +1346,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         ("therMAILx_GetNbGp", "Nombre de points d'intégration du MAILx thermique", 1),
         ("therMAILx_GetNbGpByElem", "Nombre de points d'intégration par élément du MAILx thermique", 1),
         ("therMAILx_GetNbNodes", "Nombre de noeuds du MAILx thermique", 1),
-        ("therMAILx_GetNbTherMAILx", "Nombre de MAILx thermiques", 1),
+        ("therMAILx_GetNbTherMAILx", "Nombre de MAILx thermiques", 0),
         ("therMAILx_GetScalarFieldRank", "Rang du champ scalaire du MAILx thermique", 1),
         ("therMAILx_GetVectorFieldRank", "Rang du champ vectoriel du MAILx thermique", 1),
         # --- POROx --------------------------------------------------------
@@ -1349,7 +1362,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         ("poroMAILx_GetNbElements", "Nombre d'éléments du MAILx poro", 1),
         ("poroMAILx_GetNbGpByElem", "Nombre de points d'intégration par élément du MAILx poro", 1),
         ("poroMAILx_GetNbNodes", "Nombre de noeuds du MAILx poro", 1),
-        ("poroMAILx_GetNbPoroMAILx", "Nombre de MAILx poro", 1),
+        ("poroMAILx_GetNbPoroMAILx", "Nombre de MAILx poro", 0),
         ("poroMAILx_GetStrain", "Déformations du MAILx poro", 1),
         ("poroMAILx_GetStress", "Contraintes du MAILx poro", 1),
         ("poroMAILx_GetTherScalarFieldRank", "Rang du champ scalaire thermique du MAILx poro", 1),
@@ -2107,7 +2120,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         self._spin_rs_step.setEnabled(p["use_restart"])
         self._cb_stop.setChecked(p["use_stop_crit"])
         self._combo_stop_type.setCurrentIndex(
-            {"energy": 0, "disp_max": 1, "force_res": 2}.get(p["stop_crit_type"], 0)
+            {"vel_max": 0, "disp_max": 1}.get(p["stop_crit_type"], 0)
         )
         self._combo_stop_type.setEnabled(p["use_stop_crit"])
         self._dspin_stop_val.setText(str(p["stop_crit_val"]))
@@ -2139,6 +2152,19 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
             checkbox.toggled.connect(
                 lambda _checked: self._refresh_advanced_routine_controls()
             )
+        self._cb_SelectProx_macro.toggled.connect(
+            lambda checked: self._on_prox_selection_mode_toggled(
+                checked, "macro"
+            )
+        )
+        self._advanced_checks["advanced_fd_select_prox"].toggled.connect(
+            lambda checked: self._on_prox_selection_mode_toggled(
+                checked, "fd"
+            )
+        )
+        self._on_prox_selection_mode_toggled(
+            self._cb_SelectProx_macro.isChecked(), "macro"
+        )
 
     def _on_stop_toggled(self, v: bool):
         self._combo_stop_type.setEnabled(v)
@@ -2152,12 +2178,32 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
     def _on_3d_toggled(self, is3d: bool):
         self._rb_cp.setEnabled(not is3d)
         self._rb_dp.setEnabled(not is3d)
-        for c in (self._cb_DKDKx, self._cb_DKJCx, self._cb_DKKDx,
-                  self._cb_PLPLx, self._cb_CLALp):
-            c.setEnabled(not is3d)
-        for c in (self._cb_SPSPx, self._cb_SPCDx, self._cb_SPPLx,
-                  self._cb_CDCDx, self._cb_CDPLx, self._cb_PRPRx):
-            c.setEnabled(is3d)
+        self._refresh_detector_controls()
+
+    def _refresh_detector_controls(self):
+        macro_selected = self._cb_SelectProx_macro.isChecked()
+        fd_selected = self._advanced_checks["advanced_fd_select_prox"].isChecked()
+        detectors_enabled = not (macro_selected or fd_selected)
+        is3d = self._rb_3d.isChecked()
+        for checkbox in self._detector_checkboxes_2d:
+            checkbox.setEnabled(detectors_enabled and not is3d)
+        for checkbox in self._detector_checkboxes_3d:
+            checkbox.setEnabled(detectors_enabled and is3d)
+        for checkbox in (self._cb_DKMECAx, self._cb_ALpMECAx):
+            checkbox.setEnabled(detectors_enabled and not is3d)
+        self._cb_SPMECAx.setEnabled(detectors_enabled and is3d)
+        self._cb_SelectProx_macro.setEnabled(not fd_selected)
+        self._advanced_checks["advanced_fd_select_prox"].setEnabled(
+            not macro_selected
+        )
+
+    def _on_prox_selection_mode_toggled(self, checked: bool, mode: str):
+        fd_checkbox = self._advanced_checks["advanced_fd_select_prox"]
+        if checked and mode == "macro":
+            fd_checkbox.setChecked(False)
+        elif checked and mode == "fd":
+            self._cb_SelectProx_macro.setChecked(False)
+        self._refresh_detector_controls()
 
     def _on_deformable_toggled(self, v: bool):
         if v:
@@ -2845,11 +2891,17 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         p["use_restart"]      = self._cb_restart.isChecked()
         p["restart_step"]     = self.eval_int(self._spin_rs_step.text(), 0, "restart_step")
         p["use_stop_crit"]    = self._cb_stop.isChecked()
-        p["stop_crit_type"]   = ["energy", "disp_max", "force_res"][
+        p["stop_crit_type"]   = ["vel_max", "disp_max"][
             self._combo_stop_type.currentIndex()
         ]
-        p["stop_crit_val"]    = self.eval_float(self._dspin_stop_val.text(), 1e-6, "stop_crit_val")
-        p["stop_crit_freq"]   = self.eval_int(self._spin_stop_freq.text(), 10, "stop_crit_freq")
+        p["stop_crit_val"]    = (
+            self.eval_float(self._dspin_stop_val.text(), 1e-6, "stop_crit_val")
+            if p["use_stop_crit"] else 1e-6
+        )
+        p["stop_crit_freq"]   = (
+            self.eval_int(self._spin_stop_freq.text(), 10, "stop_crit_freq")
+            if p["use_stop_crit"] else 10
+        )
         p["use_multi_step"]   = self._cb_multi.isChecked()
         p["multi_step_nb"]    = self.eval_int(self._spin_mp_nb.text(), 3, "multi_step_nb")
         p["multi_step_sizes"] = ", ".join(
@@ -2889,13 +2941,17 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
             return
         errors = []
 
-        for key, minimum, maximum in (
+        numeric_limits = [
             ("Rloc_tol", 1e-8, 1.0),
             ("restart_step", 0, 9_999_999),
-            ("stop_crit_val", 1e-16, 1.0),
-            ("stop_crit_freq", 1, 100_000),
             ("multi_step_nb", 2, 20),
-        ):
+        ]
+        if p["use_stop_crit"]:
+            numeric_limits.extend((
+                ("stop_crit_val", 1e-16, 1.0),
+                ("stop_crit_freq", 1, 100_000),
+            ))
+        for key, minimum, maximum in numeric_limits:
             if not minimum <= p[key] <= maximum:
                 errors.append(f"{key} doit être compris entre {minimum} et {maximum}.")
 

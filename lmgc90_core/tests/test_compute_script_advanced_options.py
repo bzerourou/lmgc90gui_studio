@@ -166,3 +166,31 @@ def test_prox_tactors_are_selected_once_per_step_with_fallback_or_detector():
     })
     assert detector_script.count("chipy.SelectProxTactors()") == 0
     assert detector_script.count("chipy.SPSPx_SelectProxTactors()") == 1
+
+
+def test_select_prox_macro_overrides_individual_detectors():
+    project = Project(name="prox_macro", dimension=3)
+    script = ComputeScriptGenerator(project).generate_string({
+        "use_RBDY2": False,
+        "use_RBDY3": True,
+        "use_SelectProx_macro": True,
+        "use_SPSPx": True,
+        "use_PRPRx": True,
+    })
+
+    assert script.count("chipy.SelectProxTactors()") == 1
+    assert "chipy.SPSPx_SelectProxTactors()" not in script
+    assert "chipy.PRPRx_SelectProxTactors()" not in script
+
+
+def test_fd_select_prox_overrides_individual_detectors():
+    project = Project(name="fd_prox", dimension=3)
+    script = ComputeScriptGenerator(project).generate_string({
+        "use_RBDY2": False,
+        "use_RBDY3": True,
+        "advanced_fd_select_prox": True,
+        "use_SPSPx": True,
+    })
+
+    assert script.count("chipy.FdSelectProxTactors()") == 1
+    assert "chipy.SPSPx_SelectProxTactors()" not in script

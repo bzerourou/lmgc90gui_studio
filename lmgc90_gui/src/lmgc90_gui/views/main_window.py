@@ -43,7 +43,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def __init__(self, controller: Optional[ProjectController] = None):
             super().__init__()
             self.controller = controller or ProjectController()
-            self.setWindowTitle(f"LMGC90_GUI Studio v0.6.7 — {self.controller.project.name}")
+            self.setWindowTitle(f"LMGC90_GUI Studio v0.6.8 — {self.controller.project.name}")
             self.resize(1280, 860)
             apply_app_style(self)
             self._build_ui()
@@ -183,16 +183,16 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_pipe = QAction(f"{MENU_ICONS['pipeline']} Pipeline / &SLURM…", self)
             act_pipe.triggered.connect(self._on_pipeline)
             tools.addAction(act_pipe)
-            act_mesh = QAction(f"{MENU_ICONS['mesh']} Assistant &Mesh déformable…", self)
+            act_mesh = QAction(f"{MENU_ICONS['mesh']} &Mesh and deformation wizard…", self)
             act_mesh.setShortcut(QKeySequence("Ctrl+Shift+D"))
             act_mesh.triggered.connect(self._on_mesh_wizard)
             tools.addAction(act_mesh)
-            act_mas = QAction(f"{MENU_ICONS['masonry']} Assistant M&açonnerie…", self)
+            act_mas = QAction(f"{MENU_ICONS['masonry']} M&asonry wizard…", self)
             act_mas.setShortcut(QKeySequence("Ctrl+Shift+M"))
             act_mas.triggered.connect(self._on_masonry_wizard)
             tools.addAction(act_mas)
             tools.addSeparator()
-            act_dyn = QAction(f"{MENU_ICONS['dynvars']} &Variables dynamiques…", self)
+            act_dyn = QAction(f"{MENU_ICONS['dynvars']} &Dynamic variables…", self)
             act_dyn.setShortcut(QKeySequence("Ctrl+V"))
             act_dyn.triggered.connect(self._on_dynamic_vars)
             tools.addAction(act_dyn)
@@ -221,23 +221,23 @@ def create_main_window(controller: Optional[ProjectController] = None):
 
             # ── Menu Onglets (open / close) ─────────────────────────────────
             tabs_m = mb.addMenu("📑 &Onglets")
-            open_sub = tabs_m.addMenu("➕ Ouvrir")
+            open_sub = tabs_m.addMenu("➕ Open tab…")
             tab_menu_items = [
-                ("material", "🧪 Matériaux"),
-                ("model", "📐 Modèles"),
+                ("material", "🧪 Material"),
+                ("model", "📐 Models"),
                 ("avatar", "🔵 Avatars"),
-                ("loop", "🔁 Boucles"),
+                ("loop", "🔁 Loops"),
                 ("for_loop", "🔢 ForLoop"),
                 ("granulo", "⚪ Granulo"),
                 ("contact", "🤝 Contact"),
-                ("visibility", "👁️ Visibilité"),
+                ("visibility", "👁️ Visibility"),
                 ("dof", "📌 DOF"),
                 ("postpro", "📊 Post-pro"),
                 ("viewer", "🎨 Visualisation 3D"),
                 ("groups", "📁 Groups"),
                 ("contactors", "🔗 Contactors"),
-                ("deformable", "🧩 Déformable"),
-                ("masonry", "🧱 Maçonnerie"),
+                ("deformable", "🧩 Deformable"),
+                ("masonry", "🧱 Masonry"),
             ]
             for n, (tid, label) in enumerate(tab_menu_items, 1):
                 act = QAction(label, self)
@@ -246,28 +246,28 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 act.triggered.connect(lambda checked=False, t=tid: self._add_tab(t))
                 open_sub.addAction(act)
             tabs_m.addSeparator()
-            act_close_others = QAction("❌ Fermer les autres", self)
+            act_close_others = QAction("❌ Close others", self)
             act_close_others.triggered.connect(self._close_other_tabs)
             tabs_m.addAction(act_close_others)
-            act_close_all = QAction("🗑️ Fermer tous (sauf essentiels)", self)
+            act_close_all = QAction("🗑️ Close all (except essentials)", self)
             act_close_all.triggered.connect(self._close_all_tabs)
             tabs_m.addAction(act_close_all)
             tabs_m.addSeparator()
-            act_defaults = QAction("🔄 Onglets par défaut", self)
+            act_defaults = QAction("🔄 Default tabs", self)
             act_defaults.setShortcut(QKeySequence("Ctrl+Alt+D"))
             act_defaults.triggered.connect(self._reopen_default_tabs)
             tabs_m.addAction(act_defaults)
 
-            ex_m = mb.addMenu("📚 &Exemples")
-            act_browse = QAction("Bibliothèque d'exemples…", self)
+            ex_m = mb.addMenu("📚 &Examples")
+            act_browse = QAction("Example library…", self)
             act_browse.setShortcut(QKeySequence("Ctrl+Shift+E"))
             act_browse.triggered.connect(self._on_browse_examples)
             ex_m.addAction(act_browse)
 
             help_m = mb.addMenu(f"{MENU_ICONS['help']} &Help")
-            act_palette = QAction("🎛️ &Palette de commandes…", self)
+            act_palette = QAction("🎛️ &Command palette…", self)
             act_palette.setShortcut(QKeySequence("Ctrl+K"))
-            act_palette.setToolTip("Rechercher et lancer une commande (Ctrl+K)")
+            act_palette.setToolTip("Search and execute a command (Ctrl+K)")
             act_palette.triggered.connect(self._on_command_palette)
             help_m.addAction(act_palette)
             act_about = QAction(f"{MENU_ICONS['about']} &About / shortcuts", self)
@@ -307,10 +307,10 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 f"𝑥 vars={n_vars}  ·  "
                 f"pylmgc={'✅' if self.controller.pylmgc_available() else '—'}"
             )
-            self.setWindowTitle(f"LMGC90_GUI Studio v0.6.7 — {p.name}")
+            self.setWindowTitle(f"LMGC90_GUI Studio v0.6.8 — {p.name}")
 
         def _on_error(self, msg: str) -> None:
-            QMessageBox.warning(self, "LMGC90_GUI Studio v0.6.7", msg)
+            QMessageBox.warning(self, "LMGC90_GUI Studio v0.6.8", msg)
 
         def _on_loaded(self) -> None:
             self._update_status()
@@ -465,8 +465,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
             essential = {self.material_tab, self.model_tab}
             if widget in essential:
                 QMessageBox.warning(
-                    self, "Onglet essentiel",
-                    f"L'onglet « {name} » est essentiel et ne peut pas être fermé.",
+                    self, "Essential tab",
+                    f"The tab « {name} » is essential and cannot be closed.",
                 )
                 return
             self.tabs.removeTab(index)
@@ -509,17 +509,17 @@ def create_main_window(controller: Optional[ProjectController] = None):
             from PyQt6.QtWidgets import QMessageBox
 
             box = QMessageBox(self)
-            box.setWindowTitle("Charger l'exemple")
+            box.setWindowTitle("Load example")
             box.setIcon(QMessageBox.Icon.Question)
-            box.setText(f"Exemple « {example.title} »")
+            box.setText(f"Example « {example.title} »")
             box.setInformativeText(
-                "• Remplacer : nouveau projet (historique effacé)\n"
-                "• Ajouter : garde le projet, le tree et tout l'historique "
+                "• Replace : new project (history cleared)\n"
+                "• Append : keeps the project, the tree and all the history "
                 "des commandes, puis empile la scène."
             )
-            btn_replace = box.addButton("Remplacer", QMessageBox.ButtonRole.AcceptRole)
-            btn_append = box.addButton("Ajouter au projet", QMessageBox.ButtonRole.ActionRole)
-            btn_cancel = box.addButton("Annuler", QMessageBox.ButtonRole.RejectRole)
+            btn_replace = box.addButton("Replace", QMessageBox.ButtonRole.AcceptRole)
+            btn_append = box.addButton("Append to project", QMessageBox.ButtonRole.ActionRole)
+            btn_cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
             box.setDefaultButton(btn_replace)
             box.exec()
             clicked = box.clickedButton()
@@ -533,7 +533,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
                     self.controller.apply_scene(example.scene)
                     self.controller.journal.info(f"Example replaced: {example.id}")
                     self.statusBar().showMessage(
-                        f"Exemple chargé (remplacé) : {example.title}", 5000
+                        f"Example loaded (replaced) : {example.title}", 5000
                     )
                 else:
                     # Append: keep Project + CommandHistory, only run builder
@@ -541,10 +541,10 @@ def create_main_window(controller: Optional[ProjectController] = None):
                     if cur_dim != dim:
                         QMessageBox.warning(
                             self,
-                            "Exemple",
-                            f"Dimension incompatible : projet {cur_dim}D, "
-                            f"exemple {dim}D.\n"
-                            "Utilisez « Remplacer » ou changez de dimension.",
+                            "Example",
+                            f"Incompatible dimension : project {cur_dim}D, "
+                            f"example {dim}D.\n"
+                            "Use « Replace » or change the dimension.",
                         )
                         return
                     n_before = len(self.controller.project.avatars)
@@ -560,11 +560,11 @@ def create_main_window(controller: Optional[ProjectController] = None):
                         f"(avatars {n_before} → {n_after})"
                     )
                     self.statusBar().showMessage(
-                        f"Exemple ajouté (historique conservé) : {example.title}", 5000
+                        f"Example appended (history preserved) : {example.title}", 5000
                     )
                 self._update_status()
             except Exception as exc:
-                QMessageBox.critical(self, "Exemple", str(exc))
+                QMessageBox.critical(self, "Example", str(exc))
                 try:
                     self.controller.journal.exception("example load failed", exc)
                 except Exception:
@@ -634,14 +634,14 @@ def create_main_window(controller: Optional[ProjectController] = None):
             p = _P(path)
             if not p.is_file():
                 from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "Récent", f"Fichier introuvable:\n{path}")
+                QMessageBox.warning(self, "Recent", f"File not found:\n{path}")
                 return
             try:
                 self.controller.load_project(p)
                 self._remember_recent(p)
             except Exception as exc:
                 from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.critical(self, "Ouvrir", str(exc))
+                QMessageBox.critical(self, "Open", str(exc))
 
         def _clear_recent(self) -> None:
             self.controller.prefs.recent_projects = []

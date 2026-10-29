@@ -24,7 +24,7 @@ def create_contact_tab(parent=None):
             self._prop_widgets: dict = {}
             self._editing_name: str | None = None
             layout = QVBoxLayout(self)
-            layout.addWidget(QLabel("Lois de contact — sélectionnez pour modifier"))
+            layout.addWidget(QLabel("Contact laws — select to modify"))
             self.tree = create_entity_tree(
                 ["Name", "Law", "Params"],
                 on_select=self._load_selected,
@@ -36,7 +36,7 @@ def create_contact_tab(parent=None):
             self.name_edit.setMaxLength(5)
             self.category_combo = QComboBox()
             self.category_combo.addItems([
-                "Toutes les familles", "rigid/rigid", "any/defo",
+                "All families", "rigid/rigid", "any/defo",
                 "point/point", "any/any",
             ])
             self.law_combo = QComboBox()
@@ -68,7 +68,7 @@ def create_contact_tab(parent=None):
 
         def _filter_laws(self, category: str) -> None:
             selected = self.law_combo.currentData()
-            if category == "Toutes les familles":
+            if category == "All families":
                 law_values = [law.value for law in ContactLawType]
             else:
                 law_values = list(CONTACT_LAW_CATEGORIES[category])
@@ -145,7 +145,7 @@ def create_contact_tab(parent=None):
             self.name_edit.setText(law.name)
             idx = self.law_combo.findData(law.law_type)
             if idx < 0:
-                self.category_combo.setCurrentText("Toutes les familles")
+                self.category_combo.setCurrentText("All families")
                 idx = self.law_combo.findData(law.law_type)
             if idx >= 0:
                 self.law_combo.setCurrentIndex(idx)
@@ -186,7 +186,7 @@ def create_contact_tab(parent=None):
 
         def _on_update(self) -> None:
             if not self._editing_name:
-                QMessageBox.information(self, "Contact", "Sélectionnez une loi")
+                QMessageBox.information(self, "Contact", "Select a law")
                 return
             try:
                 law = self._build()

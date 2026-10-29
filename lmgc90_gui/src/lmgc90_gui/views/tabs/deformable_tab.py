@@ -14,23 +14,24 @@ def create_deformable_tab(parent=None):
             super().__init__(parent)
             layout = QVBoxLayout(self)
             layout.addWidget(QLabel(
-                "<b>Corps déformables (EF)</b><br/><br/>"
-                "L'assistant multi-pages reprend le flux de "
+                "<b>Deformable Bodies (EF)</b><br/><br/>"
+                "The multi-page wizard reproduces the flow of "
                 "<code>mesh_wiz_def.MeshWizard</code> :<br/>"
-                "Dimension → Matériau ELAS → Modèle FE → Géométrie → "
-                "Raffinement → Contacteurs → Génération.<br/><br/>"
-                "Les données vont dans <code>Project</code> (pas dans les "
-                "conteneurs pylmgc directs) ; la matérialisation se fait via "
-                "lmgc90_engine au moment de l'export / DATBOX."
+                "Dimension → Material ELAS → FE Model → Geometry → "
+                "Refinement → Contactors → Generation.<br/><br/>"
+                "The data goes into <code>Project</code> (not into the "
+
+                " direct pylmgc docker) ; the materialization is done by the"
+                "lmgc90_engine at export / DATBOX."
             ))
-            btn = QPushButton("Ouvrir l'assistant MeshWizard…")
+            btn = QPushButton("Open Mesh Wizard…")
             btn.setMinimumHeight(40)
             btn.clicked.connect(self._open_wizard)
             layout.addWidget(btn)
             layout.addWidget(QLabel(
-                "<i>Pages : Intro, Dimension, Matériau, Modèle, Géométrie "
-                "(Rectangle / Disque / Boîte / Sphère / Cylindre / fichier), "
-                "Raffinement, Contacteurs CLxxx/CSpxx, Résumé.</i>"
+                "<i>Pages : Intro, Dimension, Material, FE Model, Geometry "
+                "(Rectangle / Disk / Box / Sphere / Cylinder / File), "
+                "Refinement, Contactors CLxxx/CSpxx, Summary.</i>"
             ))
             layout.addStretch()
 

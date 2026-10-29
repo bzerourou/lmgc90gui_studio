@@ -33,10 +33,10 @@ def create_compute_tab(parent=None):
             body = QWidget()
             layout = QVBoxLayout(body)
 
-            layout.addWidget(QLabel("<h2>⚙️ Configuration du calcul</h2>"))
+            layout.addWidget(QLabel("<h2>⚙️ Compute configuration</h2>"))
 
             # ── Model summary ─────────────────────────────────────────
-            self.model_lbl = QLabel("Modèle : —")
+            self.model_lbl = QLabel("Model : —")
             self.model_lbl.setWordWrap(True)
             self.model_lbl.setStyleSheet(
                 "background:#1a2332;color:#cde;padding:8px;border-radius:6px;"
@@ -44,18 +44,18 @@ def create_compute_tab(parent=None):
             layout.addWidget(self.model_lbl)
 
             # ── Time ──────────────────────────────────────────────────
-            time_g = QGroupBox("⏱️ Paramètres temporels")
+            time_g = QGroupBox("⏱️ Time / integration")
             tf = QFormLayout(time_g)
             self.dt_input = QLineEdit("1e-3")
             self.nb_steps_input = QLineEdit("1000")
             self.theta_input = QLineEdit("0.5")
-            tf.addRow("Pas de temps (dt)", self.dt_input)
-            tf.addRow("Nombre d'itérations", self.nb_steps_input)
-            tf.addRow("Theta intégrateur", self.theta_input)
+            tf.addRow("Time step (dt)", self.dt_input)
+            tf.addRow("Number of iterations", self.nb_steps_input)
+            tf.addRow("Integration parameter", self.theta_input)
             layout.addWidget(time_g)
 
             # ── Solver ────────────────────────────────────────────────
-            sol_g = QGroupBox("🔧 Solveur de contact")
+            sol_g = QGroupBox("🔧 Contact solver")
             sf = QFormLayout(sol_g)
             self.tol_input = QLineEdit("1.666e-4")
             self.relax_input = QLineEdit("1.0")
@@ -69,16 +69,16 @@ def create_compute_tab(parent=None):
                 "Exchange_Local_Global         ",
                 "Conjugate_Gradient            ",
             ])
-            sf.addRow("Tolérance", self.tol_input)
+            sf.addRow("Tolerance", self.tol_input)
             sf.addRow("Relaxation", self.relax_input)
-            sf.addRow("Norme", self.norm_combo)
-            sf.addRow("Itérations GS1", self.gs_it1_input)
-            sf.addRow("Itérations GS2", self.gs_it2_input)
-            sf.addRow("Type de solveur", self.solver_combo)
+            sf.addRow("Norm", self.norm_combo)
+            sf.addRow("GS1 iterations", self.gs_it1_input)
+            sf.addRow("GS2 iterations", self.gs_it2_input)
+            sf.addRow("Solver type", self.solver_combo)
             layout.addWidget(sol_g)
 
             # ── I/O ───────────────────────────────────────────────────
-            io_g = QGroupBox("💾 Sorties")
+            io_g = QGroupBox("💾 Outputs")
             iof = QFormLayout(io_g)
             self.freq_write_input = QLineEdit("50")
             self.freq_display_input = QLineEdit("50")
@@ -90,38 +90,38 @@ def create_compute_tab(parent=None):
                 field.setPlaceholderText("nombre ou expression")
                 self.mark_expr_field(field)
             iof.addRow(QLabel(
-                "Les champs numériques acceptent les variables du projet et les expressions."
+                "The numeric fields accept project variables and expressions."
             ))
             self.disable_log_check = QCheckBox("Disable chipy log messages")
             self.disable_log_check.setChecked(True)
             self.deformable_check = QCheckBox("ReadDatbox(deformable=True)")
-            iof.addRow("Fréquence WriteOut", self.freq_write_input)
-            iof.addRow("Fréquence Display", self.freq_display_input)
+            iof.addRow("Frequency WriteOut", self.freq_write_input)
+            iof.addRow("Frequency Display", self.freq_display_input)
             iof.addRow(self.disable_log_check)
             iof.addRow(self.deformable_check)
             layout.addWidget(io_g)
 
             # ── Chipy routines (legacy dialog) ─────────────────────────
-            chipy_g = QGroupBox("🔧 Routines chipy (modèle, contacteurs, extraction, pilotage)")
+            chipy_g = QGroupBox("🔧 Chipy routines (model, contactors, extraction, control)")
             chipy_l = QHBoxLayout(chipy_g)
             self._chipy_params: dict = {}
-            self.btn_chipy = QPushButton("Configurer les routines chipy…")
+            self.btn_chipy = QPushButton("Chipy routines config…")
             self.btn_chipy.setToolTip(
-                "Ouvre le dialogue multi-onglets : Modèle, Routines, Extraction, Pilotage, Inspecteurs."
+                "Open the multi-tab dialog: Model, Routines, Extraction, Control, Inspectors."
             )
             self.btn_chipy.clicked.connect(self._open_chipy_dialog)
-            self._chipy_summary = QLabel("<i>valeurs par défaut — cliquez pour configurer</i>")
+            self._chipy_summary = QLabel("<i>default — click to configure</i>")
             self._chipy_summary.setWordWrap(True)
             chipy_l.addWidget(self.btn_chipy)
             chipy_l.addWidget(self._chipy_summary, stretch=1)
             layout.addWidget(chipy_g)
 
             # ── Work dir ──────────────────────────────────────────────
-            work_g = QGroupBox("📁 Répertoire de calcul")
+            work_g = QGroupBox("📁 Work directory")
             wl = QHBoxLayout(work_g)
             self.work_edit = QLineEdit()
-            self.work_edit.setPlaceholderText("Dossier contenant DATBOX / command.py")
-            btn_browse = QPushButton("Parcourir…")
+            self.work_edit.setPlaceholderText("Directory containing DATBOX / command.py")
+            btn_browse = QPushButton("Browse…")
             btn_browse.clicked.connect(self._browse_work)
             wl.addWidget(self.work_edit, stretch=1)
             wl.addWidget(btn_browse)
@@ -129,10 +129,10 @@ def create_compute_tab(parent=None):
 
             # ── Actions ───────────────────────────────────────────────
             act = QHBoxLayout()
-            self.btn_from_prefs = QPushButton("📥 Charger préférences")
-            self.btn_to_prefs = QPushButton("💾 Sauver → préférences")
-            self.btn_prepare = QPushButton("📦 Préparer DATBOX / scripts")
-            self.btn_run = QPushButton("▶️ Lancer le calcul (F5)")
+            self.btn_from_prefs = QPushButton("📥 Load preferences")
+            self.btn_to_prefs = QPushButton("💾 Save → preferences")
+            self.btn_prepare = QPushButton("📦 Prepare DATBOX / scripts")
+            self.btn_run = QPushButton("▶️ Run calculation (F5)")
             self.btn_stop = QPushButton("⏹️ Stop")
             self.btn_stop.setEnabled(False)
             for b, slot in (
@@ -146,14 +146,14 @@ def create_compute_tab(parent=None):
                 act.addWidget(b)
             layout.addLayout(act)
 
-            self.status_lbl = QLabel("Prêt.")
+            self.status_lbl = QLabel("Ready.")
             self.status_lbl.setStyleSheet("color:#8cf;")
             layout.addWidget(self.status_lbl)
 
             self.log_view = QTextEdit()
             self.log_view.setReadOnly(True)
             self.log_view.setMinimumHeight(160)
-            self.log_view.setPlaceholderText("Journal du calcul…")
+            self.log_view.setPlaceholderText("Calculation log…")
             layout.addWidget(self.log_view, stretch=1)
 
             scroll.setWidget(body)
@@ -165,7 +165,7 @@ def create_compute_tab(parent=None):
 
         def _refresh_model_summary(self) -> None:
             if self.controller is None:
-                self.model_lbl.setText("Modèle : (pas de projet)")
+                self.model_lbl.setText("Model : (no project)")
                 return
             p = self.controller.project
             dim = int(p.dimension)
@@ -185,11 +185,11 @@ def create_compute_tab(parent=None):
             rbdy = "RBDY2" if dim == 2 else "RBDY3"
             type_s = ", ".join(f"{k}×{v}" for k, v in sorted(types.items())[:8])
             self.model_lbl.setText(
-                f"<b>Projet</b> {p.name!r} — <b>{dim}D</b> — corps {rbdy}<br>"
-                f"Avatars AoS: {n_av} — Populations SoA: {n_pop} particules<br>"
-                f"Lois contact: {n_law} — See tables: {n_see} — DOF ops: {n_dof}<br>"
+                f"<b>Project</b> {p.name!r} — <b>{dim}D</b> — bodies {rbdy}<br>"
+                f"Avatars AoS: {n_av} — Populations SoA: {n_pop} particles<br>"
+                f"Contact laws: {n_law} — See tables: {n_see} — DOF ops: {n_dof}<br>"
                 f"Types: {type_s or '—'}<br>"
-                f"Déformable détecté: {'oui' if has_mesh else 'non'}"
+                f"Deformable detected: {'yes' if has_mesh else 'no'}"
             )
             if has_mesh:
                 self.deformable_check.setChecked(True)
@@ -286,7 +286,7 @@ def create_compute_tab(parent=None):
             self._update_chipy_summary()
             if pr.work_directory:
                 self.work_edit.setText(pr.work_directory)
-            self.status_lbl.setText("Paramètres chargés depuis les préférences.")
+            self.status_lbl.setText("Parameters loaded from preferences.")
 
         def _save_to_prefs(self) -> None:
             if self.controller is None:
@@ -294,7 +294,7 @@ def create_compute_tab(parent=None):
             try:
                 p = self.get_parameters()
             except Exception as e:
-                QMessageBox.warning(self, "Compute", f"Paramètres invalides : {e}")
+                QMessageBox.warning(self, "Compute", f"Invalid parameters : {e}")
                 return
             pr = self.controller.prefs
             pr.dt = p["dt"]
@@ -325,13 +325,13 @@ def create_compute_tab(parent=None):
             pr.work_directory = self.work_edit.text().strip()
             try:
                 self.controller.save_preferences()
-                self.status_lbl.setText("Préférences enregistrées.")
+                self.status_lbl.setText("Preferences saved.")
             except Exception as e:
                 QMessageBox.warning(self, "Compute", str(e))
 
         def _browse_work(self) -> None:
             start = self.work_edit.text().strip() or str(Path.cwd())
-            path = QFileDialog.getExistingDirectory(self, "Répertoire de calcul", start)
+            path = QFileDialog.getExistingDirectory(self, "Calculation Directory", start)
             if path:
                 self.work_edit.setText(path)
 
@@ -340,7 +340,7 @@ def create_compute_tab(parent=None):
             if text:
                 return Path(text)
             path = QFileDialog.getExistingDirectory(
-                self, "Choisir le répertoire de calcul", str(Path.cwd())
+                self, "Choose Calculation Directory", str(Path.cwd())
             )
             if not path:
                 return None
@@ -357,11 +357,11 @@ def create_compute_tab(parent=None):
             try:
                 params = self.get_parameters()
             except Exception as e:
-                QMessageBox.warning(self, "Compute", f"Paramètres invalides : {e}")
+                QMessageBox.warning(self, "Compute", f"Invalid parameters : {e}")
                 return
             # push into prefs so prepare_run_directory / workers see them
             self._save_to_prefs()
-            self.status_lbl.setText("Préparation en cours…")
+            self.status_lbl.setText("Preparing…")
             self.log_view.append(f"→ prepare {work}")
             try:
                 # write scripts with explicit chipy params
@@ -376,15 +376,15 @@ def create_compute_tab(parent=None):
                     db = self.controller.write_datbox(work / "DATBOX")
                     paths["datbox"] = str(db)
                 self.log_view.append("Written:\n  " + "\n  ".join(f"{k}: {v}" for k, v in paths.items()))
-                self.status_lbl.setText("Scripts / DATBOX prêts.")
+                self.status_lbl.setText("Scripts / DATBOX ready.")
                 QMessageBox.information(
-                    self, "Préparer",
-                    "Écrit :\n" + "\n".join(f"  {k}: {v}" for k, v in paths.items()),
+                    self, "Prepare",
+                    "Written:\n" + "\n".join(f"  {k}: {v}" for k, v in paths.items()),
                 )
             except Exception as exc:
                 self.controller.journal.exception("compute prepare", exc)
-                self.status_lbl.setText("Échec préparation.")
-                QMessageBox.critical(self, "Préparer", str(exc))
+                self.status_lbl.setText("Failed to prepare.")
+                QMessageBox.critical(self, "Prepare", str(exc))
 
         def _run(self) -> None:
             if self.controller is None:
@@ -395,7 +395,7 @@ def create_compute_tab(parent=None):
             if not (work / "command.py").is_file():
                 r = QMessageBox.question(
                     self, "Compute",
-                    f"Pas de command.py dans\n{work}\n\nPréparer maintenant ?",
+                    f"No command.py in\n{work}\n\nPrepare now?",
                 )
                 if r != QMessageBox.StandardButton.Yes:
                     return
@@ -405,8 +405,8 @@ def create_compute_tab(parent=None):
 
             if self.controller.prefs.confirm_run:
                 r = QMessageBox.question(
-                    self, "Lancer le calcul",
-                    f"Exécuter dans :\n{work}\n\n"
+                    self, "Run Calculation",
+                    f"Run in :\n{work}\n\n"
                     f"{self.controller.prefs.python_executable} command.py",
                 )
                 if r != QMessageBox.StandardButton.Yes:
@@ -419,7 +419,7 @@ def create_compute_tab(parent=None):
             self.log_view.append(f"  cwd = {work}")
             self.btn_run.setEnabled(False)
             self.btn_stop.setEnabled(True)
-            self.status_lbl.setText("Calcul en cours…")
+            self.status_lbl.setText("Calculating…")
 
             runner = create_compute_worker(
                 work,
@@ -434,14 +434,14 @@ def create_compute_tab(parent=None):
             def on_finished(rc: int):
                 self.btn_run.setEnabled(True)
                 self.btn_stop.setEnabled(False)
-                self.status_lbl.setText(f"Terminé (rc={rc})")
+                self.status_lbl.setText(f"Finished (rc={rc})")
                 self.log_view.append(f"— finished rc={rc}")
                 self.controller.journal.info(f"Computation finished rc={rc}")
 
             def on_failed(msg: str):
                 self.btn_run.setEnabled(True)
                 self.btn_stop.setEnabled(False)
-                self.status_lbl.setText("Échec")
+                self.status_lbl.setText("Failed")
                 self.log_view.append(f"ERROR: {msg}")
                 self.controller.journal.error(msg)
                 QMessageBox.critical(self, "Compute", msg)
@@ -458,7 +458,7 @@ def create_compute_tab(parent=None):
                     self._runner.worker.stop()
                 except Exception:
                     pass
-            self.status_lbl.setText("Arrêt demandé…")
+            self.status_lbl.setText("Stop requested…")
             self.btn_stop.setEnabled(False)
 
         def _open_chipy_dialog(self) -> None:
@@ -502,13 +502,13 @@ def create_compute_tab(parent=None):
             if p.get("use_restart"):
                 extras.append("restart")
             if p.get("use_stop_crit"):
-                extras.append("critère arrêt")
+                extras.append("stop criterion")
             if p.get("use_multi_step"):
-                extras.append("multi-pas")
+                extras.append("multi-step")
             if extras:
                 parts.append(", ".join(extras))
             self._chipy_summary.setText(
-                "<b>Routines chipy :</b> " + ("  |  ".join(parts) if parts else "valeurs par défaut")
+                "<b>Routines chipy :</b> " + ("  |  ".join(parts) if parts else "default values")
             )
 
         def run_computation(self) -> None:

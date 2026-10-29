@@ -757,7 +757,7 @@ def _mesh_deformable(av: Avatar) -> Optional[pv.PolyData]:
                                capping=True)
 
     except Exception as e:
-        print(f"⚠️ Viewer — maillage déformable ({effective_src!r}) : {e}")
+        print(f"⚠️ Viewer — deformable mesh ({effective_src!r}) : {e}")
 
     # Fallback : boîte avec annotations de taille
     size = max(0.2, float(mp.get('lx', mp.get('r', 0.3))))
@@ -777,7 +777,7 @@ def _read_mesh_file(filepath: str, center=None) -> pv.PolyData:
     Centre le résultat si demandé.
     """
     if not os.path.isfile(filepath):
-        raise FileNotFoundError(f"Fichier introuvable : {filepath}")
+        raise FileNotFoundError(f"File not found : {filepath}")
 
     ext = os.path.splitext(filepath)[1].lower()
 
@@ -795,8 +795,8 @@ def _read_mesh_file(filepath: str, center=None) -> pv.PolyData:
             os.unlink(tmp)
         except ImportError:
             raise ImportError(
-                "Le module gmsh est requis pour lire les fichiers .geo. "
-                "Installez-le avec : pip install gmsh"
+                "The gmsh module is required to read .geo files. "
+                "Install it with: pip install gmsh"
             )
     else:
         mesh = pv.read(filepath)
@@ -945,12 +945,12 @@ def build_avatar_mesh(avatar: Avatar) -> Optional[pv.PolyData]:
     """Construit le mesh PyVista d'un avatar. Retourne None si type inconnu."""
     builder = _MESH_BUILDERS.get(avatar.avatar_type)
     if builder is None:
-        print(f"⚠️ Viewer — type non supporté : {avatar.avatar_type}")
+        print(f"⚠️ Viewer — unsupported type : {avatar.avatar_type}")
         return None
     try:
         return builder(avatar)
     except Exception as e:
-        print(f"⚠️ Viewer — erreur rendu {avatar.avatar_type.value} : {e}")
+        print(f"⚠️ Viewer — rendering error {avatar.avatar_type.value} : {e}")
         return None
 
 
@@ -1230,8 +1230,8 @@ class Viewer3D(QWidget):
 
         # Modes navigation / sélection / mesure
         self._btn_nav     = _tool_btn("🖱️Nav.",    "Navigation (orbit / zoom / pan)")
-        self._btn_select  = _tool_btn("👆Sélect.", "Cliquer sur un avatar pour le sélectionner")
-        self._btn_measure = _tool_btn("📏Règle",   "Mesurer la distance entre deux points")
+        self._btn_select  = _tool_btn("Select.", "Click on an avatar to select it")
+        self._btn_measure = _tool_btn("📏Ruler",   "Measure the distance between two points")
         self._btn_nav.setChecked(True)
         mode_grp = QButtonGroup(self)
         for b in (self._btn_nav, self._btn_select, self._btn_measure):
@@ -1245,10 +1245,10 @@ class Viewer3D(QWidget):
 
         # Vues caméra
         for label, tip, fn in [
-            ("XY",  "Vue orthogonale plan XY (2D)", self._view_xy),
-            ("XZ",  "Vue plan XZ",                  self._view_xz),
-            #("YZ",  "Vue plan YZ",                  self._view_yz),
-            ("Iso", "Vue isométrique",               self._view_iso),
+            ("XY",  "Orthographic view XY (2D)", self._view_xy),
+            ("XZ",  "View XZ",                  self._view_xz),
+            #("YZ",  "View YZ",                  self._view_yz),
+            ("Iso", "Isometric view",               self._view_iso),
         ]:
             btn = QPushButton(label)
             btn.setToolTip(tip)
@@ -1259,7 +1259,7 @@ class Viewer3D(QWidget):
         tb.addWidget(_sep())
 
         # Arêtes
-        self._edges_check = QCheckBox("Arêtes")
+        self._edges_check = QCheckBox("Edges")
         self._edges_check.setChecked(True)
         self._edges_check.toggled.connect(self._toggle_edges)
         tb.addWidget(self._edges_check)
@@ -1268,12 +1268,12 @@ class Viewer3D(QWidget):
         self._dof_check = QCheckBox("DOF")
         self._dof_check.setChecked(False)
         self._dof_check.setToolTip(
-            "DOF : X rouge · Y vert · Z bleu · encastrement (barre+violet) · vitesse (flèche) · force (orange) · predefined (orange vif) · rotate (rose) · translate (cyan)"
+            "DOF : X red · Y green · Z blue · constraint (bar+purple) · velocity (arrow) · force (orange) · predefined (bright orange) · rotate (pink) · translate (cyan)"
         )
         self._dof_check.toggled.connect(self._toggle_dof)
         tb.addWidget(self._dof_check)
 
-        self._law_check = QCheckBox("Lois")
+        self._law_check = QCheckBox("Laws")
         self._law_check.setChecked(False)
         self._law_check.setToolTip(
             "See-tables: lien couleur candidat -> antagoniste, teinte par nom de loi"
@@ -1286,8 +1286,8 @@ class Viewer3D(QWidget):
         # Mode couleur
         #tb.addWidget(QLabel("Couleur :"))
         self._color_combo = QComboBox()
-        self._color_combo.setToolTip("Mode de colorisation des avatars")
-        self._color_combo.addItems(["LMGC90", "Par type", "Par matériau", "Par origine"])
+        self._color_combo.setToolTip("Aavatars color mode: LMGC90, by type, by material, by origin")
+        self._color_combo.addItems(["LMGC90", "By type", "By material", "By origin"])
         self._color_combo.setFixedWidth(90)
         self._color_combo.currentIndexChanged.connect(self._on_color_mode_changed)
         tb.addWidget(self._color_combo)
@@ -1300,7 +1300,7 @@ class Viewer3D(QWidget):
         self._opacity_slider.setRange(20, 100)
         self._opacity_slider.setValue(92)
         self._opacity_slider.setFixedWidth(50)
-        self._opacity_slider.setToolTip("Opacité globale des avatars")
+        self._opacity_slider.setToolTip("Global opacity of avatars")
         self._opacity_slider.valueChanged.connect(self._on_opacity_changed)
         tb.addWidget(self._opacity_slider)
 
@@ -1310,8 +1310,8 @@ class Viewer3D(QWidget):
         self._pylmgc90_btn = QPushButton("🔬")
         self._pylmgc90_btn.setCheckable(True)
         self._pylmgc90_btn.setToolTip(
-            "Rendu haute fidélité via pre.visuAvatars() de pylmgc90.\n"
-            "Requiert pylmgc90 installé. Désactive la sélection individuelle."
+            "High-fidelity rendering via pre.visuAvatars() of pylmgc90.\n"
+            "Requiert pylmgc90 installation. Deactivate individual selection."
         )
         self._pylmgc90_btn.setFixedWidth(50)
         self._pylmgc90_btn.toggled.connect(self._on_pylmgc90_toggled)
@@ -1320,19 +1320,19 @@ class Viewer3D(QWidget):
         tb.addWidget(_sep())
 
         rst = QPushButton("🔄")
-        rst.setToolTip("Réinitialiser la caméra")
+        rst.setToolTip("Reset the camera")
         rst.setFixedWidth(40)
         rst.clicked.connect(self._reset_camera)
         tb.addWidget(rst)
 
         clr = QPushButton("🗑️")
-        clr.setToolTip("Effacer la scène")
+        clr.setToolTip("Clear the scene")
         clr.setFixedWidth(40)
         clr.clicked.connect(self.clear)
         tb.addWidget(clr)
 
         exp = QPushButton("📷")
-        exp.setToolTip("Exporter la scène en PNG")
+        exp.setToolTip("Export the scene as a PNG")
         exp.setFixedWidth(40)
         exp.clicked.connect(self._export_png)
         tb.addWidget(exp)
@@ -1342,9 +1342,9 @@ class Viewer3D(QWidget):
         # Filtre groupe
         #tb.addWidget(QLabel("Groupe :"))
         self._group_combo = QComboBox()
-        self._group_combo.setToolTip("Afficher seulement les avatars de ce groupe")
+        self._group_combo.setToolTip("Show only avatars from this group")
         self._group_combo.setMinimumWidth(100)
-        self._group_combo.addItem("Tous les groupes")
+        self._group_combo.addItem("All groups")
         self._group_combo.currentTextChanged.connect(self._on_group_filter)
         tb.addWidget(self._group_combo)
 
@@ -1357,7 +1357,7 @@ class Viewer3D(QWidget):
         root.addWidget(self.plotter.interactor, stretch=1)
 
         # ── Barre d'état ───────────────────────────────────────────────────
-        self._status_label = QLabel("Prêt")
+        self._status_label = QLabel("Ready")
         self._status_label.setStyleSheet(
             "color:#ccc; font-size:8pt; padding:1px 4px;"
             "background:#111122; border-top:1px solid #333;"
@@ -1421,7 +1421,7 @@ class Viewer3D(QWidget):
                     )
                 except Exception:
                     pass
-            self._status("Mode sélection — cliquez sur un avatar / particule")
+            self._status("Select Mode — click on an avatar / particle")
 
         elif mode == _Mode.MEASURE:
             try:
@@ -1435,9 +1435,9 @@ class Viewer3D(QWidget):
                         show_message=False, show_point=False, picker='point',
                     )
                 except Exception as e:
-                    self._status(f"Règle indisponible : {e}")
+                    self._status(f"Rule unavailable : {e}")
                     return
-            self._status("Mode mesure — cliquez sur le point A")
+            self._status("Measure Mode — click on point A")
 
         else:
             try:
@@ -1505,11 +1505,11 @@ class Viewer3D(QWidget):
                 pt_picker.Pick(x, y, 0, self.plotter.renderer)
                 pos = pt_picker.GetPickPosition()
                 if all(p == 0.0 for p in pos):
-                    self._status("Aucune surface touchée — cliquez sur un objet")
+                    self._status("No surface touched — click on an object")
                     return
             self._on_measure_pick(pos)
         except Exception as e:
-            self._status(f"Erreur mesure : {e}")
+            self._status(f"Measure error : {e}")
 
     # ── Sélection ─────────────────────────────────────────────────────────────
 
@@ -1572,15 +1572,15 @@ class Viewer3D(QWidget):
                         f"mat={av_i.material_name}"
                     )
             self._status(
-                f"Sélectionné (batch #{index}) : {label} "
+                f"Selected (batch #{index}) : {label} "
                 f"@ ({c[0]:.4f}, {c[1]:.4f}, {c[2]:.4f}) r={r:.4f}"
             )
         elif av:
             c = av.center
             self._status(
-                f"Sélectionné : avatar #{index} — {av.avatar_type.value} "
+                f"Selected : avatar #{index} — {av.avatar_type.value} "
                 f"@ ({', '.join(f'{x:.4f}' for x in c)})"
-                f"  matériau={av.material_name}  modèle={av.model_name}"
+                f"  material={av.material_name}  model={av.model_name}"
             )
         self.avatar_clicked.emit(index)
 
@@ -1599,7 +1599,7 @@ class Viewer3D(QWidget):
         if len(self._measure_pts) == 1:
             p = self._measure_pts[0]
             self._status(
-                f"Point A : ({p[0]:.4f}, {p[1]:.4f}, {p[2]:.4f}) — cliquez sur B"
+                f"Point A : ({p[0]:.4f}, {p[1]:.4f}, {p[2]:.4f}) — click on B"
             )
         elif len(self._measure_pts) == 2:
             A, B = self._measure_pts
@@ -2324,11 +2324,11 @@ class Viewer3D(QWidget):
         self._pylmgc90_mode = checked
         if checked:
             self._status(
-                "🔬 Mode pylmgc90 activé — cliquez sur « Rafraîchir » dans l'onglet "
-                "pour déclencher le rendu via pre.visuAvatars()"
+                "🔬 pylmgc90 mode enabled — click on « Refresh » in the tab "
+                "to trigger the rendering via pre.visuAvatars()"
             )
         else:
-            self._status("Mode paramétrique — cliquez sur « Rafraîchir » pour recharger")
+            self._status("Parametric mode — click on « Refresh » to reload")
 
     # =========================================================================
     # Filtrage par groupe
@@ -2337,7 +2337,7 @@ class Viewer3D(QWidget):
     def _refresh_group_combo(self):
         self._group_combo.blockSignals(True)
         self._group_combo.clear()
-        self._group_combo.addItem("Tous les groupes")
+        self._group_combo.addItem("All groups")
         groups = getattr(self.controller.project, 'avatar_groups', {}) or {}
         for g in sorted(groups.keys()):
             self._group_combo.addItem(g)
@@ -2347,7 +2347,7 @@ class Viewer3D(QWidget):
         groups  = getattr(self.controller.project, 'avatar_groups', {}) or {}
         visible = (
             {i for i, _ in self.avatars_data}
-            if text == "Tous les groupes"
+            if text == "All groups"
             else set(groups.get(text, []))
         )
         for idx, actor in self.actors.items():
@@ -2358,9 +2358,9 @@ class Viewer3D(QWidget):
         self.plotter.render()
         n = len(visible)
         self._status(
-            f"Groupe « {text} » : {n} avatar{'s' if n != 1 else ''}"
-            if text != "Tous les groupes"
-            else f"{len(self.avatars_data)} avatar(s) visibles"
+            f"Group « {text} » : {n} avatar{'s' if n != 1 else ''}"
+            if text != "All groups"
+            else f"{len(self.avatars_data)} avatar(s) visible"
         )
 
     # =========================================================================
@@ -2369,15 +2369,15 @@ class Viewer3D(QWidget):
 
     def _export_png(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Exporter la scène", "scene.png",
-            "Images PNG (*.png);;Tous les fichiers (*)"
+            self, "Export scene", "scene.png",
+            "Images PNG (*.png);;All files (*)"
         )
         if path:
             try:
                 self.plotter.screenshot(path)
-                self._status(f"📷Scène exportée : {path}")
+                self._status(f"📷Scene exported : {path}")
             except Exception as e:
-                self._status(f"❌Erreur export : {e}")
+                self._status(f"❌Export error : {e}")
 
     # =========================================================================
     # Utilitaires internes

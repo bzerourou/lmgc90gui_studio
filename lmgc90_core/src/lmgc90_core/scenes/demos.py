@@ -1992,7 +1992,6 @@ def cell_adhesion_v4(project: Project) -> None:
                     "rampi": rampi,
                     "ramp": 0.0,
                     "dofty": "vlocy",
-                    "phase": "SPRD",
                 },
             ))
     project.group("focals", focal_ids)
@@ -2955,7 +2954,6 @@ def cell_adhesion_full(project: Project) -> None:
                     "rampi": rampi,
                     "ramp": 0.0,
                     "dofty": "vlocy",
-                    "phase": "SPRD",
                 },
             ))
     project.group("focals", focal_ids)

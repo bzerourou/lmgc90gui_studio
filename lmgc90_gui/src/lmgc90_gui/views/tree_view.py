@@ -28,8 +28,8 @@ def _avatar_rows(avatars, prefs) -> Optional[tuple[list[tuple[str, str]], str]]:
     ]
     omitted = len(visible) - len(shown)
     if omitted:
-        label = "avatar masqué" if omitted == 1 else "avatars masqués"
-        rows.append(("…", f"{omitted} {label} (limite soft)"))
+        label = "avatar hidden" if omitted == 1 else "avatars hidden"
+        rows.append(("…", f"{omitted} {label} (soft limit)"))
     return rows, f"{len(shown)}/{len(visible)}"
 
 

@@ -39,7 +39,7 @@ _LABELS = {
     "G12": "G12 — cisaillement (Pa)",
     "G13": "G13 — cisaillement (Pa)",
     "G23": "G23 — cisaillement (Pa)",
-    "dilatation": "dilatation (α thermique / dilatation)",
+    "dilatation": "dilatation (α thermal / dilatation)",
     "T_ref_meca": "température mécanique de référence",
     "viscous_model": "modèle visqueux",
     "viscous_young": "Young visqueux (Pa)",

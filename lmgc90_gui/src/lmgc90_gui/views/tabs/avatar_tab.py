@@ -417,7 +417,7 @@ def create_avatar_tab(parent=None):
 
         def _on_update(self) -> None:
             if self.controller is None or not getattr(self, "_editing_id", None):
-                QMessageBox.information(self, "Avatar", "Sélectionnez un avatar dans la liste")
+                QMessageBox.information(self, "Avatar", "select an avatar in the list before updating")
                 return
             try:
                 pre = self.controller.pre()
@@ -446,7 +446,7 @@ def create_avatar_tab(parent=None):
             if not aid:
                 QMessageBox.information(
                     self, "Avatar",
-                    "Sélectionnez un avatar dans la liste avant de supprimer.",
+                    "Select an avatar in the list before deleting.",
                 )
                 return
             try:

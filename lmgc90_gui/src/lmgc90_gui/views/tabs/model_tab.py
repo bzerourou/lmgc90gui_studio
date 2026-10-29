@@ -28,7 +28,7 @@ def create_model_tab(parent=None):
             super().__init__(parent)
             self._editing_name: str | None = None
             layout = QVBoxLayout(self)
-            layout.addWidget(QLabel("Liste des modèles — sélectionnez pour modifier"))
+            layout.addWidget(QLabel("List of models — select to modify"))
             self.tree = create_entity_tree(
                 ["Name", "Physics", "Element", "Dim"],
                 on_select=self._load_selected,
@@ -47,7 +47,7 @@ def create_model_tab(parent=None):
             form.addRow("Element", self.element_combo)
             form.addRow("Dimension (project)", self.dim_label)
             layout.addLayout(form)
-            self.options_box = QGroupBox("Paramètres de l'élément")
+            self.options_box = QGroupBox("Element parameters")
             self.options_form = QFormLayout(self.options_box)
             self.option_widgets: dict[str, QComboBox] = {}
             self._option_values: dict[str, str] = {}
@@ -55,9 +55,9 @@ def create_model_tab(parent=None):
             advanced_options_form = QFormLayout()
             self.advanced_options_edit = QLineEdit()
             self.advanced_options_edit.setPlaceholderText(
-                "Options LMGC90 supplémentaires : option=valeur, ..."
+                "Additional LMGC90 options : option=value, ..."
             )
-            advanced_options_form.addRow("Autres options", self.advanced_options_edit)
+            advanced_options_form.addRow("Other options", self.advanced_options_edit)
             layout.addLayout(advanced_options_form)
             self.physics_combo.currentTextChanged.connect(self._refresh_elements)
             self.physics_combo.currentTextChanged.connect(self._refresh_option_fields)

@@ -16,14 +16,14 @@ def create_examples_dialog(parent=None):
     class ExamplesDialog(QDialog):
         def __init__(self, parent=None):
             super().__init__(parent)
-            self.setWindowTitle("📚 Bibliothèque d'exemples")
+            self.setWindowTitle("📚 Example Library")
             self.resize(720, 480)
             self._selected: Optional[ExampleSpec] = None
 
             root = QVBoxLayout(self)
             root.addWidget(QLabel(
-                "Choisissez un exemple puis <b>Charger</b>. "
-                "Le projet courant sera remplacé."
+                "Choose an example then click <b>Load</b>. "
+                "The current project will be replaced."
             ))
 
             split = QSplitter(Qt.Orientation.Horizontal)
@@ -51,7 +51,7 @@ def create_examples_dialog(parent=None):
             buttons = QDialogButtonBox(
                 QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
             )
-            buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Charger")
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Load")
             buttons.accepted.connect(self.accept)
             buttons.rejected.connect(self.reject)
             root.addWidget(buttons)
@@ -71,9 +71,9 @@ def create_examples_dialog(parent=None):
             tags = ", ".join(ex.tags) if ex.tags else "—"
             self.detail.setHtml(
                 f"<h2>{ex.title}</h2>"
-                f"<p><b>Catégorie :</b> {ex.category} &nbsp; "
+                f"<p><b>Category :</b> {ex.category} &nbsp; "
                 f"<b>Dimension :</b> {ex.dimension}D &nbsp; "
-                f"<b>Niveau :</b> {ex.difficulty}</p>"
+                f"<b>Difficulty :</b> {ex.difficulty}</p>"
                 f"<p>{ex.description}</p>"
                 f"<p><i>Tags : {tags}</i></p>"
                 f"<p><code>id={ex.id}</code></p>"

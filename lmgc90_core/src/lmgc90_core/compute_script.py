@@ -14,6 +14,16 @@ from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
 
+from .chipy_rules import (
+    DETECTORS_2D,
+    DETECTORS_3D,
+    detector_for_pair,
+    inspection_statement,
+    select_detectors,
+    store_init_lines,
+    stop_criterion_lines,
+    takes_no_id,
+)
 from .project import Project
 
 
@@ -50,7 +60,7 @@ class ComputeScriptGenerator:
         'inspi_entries':  [],
         'set_entries': [],
         'use_restart': False, 'restart_step': 0,
-        'use_stop_crit': False, 'stop_crit_type': 'energy',
+        'use_stop_crit': False, 'stop_crit_type': 'vel_max',
         'stop_crit_val': 1e-6, 'stop_crit_freq': 10,
         'advanced_assemble_mechanical': False,
         'advanced_assemble_thermal': False,
@@ -168,17 +178,15 @@ class ComputeScriptGenerator:
         use_poroMAILx = p['use_poroMAILx'] and deformable
         any_FEM     = use_mecaMAILx or use_therMAILx or use_poroMAILx
 
-        tacts_2d = [t for t in ('CLALp','CLJCx','DKALp','DKDKL','DKDKx','DKJCx','DKKDx','DKPLx','P2P2L','PLALp','PLJCx','PLPLx','PTPT2') if p.get(f'use_{t}')]
-        tacts_3d = [t for t in ('SPSPx','SPCDx','SPPLx','CDCDx','CDPLx','PRPRx')  if p.get(f'use_{t}')]
-        tacts_mix = [t for t in ('DKMECAx','ALpMECAx','SPMECAx')                   if p.get(f'use_{t}')]
-        # PT2Dx/PT3Dx are *contactors*; detection modules are PTPT2/PTPT3.
-        # NODES is not a SelectProxTactors interaction — ignored here.
-        tacts_pt = []
-        if p.get('use_PT2Dx'):
-            tacts_pt.append('PTPT2')
-        if p.get('use_PT3Dx'):
-            tacts_pt.append('PTPT3')
-        all_tacts = tacts_2d + tacts_3d + tacts_mix + tacts_pt
+        visibility = getattr(self.project, 'visibility', None) or ()
+        detector_flags = {
+            f'use_{name}' for name in (*DETECTORS_2D, *DETECTORS_3D)
+        } | {'use_PT2Dx', 'use_PT3Dx', 'use_DKMECAx', 'use_ALpMECAx',
+             'use_SPMECAx', 'use_ALpALp', 'use_NODES'}
+        detector_params = params
+        if not any(key in params for key in detector_flags) and not visibility:
+            detector_params = {'use_DKDKx': True} if dim == 2 else {}
+        all_tacts = select_detectors(dim, detector_params, visibility)
 
         use_multi   = p.get('use_multi_step', False)
         use_restart = p.get('use_restart', False)
@@ -199,7 +207,7 @@ class ComputeScriptGenerator:
         w('\n')
         w('from pylmgc90 import chipy\n')
         if use_stop:
-            w('import math\n')
+            w('import numpy as np\n')
         w('\n')
 
         # ── 2. Initialisation ─────────────────────────────────────────────────
@@ -407,12 +415,8 @@ class ComputeScriptGenerator:
                 return ind + 'if k == {}:\n'.format(val), ind + '    '
             return '', ind
 
-        def _is_no_id_func(func_name: str) -> bool:
-            if func_name in self._NO_ID_FUNCS:
-                return True
-            if 'GetNb' in func_name:
-                return True
-            return False
+        def _is_no_id_func(entry: dict) -> bool:
+            return takes_no_id(entry, self._NO_ID_FUNCS)
 
         def _write_vis_before(entry: dict) -> None:
             action   = entry.get('action', 'visible')
@@ -479,14 +483,12 @@ class ComputeScriptGenerator:
             func    = entry.get('func', '')
             ids_str = entry.get('ids', '').strip()
             grp     = entry.get('group', '').strip()
-            store   = entry.get('store', '').strip()
             if not func:
                 return
-            no_id = _is_no_id_func(func) or (not ids_str and not grp)
+            no_id = _is_no_id_func(entry)
             guard, extra_ind = _timing_guard(entry)
             if no_id:
-                call_str = 'chipy.{}()'.format(func)
-                line     = '{} = {}'.format(store, call_str) if store else call_str
+                line = inspection_statement(entry, self._NO_ID_FUNCS)
                 if guard:
                     w(guard)
                     w(extra_ind + line + '\n')
@@ -500,18 +502,17 @@ class ComputeScriptGenerator:
                 if not id_list:
                     return
                 ids_repr = '[{}]'.format(', '.join(id_list))
-                inner = (
-                    '    {}_{{_id}} = chipy.{}(_id)\n'.format(store, func)
-                    if store
-                    else '    chipy.{}(_id)\n'.format(func)
-                )
                 if guard:
                     w(guard)
                     w(extra_ind + 'for _id in {}:\n'.format(ids_repr))
-                    w(extra_ind + '    ' + inner.lstrip())
+                    w(extra_ind + '    ' + inspection_statement(
+                        entry, self._NO_ID_FUNCS
+                    ) + '\n')
                 else:
                     w(ind + 'for _id in {}:\n'.format(ids_repr))
-                    w(ind + inner)
+                    w(ind + '    ' + inspection_statement(
+                        entry, self._NO_ID_FUNCS
+                    ) + '\n')
             w('\n')
 
         def _is_in_loop(e: dict) -> bool:
@@ -641,19 +642,25 @@ class ComputeScriptGenerator:
 
         # ── 7b. GBV / Inspection avant la boucle (step_mode="before") ─────────
         # Émis après un éventuel restart pour lire l'état initial chargé.
+        _all_inspection_entries = (
+            p.get('insp2d_entries', [])
+            + p.get('insp3d_entries', [])
+            + p.get('inspi_entries', [])
+        )
+        for line in store_init_lines(_all_inspection_entries, self._NO_ID_FUNCS):
+            w(line + '\n')
+        if _all_inspection_entries:
+            w('\n')
+
         def _emit_insp_outside(entry: dict) -> None:
             """Émet un appel d'inspection hors boucle (before ou after)."""
             func    = entry.get('func', '')
             ids_str = entry.get('ids', '').strip()
             grp     = entry.get('group', '').strip()
-            store   = entry.get('store', '').strip()
             if not func:
                 return
-            if _is_no_id_func(func) or (not ids_str and not grp):
-                if store:
-                    w('{} = chipy.{}()\n'.format(store, func))
-                else:
-                    w('chipy.{}()\n'.format(func))
+            if _is_no_id_func(entry):
+                w(inspection_statement(entry, self._NO_ID_FUNCS) + '\n')
             else:
                 id_list = (
                     [t.strip() for t in ids_str.split(',') if t.strip().isdigit()]
@@ -661,10 +668,9 @@ class ComputeScriptGenerator:
                 )
                 if id_list:
                     w('for _id in [{}]:\n'.format(', '.join(id_list)))
-                    if store:
-                        w('    {}_{{_id}} = chipy.{}(_id)\n'.format(store, func))
-                    else:
-                        w('    chipy.{}(_id)\n'.format(func))
+                    w('    ' + inspection_statement(
+                        entry, self._NO_ID_FUNCS
+                    ) + '\n')
             w('\n')
 
         for _gbv_key_b, _gbv_func_b, _gbv_flag_b in [
@@ -801,16 +807,12 @@ class ComputeScriptGenerator:
 
         # c. Detection de contact
         L("chipy.utilities_logMes('SELECT PROX TACTORS')")
-        if p.get('advanced_fd_select_prox'):
+        if p.get('use_SelectProx_macro'):
+            L('chipy.SelectProxTactors()')
+        elif p.get('advanced_fd_select_prox'):
             L('chipy.FdSelectProxTactors()')
         elif all_tacts:
-            for t in tacts_2d:
-                L(f'chipy.{t}_SelectProxTactors()')
-            for t in tacts_3d:
-                L(f'chipy.{t}_SelectProxTactors()')
-            for t in tacts_mix:
-                L(f'chipy.{t}_SelectProxTactors()')
-            for t in tacts_pt:
+            for t in all_tacts:
                 L(f'chipy.{t}_SelectProxTactors()')
         else:
             L('chipy.SelectProxTactors()')
@@ -910,13 +912,9 @@ class ComputeScriptGenerator:
         if use_stop:
             L("# Critere d'arret")
             L('if k % stop_freq == 0:')
-            stop_type = p.get('stop_crit_type', 'energy')
-            if stop_type == 'energy':
-                w(ind + '    _crit = chipy.GetResidualEnergy()\n')
-            elif stop_type == 'disp_max':
-                w(ind + '    _crit = chipy.GetMaxDisplacement()\n')
-            else:
-                w(ind + '    _crit = chipy.GetForceResidual()\n')
+            stop_type = p.get('stop_crit_type', 'vel_max')
+            for line in stop_criterion_lines(stop_type, dim):
+                w(ind + '    ' + line + '\n')
             w(ind + '    if _crit < stop_tol:\n')
             w(ind + "        chipy.utilities_logMes(\n")
             w(ind + "            f'Critere atteint a k={k} : {_crit:.4e} < {stop_tol:.2e}')\n")
@@ -1098,59 +1096,8 @@ class ComputeScriptGenerator:
 
 # ---------------------------------------------------------------------------
 
-_DET2D_OFFICIAL = (
-    "CLALp", "CLJCx", "DKALp", "DKDKL", "DKDKx", "DKJCx", "DKKDx",
-    "DKPLx", "P2P2L", "PLALp", "PLJCx", "PLPLx", "PTPT2",
-)
-_DET3D_OFFICIAL = (
-    "CDCDx", "CDPLx", "CSASp", "CSPRx", "PRASp", "PRPLx", "PRPRx",
-    "PTPT3", "SPCDx", "SPDCx", "SPPLx", "SPPRx", "SPSPx",
-)
-
-# Contactor pair (sorted frozenset) -> detector name
-_PAIR_TO_DETECTOR_2D = {
-    frozenset({"DISKx", "DISKx"}): "DKDKx",
-    frozenset({"DISKx", "xKSID"}): "DKDKx",
-    frozenset({"DISKx", "JONCx"}): "DKJCx",
-    frozenset({"DISKx", "POLYG"}): "DKKDx",
-    frozenset({"DISKx", "PLANx"}): "DKPLx",
-    frozenset({"DISKx", "ALpxx"}): "DKALp",
-    frozenset({"DISKx", "CLxxx"}): "DKALp",
-    frozenset({"DISKx", "DISKL"}): "DKDKL",
-    frozenset({"JONCx", "CLxxx"}): "CLJCx",
-    frozenset({"JONCx", "ALpxx"}): "CLJCx",
-    frozenset({"JONCx", "PLANx"}): "PLJCx",
-    frozenset({"POLYG", "POLYG"}): "DKKDx",  # fallback; poly/poly often via DKKDx-style
-    frozenset({"PLANx", "PLANx"}): "PLPLx",
-    frozenset({"PLANx", "ALpxx"}): "PLALp",
-    frozenset({"PLANx", "CLxxx"}): "PLALp",
-    frozenset({"CLxxx", "ALpxx"}): "CLALp",
-    frozenset({"ALpxx", "ALpxx"}): "CLALp",
-    frozenset({"CLxxx", "CLxxx"}): "CLALp",
-    frozenset({"PT2Dx", "PT2Dx"}): "PTPT2",
-    frozenset({"PT2DL", "PT2DL"}): "P2P2L",
-}
-
-_PAIR_TO_DETECTOR_3D = {
-    frozenset({"SPHER", "SPHER"}): "SPSPx",
-    frozenset({"SPHER", "CYLND"}): "SPCDx",
-    frozenset({"SPHER", "DNLYC"}): "SPDCx",
-    frozenset({"SPHER", "PLANx"}): "SPPLx",
-    frozenset({"SPHER", "POLYR"}): "SPPRx",
-    frozenset({"SPHER", "ASpxx"}): "CSASp",
-    frozenset({"SPHER", "CSxxx"}): "CSASp",
-    frozenset({"CYLND", "CYLND"}): "CDCDx",
-    frozenset({"CYLND", "PLANx"}): "CDPLx",
-    frozenset({"PLANx", "PLANx"}): "SPPLx",  # rare; often sphere/plan
-    frozenset({"POLYR", "POLYR"}): "PRPRx",
-    frozenset({"POLYR", "PLANx"}): "PRPLx",
-    frozenset({"POLYR", "ASpxx"}): "PRASp",
-    frozenset({"POLYR", "CSxxx"}): "CSPRx",
-    frozenset({"CSxxx", "ASpxx"}): "CSASp",
-    frozenset({"ASpxx", "ASpxx"}): "CSASp",
-    frozenset({"CSxxx", "CSxxx"}): "CSASp",
-    frozenset({"PT3Dx", "PT3Dx"}): "PTPT3",
-}
+_DET2D_OFFICIAL = tuple(DETECTORS_2D)
+_DET3D_OFFICIAL = tuple(DETECTORS_3D)
 
 # AvatarType.value -> default contactor tag(s)
 _AVATAR_CONTACTORS_2D = {
@@ -1190,7 +1137,6 @@ def infer_chipy_contact_routines(project) -> Dict[str, bool]:
     for name in _DET2D_OFFICIAL + _DET3D_OFFICIAL:
         flags[f"use_{name}"] = False
 
-    pair_map = _PAIR_TO_DETECTOR_3D if dim == 3 else _PAIR_TO_DETECTOR_2D
     av_map = _AVATAR_CONTACTORS_3D if dim == 3 else _AVATAR_CONTACTORS_2D
 
     # Contactors present in the scene
@@ -1230,8 +1176,7 @@ def infer_chipy_contact_routines(project) -> Dict[str, bool]:
             continue
         present.add(a)
         present.add(b)
-        key = frozenset({a, b})
-        det = pair_map.get(key)
+        det = detector_for_pair(a, b, dim)
         if det:
             flags[f"use_{det}"] = True
 
@@ -1239,7 +1184,7 @@ def infer_chipy_contact_routines(project) -> Dict[str, bool]:
     present_list = sorted(present)
     for i, a in enumerate(present_list):
         for b in present_list[i:]:
-            det = pair_map.get(frozenset({a, b}))
+            det = detector_for_pair(a, b, dim)
             if det:
                 flags[f"use_{det}"] = True
 

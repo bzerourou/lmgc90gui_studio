@@ -53,7 +53,7 @@ def create_viewer_tab(parent=None):
             self._visu_btn.clicked.connect(self._on_visu_avatars)
             bar.addWidget(self._visu_btn)
 
-            self._refresh_btn = QPushButton("🔄 Rafraîchir la scène")
+            self._refresh_btn = QPushButton("🔄 Refresh the scene")
             self._refresh_btn.setStyleSheet(
                 "QPushButton { font-weight: bold; padding: 3px 10px; }"
                 "QPushButton:hover { background: #2a5a9a; color: white; }"
@@ -78,7 +78,7 @@ def create_viewer_tab(parent=None):
                 self._holder_layout.addWidget(QLabel(
                     "⚠️ pyvista + pyvistaqt absents.\n"
                     "  pip install pyvista pyvistaqt\n"
-                    "Puis relancez lmgc90-gui."
+                    "And restart lmgc90-gui."
                 ))
             else:
                 self._holder_layout.addWidget(QLabel(
@@ -126,7 +126,7 @@ def create_viewer_tab(parent=None):
             p = self.controller.project
             n = len(p.avatars) + sum(len(pop) for pop in p.populations)
             self._pending_label.setText(
-                f"⚠️ Scène non à jour — {n} objet(s)"
+                f"⚠️ Scene is out of date — {n} object(s)"
             )
             self._refresh_btn.setStyleSheet(
                 "QPushButton { font-weight: bold; padding: 3px 10px; "
@@ -143,9 +143,9 @@ def create_viewer_tab(parent=None):
             if not self._ensure_viewer():
                 QMessageBox.warning(
                     self, "Visualisation 3D",
-                    "Viewer3D indisponible.\n"
+                    "Viewer3D unavailable.\n"
                     "pip install pyvista pyvistaqt\n"
-                    "Puis: pip install -e .\\lmgc90_gui[qt,viz] --force-reinstall",
+                    "Then: pip install -e .\\lmgc90_gui[qt,viz] --force-reinstall",
                 )
                 return
             p = self.controller.project
@@ -153,7 +153,7 @@ def create_viewer_tab(parent=None):
             n = len(p.avatars)
             try:
                 self.viewer.update_avatars(renderables)
-                self._pending_label.setText(f"✅ {n} avatar(s) envoyés au viewer")
+                self._pending_label.setText(f"✅ {n} avatar(s) sent to the viewer")
                 self.controller.journal.info(f"Viewer refresh: {n} avatars")
             except Exception as exc:
                 QMessageBox.warning(self, "Visualisation 3D", str(exc))
@@ -168,7 +168,7 @@ def create_viewer_tab(parent=None):
             if self.controller is None:
                 return
             if not self.controller.pylmgc_available():
-                QMessageBox.warning(self, "visuAvatars", "pylmgc90 non disponible")
+                QMessageBox.warning(self, "visuAvatars", "pylmgc90 unavailable")
                 return
             try:
                 QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)

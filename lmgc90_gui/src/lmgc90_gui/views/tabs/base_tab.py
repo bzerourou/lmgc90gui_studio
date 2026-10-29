@@ -204,23 +204,23 @@ class BaseTab:
     def _show_eval_error(self, text: str, error: Exception, field_name: str = "") -> None:
         try:
             from PyQt6.QtWidgets import QMessageBox
-            msg = "Expression invalide"
+            msg = " Invalid expression"
             if field_name:
-                msg += f" pour '{field_name}'"
-            msg += f":\n\n'{text}'\n\nErreur: {error}\n\n"
+                msg += f" for '{field_name}'"
+            msg += f":\n\n'{text}'\n\nError: {error}\n\n"
             dyn = {}
             if self.controller is not None:
                 dyn = dict(self.controller.project.dynamic_vars)
             if dyn:
-                msg += "Variables dynamiques:\n  " + "\n  ".join(list(dyn.keys())[:12])
+                msg += " Dynamic variables:\n  " + "\n  ".join(list(dyn.keys())[:12])
             else:
-                msg += "Aucune variable — Tools → Variables dynamiques (Ctrl+V)"
+                msg += "No dynamic variables — Tools → Dynamic Variables (Ctrl+V)"
             msg += (
-                "\n\nRéférences: avatar[i].x, group['nom'], "
+                "\n\nReferences: avatar[i].x, group['nom'], "
                 "material['n'].density, model['n'].dimension, "
                 "avatars_by_color('BLUEx'), pi, sqrt, …"
             )
-            QMessageBox.critical(self if hasattr(self, "window") else None, "Évaluation", msg)
+            QMessageBox.critical(self if hasattr(self, "window") else None, "Evaluation Error", msg)
         except Exception:
             pass
 
