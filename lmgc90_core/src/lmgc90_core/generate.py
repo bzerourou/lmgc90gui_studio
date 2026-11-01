@@ -105,6 +105,66 @@ def _safe_arith(expr: str, env: dict) -> float:
     return float(_ev(ast.parse(expr, mode="eval")))
 
 
+def _safe_condition(expr: str, env: dict) -> bool:
+    """Evaluate arithmetic comparisons and boolean operators without eval()."""
+    import ast
+    import operator
+
+    compare_ops = {
+        ast.Eq: operator.eq,
+        ast.NotEq: operator.ne,
+        ast.Lt: operator.lt,
+        ast.LtE: operator.le,
+        ast.Gt: operator.gt,
+        ast.GtE: operator.ge,
+    }
+
+    def evaluate(node):
+        if isinstance(node, ast.Expression):
+            return evaluate(node.body)
+        if isinstance(node, ast.BoolOp):
+            if isinstance(node.op, ast.And):
+                for value in node.values:
+                    if not bool(evaluate(value)):
+                        return False
+                return True
+            if isinstance(node.op, ast.Or):
+                for value in node.values:
+                    if bool(evaluate(value)):
+                        return True
+                return False
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            return not bool(evaluate(node.operand))
+        if isinstance(node, ast.Compare):
+            left = evaluate(node.left)
+            for operation, comparator in zip(node.ops, node.comparators):
+                operation_fn = compare_ops.get(type(operation))
+                if operation_fn is None:
+                    raise ValueError("unsupported comparison in ForLoop condition")
+                right = evaluate(comparator)
+                if not operation_fn(left, right):
+                    return False
+                left = right
+            return True
+        if isinstance(node, ast.Name):
+            if node.id not in env:
+                raise ValueError(f"unknown name {node.id!r} in ForLoop condition")
+            return env[node.id]
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float, bool)):
+                return node.value
+            raise ValueError("only numeric constants are allowed in ForLoop condition")
+        if isinstance(node, (ast.BinOp, ast.Call)):
+            return _safe_arith(ast.unparse(node), env)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            return _safe_arith(ast.unparse(node), env)
+        raise ValueError(
+            f"disallowed expression node {type(node).__name__} in ForLoop condition"
+        )
+
+    return bool(evaluate(ast.parse(expr, mode="eval")))
+
+
 def for_loop_values(for_loop) -> list[float]:
     if for_loop.step == 0:
         raise ValueError("ForLoop step cannot be 0")
@@ -150,17 +210,7 @@ def expand_for_loop(for_loop, template: Avatar, dimension: int = 2) -> list[Avat
     if for_loop.step == 0:
         raise ValueError("ForLoop step cannot be 0")
 
-    values: list[float] = []
-    v = float(for_loop.start)
-    # inclusive start, exclusive stop — same as range() semantics for floats
-    if for_loop.step > 0:
-        while v < for_loop.stop - 1e-12:
-            values.append(v)
-            v += for_loop.step
-    else:
-        while v > for_loop.stop + 1e-12:
-            values.append(v)
-            v += for_loop.step
+    values = for_loop_values(for_loop)
 
     base_env = {
         "pi": math.pi, "e": math.e,
@@ -182,6 +232,17 @@ def expand_for_loop(for_loop, template: Avatar, dimension: int = 2) -> list[Avat
         clone.origin = AvatarOrigin.LOOP
         if for_loop.expr_radius:
             clone.radius = _safe_arith(for_loop.expr_radius, env)
+        if for_loop.condition:
+            condition_env = {
+                **env,
+                "x": x,
+                "y": y,
+                "z": center[2] if dimension == 3 else 0.0,
+                "r": float(clone.radius or 0.0),
+                "radius": float(clone.radius or 0.0),
+            }
+            if not _safe_condition(for_loop.condition, condition_env):
+                continue
         generated.append(clone)
         ids.append(clone.avatar_id)
     for_loop.generated_ids = ids
@@ -202,6 +263,93 @@ class GranuloResult:
         return self.nb_placed / self.nb_requested
 
 
+def sample_radii(
+    config: GranuloConfig,
+    *,
+    count: Optional[int] = None,
+    rng: Optional[np.random.Generator] = None,
+) -> np.ndarray:
+    """Sample radii using the selected pylmgc-compatible distribution."""
+    n = int(config.nb_particles if count is None else count)
+    if n <= 0:
+        raise ValueError("nb_particles must be > 0")
+    if rng is None:
+        rng = np.random.default_rng(config.seed)
+    dist = getattr(config, "distribution_type", "granulo_Random") or "granulo_Random"
+    params = dict(getattr(config, "distribution_params", None) or {})
+
+    if dist == "granulo_ReadFromFile":
+        path = getattr(config, "distribution_file", None)
+        if not path:
+            raise ValueError("distribution_file is required for granulo_ReadFromFile")
+        try:
+            radii = np.atleast_1d(np.loadtxt(path, dtype=np.float64)).reshape(-1)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"cannot read granulometry file {path!r}: {exc}") from exc
+        if len(radii) < n:
+            raise ValueError(
+                f"granulometry file contains {len(radii)} radii, but {n} are required"
+            )
+        radii = radii[:n]
+    else:
+        rmin, rmax = float(config.radius_min), float(config.radius_max)
+        if rmin <= 0 or rmax < rmin:
+            raise ValueError("invalid radius range")
+        if dist == "granulo_Random":
+            radii = rng.uniform(rmin, rmax, n)
+        elif dist == "granulo_Uniform":
+            draw = rng.uniform(rmin, rmax, n)
+            radii = rmax * rmin / (rmin + rmax - draw)
+        elif dist in ("granulo_TwoSizesNumber", "granulo_TwoSizesVolume"):
+            p_min = float(params.get("p_min", 0.5))
+            if not 0.0 <= p_min <= 1.0:
+                raise ValueError("p_min must be between 0 and 1")
+            p_number = p_min
+            if dist == "granulo_TwoSizesVolume":
+                if p_min == 0.0:
+                    p_number = 0.0
+                elif p_min == 1.0:
+                    p_number = 1.0
+                else:
+                    p_number = 1.0 / (
+                        1.0 + (1.0 - p_min) * rmin**2 / (p_min * rmax**2)
+                    )
+            radii = np.where(rng.random(n) < p_number, rmin, rmax)
+        elif dist == "granulo_BetaDistribution":
+            try:
+                from scipy.special import betainc
+            except ImportError as exc:
+                raise ValueError(
+                    "granulo_BetaDistribution requires scipy for the Numpy backend"
+                ) from exc
+            nb_t = int(params.get("nb_t", 10))
+            volume = float(params.get("vol", 0.0))
+            alpha = float(params.get("a", 0.0))
+            beta = float(params.get("b", 0.0))
+            if nb_t <= 0 or volume <= 0 or alpha <= 0 or beta <= 0:
+                raise ValueError("Beta distribution requires nb_t, vol, a and b > 0")
+            radius_step = (rmax - rmin) / nb_t
+            volume_scale = 3.0 * volume / (4.0 * math.pi)
+            previous_mass = 0.0
+            parts = []
+            for index in range(1, nb_t + 1):
+                mass = float(betainc(alpha, beta, index / nb_t))
+                lower = rmin + (index - 1) * radius_step
+                midpoint = lower + 0.5 * radius_step
+                number = int((mass - previous_mass) * volume_scale / midpoint**3)
+                if number > 0:
+                    parts.append(rng.uniform(lower, lower + radius_step, number))
+                previous_mass = mass
+            radii = np.concatenate(parts) if parts else np.empty(0, dtype=np.float64)
+            rng.shuffle(radii)
+        else:
+            raise ValueError(f"unknown radius distribution: {dist!r}")
+
+    if not np.isfinite(radii).all() or (radii <= 0).any():
+        raise ValueError("radius distribution must contain finite positive values")
+    return np.asarray(radii, dtype=np.float64)
+
+
 class NumpyGranulo:
     """Rejection packing. Replaces pre.granulo_Random + depositInXxx for core."""
 
@@ -209,24 +357,42 @@ class NumpyGranulo:
     CANDIDATE_BATCH = 512
 
     def deposit(self, config: GranuloConfig) -> GranuloResult:
-        if config.radius_min <= 0 or config.radius_max < config.radius_min:
+        if (
+            config.distribution_type != "granulo_ReadFromFile"
+            and (config.radius_min <= 0 or config.radius_max < config.radius_min)
+        ):
             raise ValueError("invalid radius range")
         if config.nb_particles <= 0:
             raise ValueError("nb_particles must be > 0")
 
         rng = np.random.default_rng(config.seed)
         dim = config.dimension
-        n = config.nb_particles
+        n = int(config.nb_particles)
         centers = np.empty((0, dim), dtype=np.float64)
         radii = np.empty(0, dtype=np.float64)
         attempts = 0
         max_attempts = n * self.MAX_ATTEMPTS_FACTOR
+        pre_sampled_radii = None
+        if config.distribution_type in (
+            "granulo_ReadFromFile", "granulo_BetaDistribution",
+        ):
+            pre_sampled_radii = sample_radii(config, rng=rng)
+            if config.distribution_type == "granulo_BetaDistribution":
+                n = len(pre_sampled_radii)
+                if n == 0:
+                    raise ValueError("Beta distribution produced no particles")
 
         while len(radii) < n and attempts < max_attempts:
             remaining = n - len(radii)
             batch = min(self.CANDIDATE_BATCH, remaining * 4)
-            cand_r = rng.uniform(config.radius_min, config.radius_max, batch)
-            cand_c = self._sample(rng, batch, config, cand_r)
+            if pre_sampled_radii is None:
+                cand_r = sample_radii(config, count=batch, rng=rng)
+            else:
+                cand_r = pre_sampled_radii[attempts:attempts + batch]
+                if len(cand_r) == 0:
+                    break
+            batch_count = len(cand_r)
+            cand_c = self._sample(rng, batch_count, config, cand_r)
             mask = self._inside(cand_c, cand_r, config)
             cand_c, cand_r = cand_c[mask], cand_r[mask]
             if len(centers) > 0 and len(cand_c) > 0:
@@ -240,7 +406,7 @@ class NumpyGranulo:
                     continue
                 centers = np.vstack([centers, c]) if len(centers) else c.reshape(1, dim)
                 radii = np.append(radii, r)
-            attempts += batch
+            attempts += batch_count
 
         atype = AvatarType(config.avatar_type)
         pop = ParticlePopulation.create(

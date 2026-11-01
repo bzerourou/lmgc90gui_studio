@@ -150,9 +150,13 @@ def meshed_rectangle(*, lx, ly, nx, ny, center, model, material, color="CYANx",
 
 
 def tact_behav(*, name: str, law: str, fric: Optional[float] = None, **properties) -> ContactLaw:
+    try:
+        law_type: ContactLawType | str = ContactLawType(law)
+    except ValueError:
+        law_type = law
     return ContactLaw(
         name=name,
-        law_type=ContactLawType(law),
+        law_type=law_type,
         friction=fric,
         properties=dict(properties),
     )

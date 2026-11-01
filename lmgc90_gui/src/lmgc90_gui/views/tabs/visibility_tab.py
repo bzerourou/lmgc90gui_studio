@@ -16,6 +16,7 @@ from lmgc90_core.types import (
     AvatarType,
 )
 from lmgc90_core.validate import compatible_contactors
+from lmgc90_engine.schema import contact_law_pair_compatibility
 
 from .base_tab import BaseTab
 from ..widgets.entity_tree import create_entity_tree
@@ -392,6 +393,35 @@ def create_visibility_tab(parent=None):
         def _combo_text(self, box: QComboBox) -> str:
             return box.currentText().strip()
 
+        def _check_runtime_law_pair(
+            self,
+            candidate_body: str,
+            candidate_contactor: str,
+            antagonist_body: str,
+            antagonist_contactor: str,
+            behavior_name: str,
+        ) -> None:
+            if self.controller is None:
+                return
+            law = next(
+                (item for item in self.controller.project.laws if item.name == behavior_name),
+                None,
+            )
+            if law is None:
+                return
+            compatible = contact_law_pair_compatibility(
+                law.law_type_name,
+                candidate_body,
+                candidate_contactor,
+                antagonist_body,
+                antagonist_contactor,
+            )
+            if compatible is False:
+                raise ValidationError(
+                    f"La loi {law.law_type_name} est incompatible avec "
+                    f"{candidate_contactor}/{antagonist_contactor} selon pylmgc90."
+                )
+
         def _refill_from_project(self) -> None:
             if self.controller is None:
                 return
@@ -525,14 +555,26 @@ def create_visibility_tab(parent=None):
         def _build(self) -> VisibilityRule:
             self._validate_color(self._combo_text(self.c_color), "candidate")
             self._validate_color(self._combo_text(self.a_color), "antagonist")
+            candidate_body = self._body_text(self.c_body)
+            candidate_contactor = self._combo_text(self.c_shape)
+            antagonist_body = self._body_text(self.a_body)
+            antagonist_contactor = self._combo_text(self.a_shape)
+            behavior_name = self._combo_text(self.behav)
+            self._check_runtime_law_pair(
+                candidate_body,
+                candidate_contactor,
+                antagonist_body,
+                antagonist_contactor,
+                behavior_name,
+            )
             return pre.see_table(
-                CorpsCandidat=self._body_text(self.c_body),
-                candidat=self._combo_text(self.c_shape),
+                CorpsCandidat=candidate_body,
+                candidat=candidate_contactor,
                 colorCandidat=self._combo_text(self.c_color),
-                CorpsAntagoniste=self._body_text(self.a_body),
-                antagoniste=self._combo_text(self.a_shape),
+                CorpsAntagoniste=antagonist_body,
+                antagoniste=antagonist_contactor,
                 colorAntagoniste=self._combo_text(self.a_color),
-                behav=self._combo_text(self.behav),
+                behav=behavior_name,
                 alert=self.eval_float(self.alert.text(), 0.02, "alert"),
             )
 
@@ -617,6 +659,9 @@ def create_visibility_tab(parent=None):
             behav = law or (laws[0] if laws else "IQS")
             body = self._default_body()
             try:
+                self._check_runtime_law_pair(
+                    body, shape_c, body, shape_a, behav,
+                )
                 rule = pre.see_table(
                     CorpsCandidat=body,
                     candidat=shape_c,

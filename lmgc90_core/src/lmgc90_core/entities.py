@@ -179,12 +179,16 @@ class Avatar:
 @dataclass
 class ContactLaw:
     name: str
-    law_type: ContactLawType
+    law_type: ContactLawType | str
     friction: Optional[float] = None
     properties: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def law_type_name(self) -> str:
+        return str(getattr(self.law_type, "value", self.law_type))
+
     def to_dict(self) -> dict:
-        data: dict[str, Any] = {"name": self.name, "law": self.law_type.value}
+        data: dict[str, Any] = {"name": self.name, "law": self.law_type_name}
         if self.friction is not None:
             data["fric"] = self.friction
         data.update(self.properties)
@@ -193,9 +197,14 @@ class ContactLaw:
     @classmethod
     def from_dict(cls, data: dict) -> ContactLaw:
         skip = {"name", "law", "fric"}
+        law_name = str(data["law"])
+        try:
+            law_type: ContactLawType | str = ContactLawType(law_name)
+        except ValueError:
+            law_type = law_name
         return cls(
             name=data["name"],
-            law_type=ContactLawType(data["law"]),
+            law_type=law_type,
             friction=data.get("fric"),
             properties={k: v for k, v in data.items() if k not in skip},
         )
@@ -347,9 +356,9 @@ class Loop:
 
 @dataclass
 class ForLoop:
-    """Generic parametric loop — multi-target (materials, models, avatars, DOF, see, granulo).
+    """Generic parametric loop — multi-target and conditionally filtered.
 
-    ``target_kind``: avatar | material | model | dof | visibility | granulo | granulo_dist
+    ``target_kind``: avatar | material | model | law | dof | visibility | granulo | granulo_dist
     """
 
     var_name: str = "i"
@@ -369,6 +378,7 @@ class ForLoop:
     generated_ids: list[str] = field(default_factory=list)
     loop_id: str = field(default_factory=new_avatar_id)
     use_soa: bool = False
+    condition: Optional[str] = None
     _generated_items: list[Any] = field(default_factory=list, repr=False, compare=False)
 
     def to_dict(self) -> dict:
@@ -385,6 +395,7 @@ class ForLoop:
             "expr_y": self.expr_y,
             "expr_z": self.expr_z,
             "expr_radius": self.expr_radius,
+            "condition": self.condition,
             "expressions": dict(self.expressions or {}),
             "group_name": self.group_name,
             "generated_ids": list(self.generated_ids),
@@ -407,6 +418,7 @@ class ForLoop:
             expr_y=data.get("expr_y", "0.0"),
             expr_z=data.get("expr_z", "0.0"),
             expr_radius=data.get("expr_radius"),
+            condition=data.get("condition"),
             expressions=dict(data.get("expressions") or {}),
             group_name=data.get("group_name"),
             generated_ids=list(data.get("generated_ids") or []),
@@ -435,6 +447,9 @@ class GranuloConfig:
     # Legacy "distribution only": radii sample, no ParticlePopulation / avatars
     create_avatars: bool = True
     radii: Optional[list] = None  # filled when create_avatars is False
+    distribution_type: str = "granulo_Random"
+    distribution_params: dict[str, Any] = field(default_factory=dict)
+    distribution_file: Optional[str] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -453,6 +468,9 @@ class GranuloConfig:
             "dimension": self.dimension,
             "create_avatars": self.create_avatars,
             "use_particle_population": self.create_avatars,
+            "distribution_type": self.distribution_type,
+            "distribution_params": dict(self.distribution_params),
+            "distribution_file": self.distribution_file,
         }
         if self.radii is not None and not self.create_avatars:
             d["radii"] = list(self.radii)
@@ -483,4 +501,7 @@ class GranuloConfig:
             dimension=int(data.get("dimension", 2)),
             create_avatars=bool(create),
             radii=list(data["radii"]) if data.get("radii") is not None else None,
+            distribution_type=data.get("distribution_type", "granulo_Random"),
+            distribution_params=dict(data.get("distribution_params") or {}),
+            distribution_file=data.get("distribution_file"),
         )

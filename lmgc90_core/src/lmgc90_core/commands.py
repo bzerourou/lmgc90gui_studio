@@ -143,7 +143,7 @@ class AddLaw:
         project._drop_law(self.law.name)
 
     def describe(self) -> str:
-        return f"add law {self.law.name} ({self.law.law_type.value})"
+        return f"add law {self.law.name} ({self.law.law_type_name})"
 
     def to_journal(self) -> dict[str, Any]:
         return {"op": "add_law", "payload": self.law.to_dict()}
@@ -335,6 +335,11 @@ class RemoveForLoop:
             "materials": "materials",
             "model": "models",
             "models": "models",
+            "law": "laws",
+            "laws": "laws",
+            "contact": "laws",
+            "contact_law": "laws",
+            "contact_laws": "laws",
             "dof": "operations",
             "dofs": "operations",
             "visibility": "visibility",
@@ -369,11 +374,20 @@ class RemoveForLoop:
                     for name, ids in project.avatar_groups.items()
                     if generated_ids.intersection(ids)
                 }
+                emptied_groups = {
+                    name for name, ids in self.avatar_groups_touched.items()
+                    if not set(ids).difference(generated_ids)
+                }
                 self.operations_touched = [
                     (index, operation)
                     for index, operation in enumerate(project.operations)
-                    if operation.target_type == "avatar"
-                    and operation.target_value in generated_ids
+                    if (
+                        operation.target_type == "avatar"
+                        and operation.target_value in generated_ids
+                    ) or (
+                        operation.target_type == "group"
+                        and operation.target_value in emptied_groups
+                    )
                 ]
             elif collection_name == "populations":
                 generated_ids = {item.population_id for _, _, item in self.items}
@@ -392,6 +406,11 @@ class RemoveForLoop:
         if collection_name == "avatars":
             for _, _, avatar in self.items:
                 project._drop_avatar(avatar.avatar_id)
+            touched_operation_ids = {id(operation) for _, operation in self.operations_touched}
+            project.operations[:] = [
+                operation for operation in project.operations
+                if id(operation) not in touched_operation_ids
+            ]
         elif collection_name == "populations":
             for _, _, population in self.items:
                 project._drop_population(population.population_id)
@@ -435,6 +454,7 @@ class RemoveForLoop:
             Avatar: "Avatar",
             Material: "Material",
             Model: "Model",
+            ContactLaw: "ContactLaw",
             DOFOperation: "DOFOperation",
             VisibilityRule: "VisibilityRule",
             ParticlePopulation: "ParticlePopulation",

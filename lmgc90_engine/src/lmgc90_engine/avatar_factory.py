@@ -2,6 +2,9 @@
 
 Identity stays on the core side (avatar_id). The returned object is the Fortran
 body; the EngineSession stores the mapping.
+
+Avatar-type sets (walls, population-capable shapes) come from
+``lmgc90_core.types`` so the engine stays aligned with the core vocabulary.
 """
 from __future__ import annotations
 
@@ -9,7 +12,12 @@ from typing import Any, Optional
 
 from lmgc90_core.entities import Avatar
 from lmgc90_core.population import ParticlePopulation
-from lmgc90_core.types import AvatarType
+from lmgc90_core.types import (
+    AvatarType,
+    POPULATION_TYPES,
+    RIGID_AVATARS_2D,
+    RIGID_AVATARS_3D,
+)
 
 from .errors import MaterializationError, PylmgcNotAvailable
 
@@ -34,6 +42,45 @@ def _resolve(name_or_obj, registry: dict[str, Any], kind: str):
         return registry[name_or_obj]
     return name_or_obj
 
+
+
+
+# Contactor / body groups derived from core vocabulary (types.py)
+_WALLS_2D = frozenset({
+    AvatarType.SMOOTH_WALL,
+    AvatarType.FINE_WALL,
+    AvatarType.ROUGH_WALL,
+    AvatarType.GRANULO_WALL,
+})
+_WALLS_3D = frozenset({
+    AvatarType.ROUGH_WALL_3D,
+    AvatarType.GRANULO_ROUGH_WALL_3D,
+})
+assert _WALLS_2D <= RIGID_AVATARS_2D
+assert _WALLS_3D <= RIGID_AVATARS_3D
+
+# pre constructor name per population-capable avatar type
+_POPULATION_PRE_FN: dict[AvatarType, str] = {
+    AvatarType.RIGID_DISK: "rigidDisk",
+    AvatarType.RIGID_SPHERE: "rigidSphere",
+    AvatarType.RIGID_DISCRETE: "rigidDiscreteDisk",
+    AvatarType.RIGID_CLUSTER: "rigidCluster",
+    AvatarType.RIGID_CYLINDER: "rigidCylinder",
+    AvatarType.RIGID_POLYGON: "rigidPolygon",
+    AvatarType.RIGID_POLYHEDRON: "rigidPolyhedron",
+}
+
+
+def _maybe_hollow(fn, kwargs: dict[str, Any], is_hollow: bool) -> dict[str, Any]:
+    """Add is_Hollow only if the pylmgc constructor accepts it."""
+    import inspect
+    try:
+        if "is_Hollow" in inspect.signature(fn).parameters:
+            kwargs = dict(kwargs)
+            kwargs["is_Hollow"] = bool(is_hollow)
+    except (TypeError, ValueError):
+        pass
+    return kwargs
 
 
 def expand_rigids_from_mesh2d(
@@ -97,12 +144,7 @@ def build_avatar(
             kwargs = dict(
                 r=float(av.radius), center=center, model=mod, material=mat, color=color,
             )
-            import inspect
-            try:
-                if "is_Hollow" in inspect.signature(pre.rigidDisk).parameters:
-                    kwargs["is_Hollow"] = bool(av.is_hollow)
-            except (TypeError, ValueError):
-                pass
+            kwargs = _maybe_hollow(pre.rigidDisk, kwargs, av.is_hollow)
             body = pre.rigidDisk(**kwargs)
         elif t == AvatarType.RIGID_SPHERE:
             # pylmgc90.pre.rigidSphere does not accept is_Hollow
@@ -126,14 +168,14 @@ def build_avatar(
             )
             if av.vertices is not None:
                 verts = np.asarray(av.vertices, dtype=float)
-                # Custom outline: do NOT pass generation_type="vertices" (invalid in pylmgc)
+                verts = verts - np.asarray(center, dtype=float)
                 try:
-                    body = pre.rigidPolygon(vertices=verts, **kwargs)
+                    body = pre.rigidPolygon(
+                        generation_type="full", vertices=verts, **kwargs
+                    )
                 except TypeError:
                     try:
-                        body = pre.rigidPolygon(
-                            generation_type="full", vertices=verts, **kwargs
-                        )
+                        body = pre.rigidPolygon(vertices=verts, **kwargs)
                     except Exception:
                         # last resort: regular with radius from bbox
                         xs, ys = verts[:, 0], verts[:, 1]
@@ -176,12 +218,7 @@ def build_avatar(
                 r=float(av.radius), h=float(h), center=center,
                 model=mod, material=mat, color=color,
             )
-            import inspect
-            try:
-                if "is_Hollow" in inspect.signature(pre.rigidCylinder).parameters:
-                    kwargs["is_Hollow"] = bool(av.is_hollow)
-            except (TypeError, ValueError):
-                pass
+            kwargs = _maybe_hollow(pre.rigidCylinder, kwargs, av.is_hollow)
             body = pre.rigidCylinder(**kwargs)
         elif t == AvatarType.RIGID_PLAN:
             ax = av.axis or av.wall_params or {}
@@ -235,12 +272,9 @@ def build_avatar(
                     f"rigidPolyhedron needs vertices (>4) or regular "
                     f"nb_vertices+radius (avatar_id={av.avatar_id})"
                 )
-        elif t in (
-            AvatarType.SMOOTH_WALL, AvatarType.FINE_WALL, AvatarType.ROUGH_WALL,
-            AvatarType.GRANULO_WALL,
-        ):
+        elif t in _WALLS_2D:
             body = _build_wall_2d(pre, av, mat, mod)
-        elif t in (AvatarType.ROUGH_WALL_3D, AvatarType.GRANULO_ROUGH_WALL_3D):
+        elif t in _WALLS_3D:
             body = _build_wall_3d(pre, av, mat, mod)
         elif t == AvatarType.MESH_DEFORMABLE:
             body = _build_mesh(pre, av, mat, mod)
@@ -429,9 +463,11 @@ def _build_brick2d(pre, av: Avatar, mat, mod, wp: dict) -> Any:
         [cx + hx, cy + hy],
         [cx - hx, cy + hy],
     ], dtype=float)
+    verts -= np.asarray(center, dtype=float)
     try:
         return pre.rigidPolygon(
-            center=center, model=mod, material=mat, color=color, vertices=verts,
+            center=center, model=mod, material=mat, color=color,
+            generation_type="full", vertices=verts,
         )
     except TypeError:
         return pre.rigidPolygon(
@@ -895,16 +931,12 @@ def build_population_bodies(
     t = pop.avatar_type
     extra = dict(pop.extra_params or {})
 
-    fn_map = {
-        AvatarType.RIGID_DISK: "rigidDisk",
-        AvatarType.RIGID_SPHERE: "rigidSphere",
-        AvatarType.RIGID_DISCRETE: "rigidDiscreteDisk",
-        AvatarType.RIGID_CLUSTER: "rigidCluster",
-        AvatarType.RIGID_CYLINDER: "rigidCylinder",
-        AvatarType.RIGID_POLYGON: "rigidPolygon",
-        AvatarType.RIGID_POLYHEDRON: "rigidPolyhedron",
-    }
-    fn_name = fn_map.get(t)
+    if t not in POPULATION_TYPES:
+        raise MaterializationError(
+            f"population type not supported: {t} "
+            f"(allowed: {sorted(x.value for x in POPULATION_TYPES)})"
+        )
+    fn_name = _POPULATION_PRE_FN.get(t)
     if fn_name is None:
         raise MaterializationError(f"population type not supported: {t}")
     fn = getattr(pre, fn_name, None)

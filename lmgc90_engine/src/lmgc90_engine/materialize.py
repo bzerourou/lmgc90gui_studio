@@ -2,6 +2,11 @@
 
 Returns a MaterializedScene holding the containers and id maps.
 Does not write DATBOX (see datbox.py / EngineSession.write_datbox).
+
+Material property allow-lists and orthotropic field names come from
+``lmgc90_core.types`` (single source of truth with the GUI schema).
+Contact-law parameter vocab is also owned by types (optional live
+import from pylmgc90.pre.config.lmgc90dicts).
 """
 from __future__ import annotations
 
@@ -11,6 +16,11 @@ from typing import Any, Optional
 from lmgc90_core.entities import Avatar, ContactLaw, Material, Model, VisibilityRule
 from lmgc90_core.population import ParticlePopulation
 from lmgc90_core.project import Project
+from lmgc90_core.types import (
+    MATERIAL_OPTIONS,
+    MATERIAL_PROPERTY_SCHEMA,
+    ORTHOTROPIC_FIELDS_3D,
+)
 
 from .avatar_factory import build_avatar, build_population_bodies
 from .errors import MaterializationError, PylmgcNotAvailable
@@ -133,7 +143,14 @@ def materialize_project(project: Project) -> MaterializedScene:
 
     # --- see tables ---
     for rule in project.visibility:
-        obj = _make_see(pre, rule)
+        behavior = scene.law_by_name.get(rule.behavior_name)
+        if behavior is None:
+            behavior = scene.law_by_name.get(_lmgc5(rule.behavior_name))
+        if behavior is None:
+            raise MaterializationError(
+                f"visibility references unavailable contact law {rule.behavior_name!r}"
+            )
+        obj = _make_see(pre, rule, behavior=behavior)
         sees.addSeeTable(obj)
 
     # --- DOF / operations (applied on bodies) ---
@@ -172,13 +189,16 @@ def materialize_project(project: Project) -> MaterializedScene:
 
     return scene
 
+
 def _bodies_for_group(project, scene, group_name: str) -> list:
     ids = project.avatar_groups.get(group_name, []) or []
     return [
         scene.body_by_avatar_id[aid]
         for aid in ids
+        if aid in scene.body_by_avatar_id
     ]
-    
+
+
 def _lmgc5(name: str, default: str = "XXXXX") -> str:
     """LMGC90 Fortran identifiers are fixed-width 5 characters."""
     s = (name or default).strip()
@@ -189,7 +209,11 @@ def _lmgc5(name: str, default: str = "XXXXX") -> str:
     return s
 
 
-# pylmgc90.pre.material option aliases (GUI / schema → Fortran name)
+# ---------------------------------------------------------------------------
+# Material kwargs: schema from lmgc90_core.types + engine-only extras
+# ---------------------------------------------------------------------------
+
+# GUI / alternate names → Fortran names expected by pylmgc90.pre.material
 _MATERIAL_PROP_ALIASES: dict[str, dict[str, str]] = {
     "ELAS_DILA": {"alpha": "dilatation"},
     "ELAS_PLAS": {"sigc": "iso_hard", "hard": "isoh_coeff"},
@@ -201,38 +225,30 @@ _MATERIAL_PROP_ALIASES: dict[str, dict[str, str]] = {
     },
 }
 
-_ORTHOTROPIC_FIELDS = (
-    "young1", "young2", "young3",
-    "nu12", "nu13", "nu23",
-    "G12", "G13", "G23",
-)
-
-_MATERIAL_OPTIONS = {
-    "RIGID": {"density"},
-    "ELAS": {"density", "elas", "anisotropy", "young", "nu", "G"},
-    "ELAS_DILA": {
-        "density", "elas", "anisotropy", "young", "nu", "dilatation", "T_ref_meca",
-    },
-    "VISCO_ELAS": {
-        "density", "elas", "anisotropy", "young", "nu", "viscous_model",
-        "viscous_young", "viscous_nu",
-    },
-    "ELAS_PLAS": {
-        "density", "elas", "anisotropy", "young", "nu", "critere", "isoh",
-        "iso_hard", "isoh_coeff", "cinh", "visc",
-    },
-    "THERMO_ELAS": {
-        "density", "elas", "anisotropy", "young", "nu", "dilatation", "T_ref_meca",
-        "conductivity", "specific_capacity", "therm_cpl",
-    },
-    "PORO_ELAS": {
-        "density", "elas", "anisotropy", "young", "nu", "hydro_cpl", "conductivity",
-        "specific_capacity",
-    },
-    "DISCRETE": {"masses", "stiffnesses", "viscosities"},
-    "USER_MAT": {"density", "file_mat"},
-    "EXTERNAL": set(),
+# Keys accepted by pre.material but not listed in the GUI schema
+_ENGINE_EXTRA_MATERIAL_KEYS: dict[str, set[str]] = {
+    "THERMO_ELAS": {"therm_cpl"},
 }
+
+# Orthotropic property names — single source: types.ORTHOTROPIC_FIELDS_3D
+_ORTHOTROPIC_FIELDS = tuple(ORTHOTROPIC_FIELDS_3D)
+
+# Allow-list per material type:
+#   1) live MATERIAL_OPTIONS from types (pylmgc90dicts or fallback)
+#   2) union with GUI schema field names
+#   3) engine-only extras (e.g. therm_cpl)
+_MATERIAL_OPTIONS: dict[str, set[str]] = {}
+_all_mtypes = set(MATERIAL_OPTIONS) | set(MATERIAL_PROPERTY_SCHEMA) | set(_ENGINE_EXTRA_MATERIAL_KEYS)
+for mtype in _all_mtypes:
+    names: set[str] = set(MATERIAL_OPTIONS.get(mtype, ()))
+    for name, _default, _kind in MATERIAL_PROPERTY_SCHEMA.get(mtype, ()):
+        names.add(name)
+    names |= _ENGINE_EXTRA_MATERIAL_KEYS.get(mtype, set())
+    if mtype != "EXTERNAL" and "density" not in names and mtype in MATERIAL_PROPERTY_SCHEMA:
+        # density is a top-level Material field for most types
+        if mtype != "DISCRETE":
+            names.add("density")
+    _MATERIAL_OPTIONS[mtype] = names
 
 _STALE_VISCOUS_OPTIONS = (
     "eta", "viscosity",
@@ -286,7 +302,10 @@ def _make_material(pre, m: Material) -> Any:
             if g12 is not None:
                 kwargs["G"] = [float(g12)]
         kwargs["anisotropy"] = "orthotropic"
-        rest = {k: v for k, v in props.items() if k not in _ORTHOTROPIC_FIELDS and k != "anisotropy"}
+        rest = {
+            k: v for k, v in props.items()
+            if k not in _ORTHOTROPIC_FIELDS and k != "anisotropy"
+        }
         kwargs.update(_rename(rest))
     else:
         for k in _ORTHOTROPIC_FIELDS:
@@ -298,7 +317,9 @@ def _make_material(pre, m: Material) -> Any:
                 props["anisotropy"] = "isotropic"
         elif "anisotropy" in props:
             value = str(props["anisotropy"]).lower()
-            props["anisotropy"] = value if value in ("isotropic", "orthotropic") else "isotropic"
+            props["anisotropy"] = (
+                value if value in ("isotropic", "orthotropic") else "isotropic"
+            )
         if props.get("elas") not in (None, "", "standard"):
             if props.get("elas") not in ("Hookean", "HartSmith"):
                 props["elas"] = "standard"
@@ -308,7 +329,11 @@ def _make_material(pre, m: Material) -> Any:
         for key in ("masses", "stiffnesses", "viscosities"):
             value = kwargs.get(key)
             if isinstance(value, str):
-                kwargs[key] = [float(part.strip()) for part in value.replace(";", ",").split(",") if part.strip()]
+                kwargs[key] = [
+                    float(part.strip())
+                    for part in value.replace(";", ",").split(",")
+                    if part.strip()
+                ]
 
     if mtype == "ELAS_DILA" and "dilatation" not in kwargs:
         kwargs["dilatation"] = 1e-5
@@ -338,14 +363,14 @@ def _make_model(pre, m: Model) -> Any:
 
 def _make_law(pre, law: ContactLaw) -> Any:
     # pylmgc90.pre.tact_behav requires name to be exactly 5 characters
-    kwargs: dict[str, Any] = dict(name=_lmgc5(law.name), law=law.law_type.value)
+    kwargs: dict[str, Any] = dict(name=_lmgc5(law.name), law=law.law_type_name)
     if law.friction is not None:
         kwargs["fric"] = float(law.friction)
     kwargs.update(law.properties or {})
     return pre.tact_behav(**kwargs)
 
 
-def _make_see(pre, rule: VisibilityRule) -> Any:
+def _make_see(pre, rule: VisibilityRule, *, behavior: Any = None) -> Any:
     return pre.see_table(
         CorpsCandidat=rule.candidate_body,
         candidat=rule.candidate_contactor,
@@ -353,7 +378,7 @@ def _make_see(pre, rule: VisibilityRule) -> Any:
         CorpsAntagoniste=rule.antagonist_body,
         antagoniste=rule.antagonist_contactor,
         colorAntagoniste=rule.antagonist_color,
-        behav=_lmgc5(rule.behavior_name),
+        behav=behavior if behavior is not None else _lmgc5(rule.behavior_name),
         alert=float(rule.alert),
     )
 

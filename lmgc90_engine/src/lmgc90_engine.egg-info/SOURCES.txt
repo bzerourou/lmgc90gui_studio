@@ -12,5 +12,8 @@ src/lmgc90_engine.egg-info/SOURCES.txt
 src/lmgc90_engine.egg-info/dependency_links.txt
 src/lmgc90_engine.egg-info/requires.txt
 src/lmgc90_engine.egg-info/top_level.txt
+tests/test_avatar_factory_walls.py
+tests/test_dof_operations.py
 tests/test_engine_purity.py
+tests/test_material_properties.py
 tests/test_session_pure.py

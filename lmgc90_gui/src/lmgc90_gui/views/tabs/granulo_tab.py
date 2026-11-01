@@ -1,6 +1,8 @@
 """GranuloTab — all deposit containers + avatar types by dimension (legacy parity)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from lmgc90_core import GranuloConfig, ValidationError
 from lmgc90_core.types import AvatarType
 
@@ -28,6 +30,15 @@ _AVATARS_3D = [
     ("rigidPolyhedron", AvatarType.RIGID_POLYHEDRON),
 ]
 
+_DISTRIBUTIONS = [
+    ("granulo_Random", "Uniforme en nombre"),
+    ("granulo_Uniform", "Uniforme en surface"),
+    ("granulo_TwoSizesNumber", "Deux tailles (proportion en nombre)"),
+    ("granulo_TwoSizesVolume", "Deux tailles (proportion en volume)"),
+    ("granulo_BetaDistribution", "Distribution Beta"), #
+    ("granulo_ReadFromFile", "Lire depuis un fichier"),
+]
+
 
 def _lmgc5(name: str, default: str = "XXXXX") -> str:
     s = (name or "").strip() or default
@@ -40,9 +51,9 @@ def _lmgc5(name: str, default: str = "XXXXX") -> str:
 
 def create_granulo_tab(parent=None):
     from PyQt6.QtWidgets import (
-        QCheckBox, QComboBox, QFormLayout, QHBoxLayout,
-        QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton,
-        QVBoxLayout, QWidget,
+        QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,
+        QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton, QWidget,
+        QVBoxLayout,
     )
 
     class GranuloTab(QWidget, BaseTab):
@@ -60,6 +71,23 @@ def create_granulo_tab(parent=None):
             self.n_spin = QLineEdit("200")
             self.rmin = QLineEdit("0.05")
             self.rmax = QLineEdit("0.15")
+            self.n_label = QLabel("N particules")
+            self.distribution = QComboBox()
+            for key, label in _DISTRIBUTIONS:
+                self.distribution.addItem(label, key)
+            self.distribution.currentIndexChanged.connect(self._on_distribution_changed)
+            self.distribution_host = QWidget()
+            self.distribution_form = QFormLayout(self.distribution_host)
+            self.distribution_widgets: dict[str, QLineEdit] = {}
+            self.distribution_file = QLineEdit()
+            self.distribution_file.setPlaceholderText("Fichier texte de rayons")
+            self.distribution_file_row = QWidget()
+            file_layout = QHBoxLayout(self.distribution_file_row)
+            file_layout.setContentsMargins(0, 0, 0, 0)
+            file_layout.addWidget(self.distribution_file, 1)
+            browse_file = QPushButton("Parcourir…")
+            browse_file.clicked.connect(self._browse_distribution_file)
+            file_layout.addWidget(browse_file)
 
             self.container = QComboBox()
             self.container.currentIndexChanged.connect(self._on_container_changed)
@@ -94,9 +122,12 @@ def create_granulo_tab(parent=None):
                 lambda on: self.pylmgc_check.setEnabled(not on)
             )
 
-            form.addRow("N particules", self.n_spin)
+            form.addRow(self.n_label, self.n_spin)
             form.addRow("Rayon min", self.rmin)
             form.addRow("Rayon max", self.rmax)
+            form.addRow("Distribution", self.distribution)
+            form.addRow(self.distribution_host)
+            form.addRow("Fichier de rayons", self.distribution_file_row)
             form.addRow("Conteneur", self.container)
             form.addRow(self.param_host)
             form.addRow("Type d'avatar", self.type_combo)
@@ -122,7 +153,54 @@ def create_granulo_tab(parent=None):
             row.addWidget(btn_rm)
             layout.addLayout(row)
             layout.addStretch()
+            self._on_distribution_changed()
 
+        def _browse_distribution_file(self) -> None:
+            filename, _ = QFileDialog.getOpenFileName(
+                self, "Choisir un fichier de rayons",
+                self.distribution_file.text().strip(),
+                "Fichiers texte (*.txt *.dat);;Tous les fichiers (*)",
+            )
+            if filename:
+                self.distribution_file.setText(filename)
+
+        def _on_distribution_changed(self, *_a) -> None:
+            while self.distribution_form.rowCount():
+                self.distribution_form.removeRow(0)
+            self.distribution_widgets.clear()
+            dist = self.distribution.currentData()
+            self.distribution_file_row.setVisible(dist == "granulo_ReadFromFile")
+            self.rmin.setEnabled(dist != "granulo_ReadFromFile")
+            self.rmax.setEnabled(dist != "granulo_ReadFromFile")
+            if dist in ("granulo_TwoSizesNumber", "granulo_TwoSizesVolume"):
+                p_min = QLineEdit("0.5")
+                p_min.setPlaceholderText("entre 0 et 1")
+                p_min.setToolTip(
+                    "Fraction de la petite taille: en nombre ou en volume selon le choix."
+                )
+                self.distribution_widgets["p_min"] = p_min
+                self.distribution_form.addRow("Proportion petite taille", p_min)
+            if dist == "granulo_BetaDistribution":
+                nb_t = QLineEdit("10")
+                a = QLineEdit("2.0")
+                b = QLineEdit("5.0")
+                vol = QLineEdit("1.0")
+                for w in (nb_t, a, b, vol):
+                    w.setPlaceholderText("nombre ou expression > 0")
+                self.distribution_widgets["nb_t"] = nb_t
+                self.distribution_widgets["a"] = a
+                self.distribution_widgets["b"] = b
+                self.distribution_widgets["vol"] = vol
+                self.distribution_form.addRow("Nombre de classes", nb_t)
+                self.distribution_form.addRow("Paramètre a", a)
+                self.distribution_form.addRow("Paramètre b", b)
+                self.distribution_form.addRow("Volume total (m³)", vol)
+            is_beta = dist == "granulo_BetaDistribution"
+            self.n_spin.setEnabled(not is_beta)
+            self.n_label.setText(
+                "N particules" if not is_beta else "N (déduit du volume)"
+            )
+  
         def on_state_changed(self) -> None:
             if self.controller is None:
                 return
@@ -206,9 +284,18 @@ def create_granulo_tab(parent=None):
             if not mat or not mod:
                 QMessageBox.warning(self, "Granulo", "Matériau et modèle requis")
                 return
+            distribution = self.distribution.currentData() or "granulo_Random"
             try:
                 radius_min = self.eval_float(self.rmin.text(), 0.05, "radius_min")
                 radius_max = self.eval_float(self.rmax.text(), 0.15, "radius_max")
+                distribution_params = {}
+                for key, widget in self.distribution_widgets.items():
+                    if key == "nb_t":
+                        distribution_params[key] = self.eval_int(widget.text(), 10, key)
+                    else:
+                        distribution_params[key] = self.eval_float(
+                            widget.text(), 0.5, key
+                        )
                 seed_text = self.seed_spin.text().strip()
                 seed_value = (
                     -1 if seed_text.lower() == "random"
@@ -222,9 +309,20 @@ def create_granulo_tab(parent=None):
             except (ValidationError, ValueError) as exc:
                 QMessageBox.warning(self, "Granulo", str(exc))
                 return
-            if radius_min >= radius_max:
+            if distribution != "granulo_ReadFromFile" and radius_min >= radius_max:
                 QMessageBox.warning(self, "Granulo", "rmin doit être < rmax")
                 return
+            if "p_min" in distribution_params and not 0.0 <= distribution_params["p_min"] <= 1.0:
+                QMessageBox.warning(self, "Granulo", "La proportion doit être entre 0 et 1")
+                return
+            distribution_file = None
+            if distribution == "granulo_ReadFromFile":
+                distribution_file = self.distribution_file.text().strip()
+                if not distribution_file or not Path(distribution_file).is_file():
+                    QMessageBox.warning(
+                        self, "Granulo", "Sélectionnez un fichier de rayons existant."
+                    )
+                    return
             ctype = self.container.currentData()
             if not ctype:
                 QMessageBox.warning(self, "Granulo", "Conteneur requis")
@@ -240,6 +338,17 @@ def create_granulo_tab(parent=None):
                     f"Conteneur {ctype} est {meta[2]}D, projet en {dim}D.",
                 )
                 return
+            # granulo_BetaDistribution requires a, b, vol > 0
+            if distribution == "granulo_BetaDistribution":
+                a = distribution_params.get("a", 0.0)
+                b = distribution_params.get("b", 0.0)
+                vol = distribution_params.get("vol", 0.0)
+                if a <= 0 or b <= 0 or vol <= 0:
+                    QMessageBox.warning(
+                        self, "Granulo",
+                        "Distribution Beta: a, b et volume total doivent être > 0.",
+                    )
+                    return
             color = _lmgc5(self.color_edit.text(), "BLUEx")
             group = _lmgc5(self.group_edit.text(), "granx")
             cfg = GranuloConfig(
@@ -256,6 +365,9 @@ def create_granulo_tab(parent=None):
                 seed=seed,
                 dimension=dim,
                 create_avatars=not self.distrib_only.isChecked(),
+                distribution_type=distribution,
+                distribution_params=distribution_params,
+                distribution_file=distribution_file,
             )
             try:
                 if self.distrib_only.isChecked():

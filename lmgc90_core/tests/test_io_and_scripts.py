@@ -80,6 +80,23 @@ def test_pre_script_contains_pylmgc90_calls(tmp_path: Path):
     assert ".addContactors(shape='CLxxx', color='CYANx', group='down')" in src
 
 
+def test_pre_script_emits_custom_polygon_vertices_in_local_frame():
+    p = Project(name="polygon", dimension=2)
+    p.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    p.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    p.add(pre.rigidPolygon(
+        center=[0.5, 0.25], model="rigid", material="STEEL",
+        generation_type="full",
+        vertices=[[0.0, 0.0], [1.0, 0.0], [1.0, 0.5], [0.0, 0.5]],
+    ))
+
+    src = p.to_pre_script()
+
+    assert "generation_type='full'" in src
+    assert "vertices=np.array([[-0.5, -0.25], [0.5, -0.25], [0.5, 0.25], [-0.5, 0.25]])" in src
+    ast.parse(src)
+
+
 def test_empty_avatar_contactors_are_emitted_before_rigid_properties():
     p = Project(name="empty_contactors", dimension=2)
     p.add(pre.material(name="STEEL", materialType="RIGID", density=7800))

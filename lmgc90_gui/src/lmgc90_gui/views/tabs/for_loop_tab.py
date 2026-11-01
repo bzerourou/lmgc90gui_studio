@@ -13,11 +13,26 @@ _TARGETS = [
     ("avatar", "Avatars (template géométrie)"),
     ("material", "Matériaux (densité / nom)"),
     ("model", "Modèles"),
+    ("law", "Lois de contact"),
     ("dof", "DOF / conditions aux limites"),
     ("visibility", "Tables de visibilité (see)"),
     ("granulo", "Granulo — dépôt avec avatars/SoA"),
     ("granulo_dist", "Granulo — distribution rayons seule"),
 ]
+
+_TARGET_FIELDS = {
+    "avatar": {"template", "condition", "expr_x", "expr_y", "expr_z", "expr_r", "group"},
+    "material": {"template", "condition", "expr_name", "expr_density"},
+    "model": {"template", "condition", "expr_name"},
+    "law": {"template", "condition", "expr_name", "expr_friction"},
+    "dof": {"template", "condition"},
+    "visibility": {
+        "template", "condition", "expr_alert",
+        "expr_candidate_color", "expr_antagonist_color",
+    },
+    "granulo": {"template", "condition", "expr_nb", "expr_rmin", "expr_rmax", "group"},
+    "granulo_dist": {"template", "condition", "expr_nb", "expr_rmin", "expr_rmax", "group"},
+}
 
 
 def create_for_loop_tab(parent=None):
@@ -41,6 +56,7 @@ def create_for_loop_tab(parent=None):
             self.list.currentItemChanged.connect(self._update_remove_button)
 
             form = QFormLayout()
+            self._target_rows = {}
             self.kind = QComboBox()
             for key, label in _TARGETS:
                 self.kind.addItem(label, key)
@@ -52,7 +68,10 @@ def create_for_loop_tab(parent=None):
                 field.setPlaceholderText("nombre ou expression")
                 self.mark_expr_field(field)
 
-            self.template_combo = QComboBox()  # avatar / material / model / dof / see
+            self.template_combo = QComboBox()
+            self.condition = QLineEdit()
+            self.condition.setPlaceholderText("if : x*x + y*y < 1 (avatar) ou i > 0")
+            self.mark_expr_field(self.condition)
             self.expr_x = QLineEdit("i * 0.1")
             self.expr_y = QLineEdit("0.0")
             self.expr_z = QLineEdit("0.0")
@@ -60,8 +79,16 @@ def create_for_loop_tab(parent=None):
             self.expr_r.setPlaceholderText("rayon (avatars) — vide = template")
             self.expr_density = QLineEdit("")
             self.expr_density.setPlaceholderText("ex. 1000 + 10*i")
+            self.expr_name = QLineEdit("")
+            self.expr_name.setPlaceholderText("expression numérique, suffixe 3 chiffres")
+            self.expr_friction = QLineEdit("")
+            self.expr_friction.setPlaceholderText("ex. 0.3 + 0.01*i")
             self.expr_alert = QLineEdit("")
             self.expr_alert.setPlaceholderText("ex. 0.01 * (i+1)")
+            self.expr_candidate_color = QLineEdit("")
+            self.expr_candidate_color.setPlaceholderText("expression numérique")
+            self.expr_antagonist_color = QLineEdit("")
+            self.expr_antagonist_color.setPlaceholderText("expression numérique")
             self.expr_nb = QLineEdit("")
             self.expr_nb.setPlaceholderText("nb particules granulo")
             self.expr_rmin = QLineEdit("")
@@ -69,27 +96,48 @@ def create_for_loop_tab(parent=None):
             self.group_edit = QLineEdit("")
             for field in (
                 self.expr_x, self.expr_y, self.expr_z, self.expr_r,
-                self.expr_density, self.expr_alert, self.expr_nb,
+                self.expr_density, self.expr_name, self.expr_friction,
+                self.expr_alert, self.expr_candidate_color,
+                self.expr_antagonist_color, self.expr_nb,
                 self.expr_rmin, self.expr_rmax,
             ):
                 self.mark_expr_field(field)
+
+            self.law_properties_host = QWidget()
+            self.law_properties_form = QFormLayout(self.law_properties_host)
+            self.law_property_widgets = {}
+            self.template_combo.currentIndexChanged.connect(self._rebuild_law_properties)
 
             form.addRow("Cible de la boucle", self.kind)
             form.addRow("Variable", self.var_edit)
             form.addRow("start", self.start)
             form.addRow("stop (exclu)", self.stop)
             form.addRow("step", self.step)
-            form.addRow("Template", self.template_combo)
-            form.addRow("expr X (avatar)", self.expr_x)
-            form.addRow("expr Y (avatar)", self.expr_y)
-            form.addRow("expr Z (avatar)", self.expr_z)
-            form.addRow("expr rayon", self.expr_r)
-            form.addRow("expr densité (matériau)", self.expr_density)
-            form.addRow("expr alert (see)", self.expr_alert)
-            form.addRow("expr N (granulo)", self.expr_nb)
-            form.addRow("expr rmin (granulo)", self.expr_rmin)
-            form.addRow("expr rmax (granulo)", self.expr_rmax)
-            form.addRow("Groupe", self.group_edit)
+            self._add_target_row(form, "condition", "Condition (if)", self.condition)
+            self._add_target_row(form, "template", "Template", self.template_combo)
+            self._add_target_row(form, "expr_x", "expr X (avatar)", self.expr_x)
+            self._add_target_row(form, "expr_y", "expr Y (avatar)", self.expr_y)
+            self._add_target_row(form, "expr_z", "expr Z (avatar)", self.expr_z)
+            self._add_target_row(form, "expr_r", "expr rayon", self.expr_r)
+            self._add_target_row(
+                form, "expr_density", "expr densité (matériau)", self.expr_density,
+            )
+            self._add_target_row(form, "expr_name", "expr nom", self.expr_name)
+            self._add_target_row(form, "expr_friction", "expr friction", self.expr_friction)
+            self._add_target_row(form, "expr_alert", "expr alert (see)", self.expr_alert)
+            self._add_target_row(
+                form, "expr_candidate_color", "expr couleur candidat",
+                self.expr_candidate_color,
+            )
+            self._add_target_row(
+                form, "expr_antagonist_color", "expr couleur antagoniste",
+                self.expr_antagonist_color,
+            )
+            self._add_target_row(form, "expr_nb", "expr N (granulo)", self.expr_nb)
+            self._add_target_row(form, "expr_rmin", "expr rmin (granulo)", self.expr_rmin)
+            self._add_target_row(form, "expr_rmax", "expr rmax (granulo)", self.expr_rmax)
+            self._add_target_row(form, "group", "Groupe", self.group_edit)
+            form.addRow(self.law_properties_host)
             layout.addLayout(form)
 
             row = QHBoxLayout()
@@ -107,27 +155,22 @@ def create_for_loop_tab(parent=None):
         def _update_remove_button(self, current, _previous) -> None:
             self.btn_remove.setEnabled(current is not None)
 
+        def _add_target_row(self, form, key: str, label: str, widget) -> None:
+            label_widget = QLabel(label)
+            form.addRow(label_widget, widget)
+            self._target_rows[key] = (label_widget, widget)
+
         def _kind_key(self) -> str:
             return self.kind.currentData() or "avatar"
 
         def _on_kind_changed(self, *_a) -> None:
             k = self._kind_key()
-            avatarish = k == "avatar"
-            mat = k == "material"
-            see = k == "visibility"
-            gran = k in ("granulo", "granulo_dist")
-            for w, vis in (
-                (self.expr_x, avatarish),
-                (self.expr_y, avatarish),
-                (self.expr_z, avatarish),
-                (self.expr_r, avatarish),
-                (self.expr_density, mat),
-                (self.expr_alert, see),
-                (self.expr_nb, gran),
-                (self.expr_rmin, gran),
-                (self.expr_rmax, gran),
-            ):
-                w.setEnabled(vis)
+            visible_fields = _TARGET_FIELDS.get(k, set())
+            for key, (label, widget) in self._target_rows.items():
+                visible = key in visible_fields
+                label.setVisible(visible)
+                widget.setVisible(visible)
+            self.law_properties_host.setVisible(k == "law")
             self._refill_templates()
 
         def _refill_templates(self) -> None:
@@ -148,6 +191,11 @@ def create_for_loop_tab(parent=None):
             elif k == "model":
                 for m in p.models:
                     self.template_combo.addItem(f"{m.name} ({m.element})", m.name)
+            elif k == "law":
+                for law in p.laws:
+                    self.template_combo.addItem(
+                        f"{law.name} ({law.law_type_name})", law.name,
+                    )
             elif k == "dof":
                 for i, op in enumerate(p.operations):
                     self.template_combo.addItem(
@@ -171,6 +219,29 @@ def create_for_loop_tab(parent=None):
                 else:
                     self.template_combo.addItem("(paramètres du formulaire granulo / défauts)", -1)
             self.template_combo.blockSignals(False)
+            self._rebuild_law_properties()
+
+        def _rebuild_law_properties(self, *_a) -> None:
+            while self.law_properties_form.rowCount():
+                self.law_properties_form.removeRow(0)
+            self.law_property_widgets.clear()
+            if self._kind_key() != "law" or self.controller is None:
+                return
+            name = self.template_combo.currentData()
+            base = next(
+                (law for law in self.controller.project.laws if law.name == name),
+                None,
+            )
+            if base is None:
+                return
+            for key, value in (base.properties or {}).items():
+                if not isinstance(value, (int, float)):
+                    continue
+                field = QLineEdit()
+                field.setPlaceholderText(f"vide = {value}")
+                self.mark_expr_field(field)
+                self.law_properties_form.addRow(key, field)
+                self.law_property_widgets[key] = field
 
         def on_state_changed(self) -> None:
             if self.controller is None:
@@ -200,16 +271,29 @@ def create_for_loop_tab(parent=None):
             k = self._kind_key()
             tid = self.template_combo.currentData()
             expressions = {}
-            if self.expr_density.text().strip():
+            visible_fields = _TARGET_FIELDS.get(k, set())
+            if "expr_name" in visible_fields and self.expr_name.text().strip():
+                expressions["name"] = self.expr_name.text().strip()
+            if "expr_density" in visible_fields and self.expr_density.text().strip():
                 expressions["density"] = self.expr_density.text().strip()
-            if self.expr_alert.text().strip():
+            if "expr_friction" in visible_fields and self.expr_friction.text().strip():
+                expressions["friction"] = self.expr_friction.text().strip()
+            if "expr_alert" in visible_fields and self.expr_alert.text().strip():
                 expressions["alert"] = self.expr_alert.text().strip()
-            if self.expr_nb.text().strip():
+            if "expr_candidate_color" in visible_fields and self.expr_candidate_color.text().strip():
+                expressions["candidate_color"] = self.expr_candidate_color.text().strip()
+            if "expr_antagonist_color" in visible_fields and self.expr_antagonist_color.text().strip():
+                expressions["antagonist_color"] = self.expr_antagonist_color.text().strip()
+            if "expr_nb" in visible_fields and self.expr_nb.text().strip():
                 expressions["nb_particles"] = self.expr_nb.text().strip()
-            if self.expr_rmin.text().strip():
+            if "expr_rmin" in visible_fields and self.expr_rmin.text().strip():
                 expressions["radius_min"] = self.expr_rmin.text().strip()
-            if self.expr_rmax.text().strip():
+            if "expr_rmax" in visible_fields and self.expr_rmax.text().strip():
                 expressions["radius_max"] = self.expr_rmax.text().strip()
+            for key, field in self.law_property_widgets.items():
+                if field.text().strip():
+                    expressions[key] = field.text().strip()
+            condition = self.condition.text().strip() or None
 
             try:
                 start = self.eval_float(self.start.text(), 0.0, "start")
@@ -227,14 +311,18 @@ def create_for_loop_tab(parent=None):
                     step=step,
                     target_kind=k,
                     model_avatar_id=str(tid) if k == "avatar" and tid else "",
-                    template_name=str(tid) if k in ("material", "model") and tid is not None else "",
+                    template_name=str(tid) if k in ("material", "model", "law") and tid is not None else "",
                     template_index=int(tid) if k in ("dof", "visibility", "granulo", "granulo_dist") and isinstance(tid, int) else -1,
                     expr_x=self.expr_x.text().strip() or "0",
                     expr_y=self.expr_y.text().strip() or "0",
                     expr_z=self.expr_z.text().strip() or "0",
                     expr_radius=(self.expr_r.text().strip() or None),
+                    condition=condition if "condition" in visible_fields else None,
                     expressions=expressions,
-                    group_name=self.group_edit.text().strip() or None,
+                    group_name=(
+                        self.group_edit.text().strip() or None
+                        if "group" in visible_fields else None
+                    ),
                 )
             except ValueError as exc:
                 QMessageBox.warning(self, "ForLoop", str(exc))
@@ -247,6 +335,9 @@ def create_for_loop_tab(parent=None):
                 return
             if k == "model" and not fl.template_name:
                 QMessageBox.warning(self, "ForLoop", "Sélectionnez un modèle template")
+                return
+            if k == "law" and not fl.template_name:
+                QMessageBox.warning(self, "ForLoop", "Sélectionnez une loi de contact modèle")
                 return
             try:
                 generated = self.controller.apply_for_loop(fl)

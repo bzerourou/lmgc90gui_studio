@@ -198,21 +198,33 @@ def masonry_wall(project: Project) -> None:
         cols = 6 if row % 2 == 0 else 5
         x0 = -0.75 if row % 2 == 0 else -0.75 + (lx + gap) / 2
         for col in range(cols):
-            av = project.add(jonc(
-                axe1=lx / 2, axe2=ly / 2,
-                center=[x0 + col * (lx + gap), row * (ly + gap) + 0.1],
-                model="rigid", material="TDURx", color="REEDx"))
+            cx = x0 + col * (lx + gap)
+            cy = row * (ly + gap) + 0.1
+            av = project.add(Avatar(
+                avatar_type=AvatarType.RIGID_POLYGON,
+                center=[cx, cy],
+                material_name="TDURx",
+                model_name="rigid",
+                color="REEDx",
+                origin=AvatarOrigin.MANUAL,
+                vertices=[
+                    [cx - lx / 2, cy - ly / 2],
+                    [cx + lx / 2, cy - ly / 2],
+                    [cx + lx / 2, cy + ly / 2],
+                    [cx - lx / 2, cy + ly / 2],
+                ],
+            ))
             ids.append(av.avatar_id)
     iqs(project, "iqsc0", 0.5)
     see_table(
         project,
-        cand_body="RBDY2", cand="JONCx", cand_color="REEDx",
-        ant_body="RBDY2", ant="JONCx", ant_color="REEDx",
+        cand_body="RBDY2", cand="POLYG", cand_color="REEDx",
+        ant_body="RBDY2", ant="POLYG", ant_color="REEDx",
         law="iqsc0", alert=0.02,
     )
     see_table(
         project,
-        cand_body="RBDY2", cand="JONCx", cand_color="REEDx",
+        cand_body="RBDY2", cand="POLYG", cand_color="REEDx",
         ant_body="RBDY2", ant="JONCx", ant_color="GRAYx",
         law="iqsc0", alert=0.02,
     )
@@ -647,17 +659,27 @@ def cohesive_wall(project: Project) -> None:
         for col in range(nb_cols):
             cx = col * lx + lx / 2.0
             cy = row * ly + ly / 2.0
-            b = project.add(jonc(
-                axe1=lx / 2, axe2=ly / 2, center=[cx, cy],
-                model="rigid", material="brick", color="ORANx",
+            b = project.add(Avatar(
+                avatar_type=AvatarType.RIGID_POLYGON,
+                center=[cx, cy],
+                material_name="brick",
+                model_name="rigid",
+                color="ORANx",
+                origin=AvatarOrigin.MANUAL,
+                vertices=[
+                    [cx - lx / 2, cy - ly / 2],
+                    [cx + lx / 2, cy - ly / 2],
+                    [cx + lx / 2, cy + ly / 2],
+                    [cx - lx / 2, cy + ly / 2],
+                ],
             ))
             ids.append(b.avatar_id)
     project.group("assises_collees", ids)
     project.add(ContactLaw(name="czm01", law_type=ContactLawType.IQS_MAC_CZM, properties={"stfr": 1e10, "dyfr": 1e10, "cn": 1e10, "ct": 1e10, "b": 0.0, "w": 50.0}))
     see_table(
         project,
-        cand_body="RBDY2", cand="JONCx", cand_color="ORANx",
-        ant_body="RBDY2", ant="JONCx", ant_color="ORANx",
+        cand_body="RBDY2", cand="POLYG", cand_color="ORANx",
+        ant_body="RBDY2", ant="POLYG", ant_color="ORANx",
         law="czm01", alert=0.01,
     )
 
@@ -790,7 +812,7 @@ def biaxial_compression(project: Project) -> None:
 def l_shaped_wall(project: Project) -> None:
     """Structure en L — ``brick2D`` / emptyAvatar (comme MVC), pas JONCx.
 
-    Core : Avatar EMPTY_AVATAR + wall_params ``{l, h, brick_name}`` + contactor POLYG.
+    Core : Avatar EMPTY_AVATAR + wall_params ``{l, h, brick_name}``.
     Engine : ``pre.brick2D(...).rigidBrick(...)`` à la materialisation.
     """
     from ..entities import DOFOperation, GranuloConfig
@@ -808,7 +830,6 @@ def l_shaped_wall(project: Project) -> None:
             color=color,
             origin=AvatarOrigin.MANUAL,
             wall_params={"l": lx, "h": ly, "brick_name": "std"},
-            contactors=[{"shape": "POLYG", "color": color}],
         ))
 
     ids = []
@@ -2338,13 +2359,18 @@ def masonry_deformable_wall(project: Project) -> None:
     beam_length = 9.0 * lcx
     beam_height = brick_height
     beam = project.add(Avatar(
-        avatar_type=AvatarType.RIGID_JONC,
+        avatar_type=AvatarType.RIGID_POLYGON,
         center=[0.5 * beam_length, 18.0 * lcy + 0.5 * beam_height],
         material_name="TDURx",
         model_name="rigid",
         color="WALLx",
         origin=AvatarOrigin.MANUAL,
-        axis={"axe1": 0.5 * beam_length, "axe2": 0.5 * beam_height},
+        vertices=[
+            [0.0, 18.0 * lcy],
+            [beam_length, 18.0 * lcy],
+            [beam_length, 18.0 * lcy + beam_height],
+            [0.0, 18.0 * lcy + beam_height],
+        ],
     ))
     project.add(DOFOperation(
         operation_type="imposeDrivenDof",
@@ -2374,7 +2400,6 @@ def masonry_deformable_wall(project: Project) -> None:
     project.add(ContactLaw(
         name="malc0",
         law_type=ContactLawType.MAL_CZM,
-        friction=mu_joint,
         properties={
             "dyfr": mu_joint, "stfr": mu_joint,
             "cn": kn_joint, "s1": sigmaMaxI_joint, "G1": GI_joint,
@@ -2388,7 +2413,6 @@ def masonry_deformable_wall(project: Project) -> None:
     project.add(ContactLaw(
         name="malc1",
         law_type=ContactLawType.MAL_CZM,
-        friction=mu_brick,
         properties={
             "dyfr": mu_brick, "stfr": mu_brick,
             "cn": kn_brick, "s1": sigmaMaxI_brick, "G1": GI_brick,

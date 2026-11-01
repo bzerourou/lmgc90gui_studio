@@ -1,12 +1,14 @@
 """LMGC90 constraints. Fail before a bad scene is serialised or scripted."""
 from __future__ import annotations
 
+import re
+
 from .entities import Avatar, ContactLaw, Material, Model, VisibilityRule
 from .errors import ValidationError
 from .types import (
     CONTACTORS_MESH_2D, CONTACTORS_MESH_3D,
     CONTACTORS_RIGID_2D, CONTACTORS_RIGID_3D,
-    CONTACT_LAW_CATEGORIES, DEFORMABLE_2D, DEFORMABLE_3D,
+    DEFORMABLE_2D, DEFORMABLE_3D,
     ELEMENTS_BY_PHYSICS, RIGID_AVATARS_2D, RIGID_AVATARS_3D,
     RIGID_ELEMENTS_2D, RIGID_ELEMENTS_3D, AvatarType,
 )
@@ -155,9 +157,9 @@ def _check_geometry(avatar: Avatar, dim: int) -> None:
 
 def validate_contact_law(law: ContactLaw) -> None:
     _ok_name(law.name, "contact law")
-    known = {v for values in CONTACT_LAW_CATEGORIES.values() for v in values}
-    if law.law_type.value not in known:
-        raise ValidationError(f"unknown contact law {law.law_type.value}")
+    law_name = law.law_type_name
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", law_name):
+        raise ValidationError(f"invalid contact law type {law_name!r}")
     if law.friction is not None and law.friction < 0:
         raise ValidationError("friction cannot be negative")
 

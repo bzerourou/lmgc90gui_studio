@@ -19,7 +19,7 @@ from .entities import (
     PostProCommand, VisibilityRule,
 )
 from .errors import UnknownReferenceError, ValidationError
-from .generate import NumpyGranulo, expand_for_loop, expand_loop
+from .generate import NumpyGranulo, expand_for_loop, expand_loop, sample_radii
 from .masonry import MasonryConfig, expand_masonry
 from .population import ParticlePopulation
 from .types import UnitSystem
@@ -192,17 +192,10 @@ class Project:
     def deposit(self, config: GranuloConfig) -> ParticlePopulation | None:
         """Place particles (SoA) or sample radii only if ``create_avatars`` is False."""
         if not getattr(config, "create_avatars", True):
-            import numpy as np
-            if config.radius_min <= 0 or config.radius_max < config.radius_min:
-                raise ValidationError("invalid radius range")
-            if config.nb_particles <= 0:
-                raise ValidationError("nb_particles must be > 0")
-            rng = np.random.default_rng(config.seed)
-            radii = rng.uniform(
-                float(config.radius_min),
-                float(config.radius_max),
-                int(config.nb_particles),
-            )
+            try:
+                radii = sample_radii(config)
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
             config.radii = [float(x) for x in radii]
             config.population_id = None
             # keep one entry per distribution intent
@@ -235,13 +228,15 @@ class Project:
 
     def apply_for_loop(self, for_loop: ForLoop, template: Optional[Avatar] = None):
         """Expand ForLoop for avatar | material | model | dof | visibility | granulo | granulo_dist."""
-        from .generate import expand_for_loop, for_loop_values, _lmgc5_name, _safe_arith
+        from .generate import (
+            expand_for_loop, for_loop_values, _lmgc5_name, _safe_arith,
+            _safe_condition,
+        )
         from .entities import Material, Model, DOFOperation, VisibilityRule, GranuloConfig
         import math
 
         kind = (getattr(for_loop, "target_kind", None) or "avatar").lower().strip()
         exprs = dict(getattr(for_loop, "expressions", None) or {})
-        values = for_loop_values(for_loop)
         var = for_loop.var_name or "i"
         generated_ids: list[str] = []
         out: list = []
@@ -253,6 +248,13 @@ class Project:
                 "sin": math.sin, "cos": math.cos, "tan": math.tan,
                 "sqrt": math.sqrt, "abs": abs, "min": min, "max": max,
             }
+
+        values = for_loop_values(for_loop)
+        if for_loop.condition and kind not in ("avatar", "avatars"):
+            values = [
+                value for value in values
+                if _safe_condition(for_loop.condition, env(value))
+            ]
 
         def eval_num(expr: str | None, default: float, i_val: float) -> float:
             if not expr:
@@ -276,7 +278,7 @@ class Project:
                 self.avatars.append(av)
                 generated_ids.append(av.avatar_id)
             out = generated
-            if for_loop.group_name:
+            if for_loop.group_name and generated_ids:
                 self.avatar_groups.setdefault(for_loop.group_name, []).extend(generated_ids)
 
         elif kind in ("material", "materials"):
@@ -323,6 +325,64 @@ class Project:
                 self.add(mod)
                 generated_ids.append(name)
                 out.append(mod)
+
+        elif kind in ("law", "laws", "contact", "contact_law", "contact_laws"):
+            base = next((law for law in self.laws if law.name == for_loop.template_name), None)
+            if base is None and self.laws:
+                base = self.laws[0]
+            if base is None:
+                raise ValidationError("ForLoop law: aucune loi modèle")
+            existing_names = {law.name for law in self.laws}
+            name_expr = exprs.get("name")
+            for i_val in values:
+                name = eval_name(name_expr, base.name, i_val)
+                if name in existing_names:
+                    for offset in range(1000):
+                        candidate = _lmgc5_name(
+                            base.name[:2], int(round(i_val)) + offset,
+                        )
+                        if candidate not in existing_names:
+                            name = candidate
+                            break
+                    else:
+                        raise ValidationError(
+                            "ForLoop law: impossible de générer un nom unique"
+                        )
+                properties = dict(base.properties or {})
+                friction = base.friction
+                friction_expr = exprs.get("friction") or exprs.get("fric")
+                if friction_expr:
+                    base_friction = base.friction
+                    if base_friction is None and "fric" in properties:
+                        base_friction = float(properties["fric"])
+                    friction_value = eval_num(
+                        friction_expr,
+                        float(base_friction if base_friction is not None else 0.0),
+                        i_val,
+                    )
+                    friction = friction_value
+                    if "fric" in properties:
+                        properties["fric"] = friction_value
+                for property_name, expression in exprs.items():
+                    if property_name not in properties:
+                        continue
+                    try:
+                        default = float(properties[property_name])
+                    except (TypeError, ValueError) as exc:
+                        raise ValidationError(
+                            f"ForLoop law: propriété {property_name!r} non numérique"
+                        ) from exc
+                    properties[property_name] = eval_num(expression, default, i_val)
+                law = ContactLaw(
+                    name=name,
+                    law_type=base.law_type,
+                    friction=friction,
+                    properties=properties,
+                )
+                self.add(law)
+                existing_names.add(name)
+                generated_ids.append(name)
+                out.append(law)
 
         elif kind in ("dof", "dofs"):
             idx = int(getattr(for_loop, "template_index", -1))

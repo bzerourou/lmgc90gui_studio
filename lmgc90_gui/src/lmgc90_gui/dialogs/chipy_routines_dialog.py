@@ -776,12 +776,16 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
                 and self._cb_therMAILx.isChecked(),
             "advanced_assemble_poro": self._cb_deformable.isChecked()
                 and self._cb_poroMAILx.isChecked()
-                and self._combo_phys.currentIndex() != 3,
+                and self._combo_phys.currentIndex() == 2,
             "advanced_assemble_multi": self._cb_deformable.isChecked()
+                and self._cb_multiMAILx.isChecked()
                 and self._combo_phys.currentIndex() == 3,
         }
         for key, enabled in availability.items():
-            self._advanced_checks[key].setEnabled(enabled)
+            checkbox = self._advanced_checks[key]
+            checkbox.setEnabled(enabled)
+            if not enabled:
+                checkbox.setChecked(False)
 
     # ── Onglet 3 : Extraction ─────────────────────────────────────────────────
 
@@ -2146,11 +2150,13 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         self._rb_3d.toggled.connect(self._on_3d_toggled)
         self._cb_deformable.toggled.connect(self._on_deformable_toggled)
         self._combo_phys.currentIndexChanged.connect(self._on_phys_changed)
-        for checkbox in (
-            self._cb_mecaMAILx, self._cb_therMAILx, self._cb_poroMAILx
-        ):
+        for index, checkbox in enumerate((
+            self._cb_mecaMAILx, self._cb_therMAILx,
+            self._cb_poroMAILx, self._cb_multiMAILx,
+        )):
             checkbox.toggled.connect(
-                lambda _checked: self._refresh_advanced_routine_controls()
+                lambda checked, target=index:
+                    self._on_mail_routine_toggled(target, checked)
             )
         self._cb_SelectProx_macro.toggled.connect(
             lambda checked: self._on_prox_selection_mode_toggled(
@@ -2165,6 +2171,8 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         self._on_prox_selection_mode_toggled(
             self._cb_SelectProx_macro.isChecked(), "macro"
         )
+        self._on_3d_toggled(self._rb_3d.isChecked())
+        self._on_deformable_toggled(self._cb_deformable.isChecked())
 
     def _on_stop_toggled(self, v: bool):
         self._combo_stop_type.setEnabled(v)
@@ -2178,6 +2186,16 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
     def _on_3d_toggled(self, is3d: bool):
         self._rb_cp.setEnabled(not is3d)
         self._rb_dp.setEnabled(not is3d)
+        self._cb_RBDY2.setChecked(not is3d)
+        self._cb_RBDY3.setChecked(is3d)
+        incompatible_detectors = (
+            self._detector_checkboxes_2d
+            + (self._cb_DKMECAx, self._cb_ALpMECAx)
+            if is3d else
+            self._detector_checkboxes_3d + (self._cb_SPMECAx,)
+        )
+        for checkbox in incompatible_detectors:
+            checkbox.setChecked(False)
         self._refresh_detector_controls()
 
     def _refresh_detector_controls(self):
@@ -2185,6 +2203,8 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         fd_selected = self._advanced_checks["advanced_fd_select_prox"].isChecked()
         detectors_enabled = not (macro_selected or fd_selected)
         is3d = self._rb_3d.isChecked()
+        self._cb_RBDY2.setEnabled(not is3d)
+        self._cb_RBDY3.setEnabled(is3d)
         for checkbox in self._detector_checkboxes_2d:
             checkbox.setEnabled(detectors_enabled and not is3d)
         for checkbox in self._detector_checkboxes_3d:
@@ -2206,20 +2226,49 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         self._refresh_detector_controls()
 
     def _on_deformable_toggled(self, v: bool):
+        self._combo_phys.setEnabled(v)
+        for checkbox in (
+            self._cb_mecaMAILx, self._cb_therMAILx,
+            self._cb_poroMAILx, self._cb_multiMAILx,
+        ):
+            checkbox.setEnabled(v)
         if v:
             self._on_phys_changed(self._combo_phys.currentIndex())
+        else:
+            self._updating_mail_routines = True
+            for checkbox in (
+                self._cb_mecaMAILx, self._cb_therMAILx,
+                self._cb_poroMAILx, self._cb_multiMAILx,
+            ):
+                checkbox.setChecked(False)
+            self._updating_mail_routines = False
         self._refresh_advanced_routine_controls()
 
     def _on_phys_changed(self, idx: int):
         if not self._cb_deformable.isChecked():
+            self._refresh_advanced_routine_controls()
             return
-        self._cb_mecaMAILx.setChecked(idx == 0)
-        self._cb_therMAILx.setChecked(idx == 1)
-        self._cb_poroMAILx.setChecked(idx in (2, 3))
+        self._updating_mail_routines = True
+        for index, checkbox in enumerate((
+            self._cb_mecaMAILx, self._cb_therMAILx,
+            self._cb_poroMAILx, self._cb_multiMAILx,
+        )):
+            checkbox.setChecked(index == idx)
+        self._updating_mail_routines = False
         self._cb_vMeca.setChecked(idx == 0)
         self._cb_vTher.setChecked(idx == 1)
         self._cb_vHydr.setChecked(idx in (2, 3))
         self._refresh_advanced_routine_controls()
+
+    def _on_mail_routine_toggled(self, index: int, checked: bool) -> None:
+        if getattr(self, "_updating_mail_routines", False):
+            return
+        if checked:
+            if not self._cb_deformable.isChecked():
+                self._cb_deformable.setChecked(True)
+            self._combo_phys.setCurrentIndex(index)
+        elif self._combo_phys.currentIndex() == index:
+            self._cb_deformable.setChecked(False)
 
     # =========================================================================
     # Auto-detection depuis le projet courant
@@ -2731,7 +2780,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
                     "ELASTIC_ROD", "VOIGT_ROD"}
         dof_laws = {"COUPLED_DOF", "NORMAL_COUPLED_DOF"}
         law_types = {
-            cl.law_type.value for cl in getattr(st, "contact_laws", [])
+            cl.law_type_name for cl in getattr(st, "contact_laws", [])
         }
         if law_types & pt_laws:
             (self._cb_PTPT2 if dim == 2 else self._cb_PTPT3).setChecked(True)
@@ -2756,7 +2805,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         has_mas = bool(getattr(st, "masonry_patterns", {})) or any(
             getattr(av, "wall_params", None) for av in st.avatars
         )
-        law_names = [cl.law_type.value for cl in getattr(st, "contact_laws", [])]
+        law_names = [cl.law_type_name for cl in getattr(st, "contact_laws", [])]
         self._lbl_info.setText(
             "Projet       : {}\n"
             "Dimension    : {}D\n"

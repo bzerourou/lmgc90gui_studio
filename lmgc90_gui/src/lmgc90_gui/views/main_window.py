@@ -16,7 +16,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
     from PyQt6.QtGui import QAction, QKeySequence
     from PyQt6.QtWidgets import (
         QDockWidget, QFileDialog, QMainWindow, QMessageBox, QStatusBar,
-        QTabWidget, QToolBar, QWidget,
+        QScrollArea, QTabWidget, QToolBar, QWidget,
     )
 
     from .tabs.avatar_tab import create_avatar_tab
@@ -43,8 +43,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def __init__(self, controller: Optional[ProjectController] = None):
             super().__init__()
             self.controller = controller or ProjectController()
-            self.setWindowTitle(f"LMGC90_GUI Studio v0.6.8 — {self.controller.project.name}")
-            self.resize(1280, 860)
+            self.setWindowTitle(f"LMGC90_GUI Studio v0.6.9 — {self.controller.project.name}")
+            self.resize(1280, 720)
             apply_app_style(self)
             self._build_ui()
             self._connect()
@@ -52,6 +52,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
 
         def _build_ui(self) -> None:
             self.tabs = QTabWidget()
+            self._tab_scrolls = {}
             self.tabs.setTabsClosable(True)
             self.tabs.tabCloseRequested.connect(self._on_tab_close_requested)
             self.setCentralWidget(self.tabs)
@@ -101,13 +102,16 @@ def create_main_window(controller: Optional[ProjectController] = None):
 
             self.tree = create_tree_view()
             dock = QDockWidget("🌳  Model tree", self)
+            dock.setMinimumWidth(200)
             dock.setWidget(self.tree)
             self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+
 
             self.history_panel = create_history_dock()
             hist_dock = QDockWidget("🕒  History", self)
             hist_dock.setWidget(self.history_panel)
             self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, hist_dock)
+            self.resizeDocks([dock, hist_dock], [200, 240], Qt.Orientation.Horizontal)
 
             self._build_menus()
             self.setStatusBar(QStatusBar())
@@ -307,10 +311,10 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 f"𝑥 vars={n_vars}  ·  "
                 f"pylmgc={'✅' if self.controller.pylmgc_available() else '—'}"
             )
-            self.setWindowTitle(f"LMGC90_GUI Studio v0.6.8 — {p.name}")
+            self.setWindowTitle(f"LMGC90_GUI Studio v0.6.9 — {p.name}")
 
         def _on_error(self, msg: str) -> None:
-            QMessageBox.warning(self, "LMGC90_GUI Studio v0.6.8", msg)
+            QMessageBox.warning(self, "LMGC90_GUI Studio v0.6.9", msg)
 
         def _on_loaded(self) -> None:
             self._update_status()
@@ -451,7 +455,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
             """Open tab if not already open; otherwise focus it."""
             if tab_id not in self.all_tabs:
                 return
-            title, widget, icon = self.all_tabs[tab_id]
+            title, _content, icon = self.all_tabs[tab_id]
+            widget = self._tab_widget(tab_id)
             for i in range(self.tabs.count()):
                 if self.tabs.widget(i) is widget:
                     self.tabs.setCurrentIndex(i)
@@ -459,11 +464,30 @@ def create_main_window(controller: Optional[ProjectController] = None):
             idx = self.tabs.addTab(widget, f"{icon}  {title}")
             self.tabs.setCurrentIndex(idx)
 
+        def _tab_widget(self, tab_id: str):
+            content = self.all_tabs[tab_id][1]
+            if tab_id in {"viewer", "masonry", "compute"}:
+                return content
+            scroll = self._tab_scrolls.get(tab_id)
+            if scroll is None:
+                scroll = QScrollArea(self.tabs)
+                scroll.setWidgetResizable(True)
+                scroll.setWidget(content)
+                self._tab_scrolls[tab_id] = scroll
+            return scroll
+
+        def _tab_content(self, widget):
+            for scroll in self._tab_scrolls.values():
+                if widget is scroll:
+                    return scroll.widget()
+            return widget
+
         def _on_tab_close_requested(self, index: int) -> None:
             widget = self.tabs.widget(index)
             name = self.tabs.tabText(index)
+            content = self._tab_content(widget)
             essential = {self.material_tab, self.model_tab}
-            if widget in essential:
+            if content in essential:
                 QMessageBox.warning(
                     self, "Essential tab",
                     f"The tab « {name} » is essential and cannot be closed.",
@@ -476,13 +500,13 @@ def create_main_window(controller: Optional[ProjectController] = None):
             essential = {self.material_tab, self.model_tab}
             for i in range(self.tabs.count() - 1, -1, -1):
                 w = self.tabs.widget(i)
-                if i != current and w not in essential:
+                if i != current and self._tab_content(w) not in essential:
                     self.tabs.removeTab(i)
 
         def _close_all_tabs(self) -> None:
             essential = {self.material_tab, self.model_tab}
             for i in range(self.tabs.count() - 1, -1, -1):
-                if self.tabs.widget(i) not in essential:
+                if self._tab_content(self.tabs.widget(i)) not in essential:
                     self.tabs.removeTab(i)
 
         def _reopen_default_tabs(self) -> None:
@@ -594,7 +618,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
 
         def _on_refresh_viewer(self) -> None:
             try:
-                self.tabs.setCurrentWidget(self.viewer_tab)
+                self._show_tab("viewer")
                 self.viewer_tab.refresh()
             except Exception as exc:
                 QMessageBox.warning(self, "Viewer", str(exc))
@@ -738,7 +762,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
             meta = self.all_tabs.get(key)
             if not meta:
                 return
-            title, widget, icon = meta
+            title, _content, icon = meta
+            widget = self._tab_widget(key)
             for i in range(self.tabs.count()):
                 if self.tabs.widget(i) is widget:
                     self.tabs.setCurrentIndex(i)

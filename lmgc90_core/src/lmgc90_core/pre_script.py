@@ -312,10 +312,14 @@ def _emit_avatar(
                 f"color={color!r}, generation_type='regular', nb_vertices={av.nb_vertices}, "
                 f"radius={radius})"
             )
+        vertices = [
+            [float(point[index]) - float(av.center[index]) for index in range(2)]
+            for point in av.vertices or []
+        ]
         return (
             f"{target} = pre.rigidPolygon(model={mod}, material={mat}, center={c}, "
-            f"color={color!r}, generation_type={av.generation_type!r}, "
-            f"vertices=np.array({av.vertices}), radius={radius})"
+            f"color={color!r}, generation_type='full', "
+            f"vertices=np.array({vertices!r}))"
         )
     if t == AvatarType.RIGID_POLYHEDRON:
         if av.generation_type == "regular":
@@ -485,7 +489,7 @@ def _emit_law(law: ContactLaw) -> str:
     extra = (", " + _kw(law.properties)) if law.properties else ""
     return (
         f"law_{law.name} = pre.tact_behav(name={law.name!r}, "
-        f"law={law.law_type.value!r}{fric}{extra})"
+        f"law={law.law_type_name!r}{fric}{extra})"
     )
 
 

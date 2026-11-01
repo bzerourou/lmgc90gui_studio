@@ -73,7 +73,7 @@ def create_tree_view(parent=None):
                     for pop in p.populations
                 ],
             )
-            branch("Laws", [(l.name, l.law_type.value) for l in p.laws])
+            branch("Laws", [(law.name, law.law_type_name) for law in p.laws])
             branch("Visibility", [(f"see[{i}]", r.behavior_name) for i, r in enumerate(p.visibility)])
             branch("DOF", [(op.operation_type, f"{op.target_type}={op.target_value}") for op in p.operations])
             branch("Groups", [(n, f"{len(ids)} ids") for n, ids in p.avatar_groups.items()])

@@ -89,8 +89,53 @@ def _call_deposit(pre, config: GranuloConfig) -> tuple[np.ndarray, np.ndarray]:
     rmin = float(config.radius_min)
     rmax = float(config.radius_max)
     seed = config.seed
-    rng = np.random.default_rng(seed)
-    radii_in = _safe_copy(rng.uniform(rmin, rmax, size=n))
+    distribution = getattr(config, "distribution_type", "granulo_Random") or "granulo_Random"
+    distribution_params = dict(getattr(config, "distribution_params", None) or {})
+    if distribution == "granulo_ReadFromFile":
+        filename = getattr(config, "distribution_file", None)
+        if not filename:
+            raise MaterializationError(
+                "distribution_file is required for granulo_ReadFromFile"
+            )
+        fn = getattr(pre, distribution, None)
+        if fn is None:
+            raise MaterializationError(f"pylmgc90.pre has no {distribution}")
+        radii_in = _safe_copy(fn(filename))
+        if radii_in.size < n:
+            raise MaterializationError(
+                f"granulometry file contains {radii_in.size} radii, but {n} are required"
+            )
+        radii_in = radii_in[:n]
+    else:
+        if (
+            distribution != "granulo_BetaDistribution"
+            and (rmin <= 0 or rmax < rmin)
+        ):
+            raise MaterializationError("invalid radius range")
+        fn = getattr(pre, distribution, None)
+        if fn is None:
+            raise MaterializationError(f"pylmgc90.pre has no {distribution}")
+        if distribution == "granulo_BetaDistribution":
+            nb_t = int(distribution_params.get("nb_t", 10))
+            volume = float(distribution_params.get("vol", 0.0))
+            alpha = float(distribution_params.get("a", 0.0))
+            beta = float(distribution_params.get("b", 0.0))
+            if nb_t <= 0 or volume <= 0 or alpha <= 0 or beta <= 0:
+                raise MaterializationError(
+                    "Beta distribution requires nb_t, vol, a and b > 0"
+                )
+            radii_in = _safe_copy(
+                fn(rmin, rmax, nb_t, volume, alpha, beta, seed=seed)
+            )
+        elif distribution in ("granulo_TwoSizesNumber", "granulo_TwoSizesVolume"):
+            p_min = float(distribution_params.get("p_min", 0.5))
+            if not 0.0 <= p_min <= 1.0:
+                raise MaterializationError("p_min must be between 0 and 1")
+            radii_in = _safe_copy(fn(n, rmin, rmax, p_min, seed=seed))
+        else:
+            radii_in = _safe_copy(fn(n, rmin, rmax, seed=seed))
+    if not np.isfinite(radii_in).all() or (radii_in <= 0).any():
+        raise MaterializationError("radius distribution must contain finite positive values")
 
     ctype = (config.container_type or "Box2D").lower().replace("_", "")
     p = dict(config.container_params or {})
