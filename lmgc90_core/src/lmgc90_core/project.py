@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Any, Iterable, Optional, Union
 
 from .commands import (
-    AddAvatar, AddDOF, AddLaw, AddLoop, AddMaterial, AddModel, AddPopulation,
-    AddPostPro, AddSeeTable, CommandHistory, RemoveAvatar, RemoveForLoop,
-    RemoveLoop, SetGroup,
+    AddAvatar, AddDOF, AddGranuloConfig, AddLaw, AddLoop, AddMaterial,
+    AddModel, AddPopulation, AddPostPro, AddSeeTable, CommandHistory,
+    RemoveAvatar, RemoveForLoop, RemoveLaw, RemoveLoop, RemoveMaterial,
+    RemoveModel, SetGroup, UpdateLaw, UpdateMaterial, UpdateModel,
 )
 from .entities import (
     Avatar, ContactLaw, DOFOperation, ForLoop, GranuloConfig, Loop, Material, Model,
@@ -53,6 +54,7 @@ class Project:
     avatar_groups: dict[str, list[str]] = field(default_factory=dict)
     population_groups: dict[str, list[str]] = field(default_factory=dict)
     dynamic_vars: dict[str, Any] = field(default_factory=dict)
+    load_warnings: list[str] = field(default_factory=list)
     history: CommandHistory = field(default_factory=CommandHistory, repr=False)
     record: bool = True
 
@@ -82,6 +84,77 @@ class Project:
             if law.name == name:
                 return law
         return None
+
+    def _material_references(self, name: str) -> list[str]:
+        references = [f"avatar {item.avatar_id[:8]}" for item in self.avatars if item.material_name == name]
+        references.extend(
+            f"population {item.population_id[:8]}"
+            for item in self.populations if item.material_name == name
+        )
+        references.extend(
+            "granulo config" for item in self.granulo if item.material_name == name
+        )
+        references.extend(
+            f"ForLoop {item.loop_id[:8]}"
+            for item in self.for_loops
+            if item.template_name == name
+            and (item.target_kind or "").lower().strip() in ("material", "materials")
+        )
+        return references
+
+    def _model_references(self, name: str) -> list[str]:
+        references = [f"avatar {item.avatar_id[:8]}" for item in self.avatars if item.model_name == name]
+        references.extend(
+            f"population {item.population_id[:8]}"
+            for item in self.populations if item.model_name == name
+        )
+        references.extend(
+            "granulo config" for item in self.granulo if item.model_name == name
+        )
+        references.extend(
+            f"ForLoop {item.loop_id[:8]}"
+            for item in self.for_loops
+            if item.template_name == name
+            and (item.target_kind or "").lower().strip() in ("model", "models")
+        )
+        return references
+
+    def _law_references(self, name: str) -> list[str]:
+        references = [
+            f"visibility rule {index}"
+            for index, item in enumerate(self.visibility)
+            if item.behavior_name == name
+        ]
+        references.extend(
+            f"ForLoop {item.loop_id[:8]}"
+            for item in self.for_loops
+            if item.template_name == name
+            and (item.target_kind or "").lower().strip() in (
+                "law", "laws", "contact", "contact_law", "contact_laws",
+            )
+        )
+        return references
+
+    @staticmethod
+    def _ensure_unreferenced(kind: str, name: str, references: list[str]) -> None:
+        if references:
+            raise ValidationError(
+                f"cannot remove {kind} {name!r}; referenced by {', '.join(references)}"
+            )
+
+    @classmethod
+    def _check_rename(
+        cls, kind: str, old_name: str, new_name: str, references: list[str],
+    ) -> None:
+        if old_name != new_name and references:
+            raise ValidationError(
+                f"cannot rename {kind} {old_name!r}; referenced by {', '.join(references)}"
+            )
+
+    @staticmethod
+    def _check_name_available(collection, old_name: str, new_name: str, kind: str) -> None:
+        if old_name != new_name and any(item.name == new_name for item in collection):
+            raise ValidationError(f"{kind} {new_name!r} already exists")
 
     def add(self, obj: Entity, *, on_conflict: Optional[str] = None):
         """Validate, apply, journal. Returns the entity (or existing on skip).
@@ -120,8 +193,7 @@ class Project:
             return self._run(AddAvatar(obj), obj)
 
         if isinstance(obj, ParticlePopulation):
-            self._check_population(obj)
-            return self._run(AddPopulation(obj), obj)
+            return self.add_population(obj)
 
         if isinstance(obj, ContactLaw):
             validate_contact_law(obj)
@@ -189,6 +261,67 @@ class Project:
         self._run(RemoveAvatar(av))
         return av
 
+    def add_population(
+        self, population: ParticlePopulation, config: GranuloConfig | None = None,
+    ) -> ParticlePopulation:
+        self._check_population(population)
+        return self._run(AddPopulation(population, config), population)
+
+    def update_material(self, name: str, new: Material) -> Material:
+        old = self._find_material(name)
+        if old is None:
+            raise UnknownReferenceError(f"material {name!r}")
+        validate_material(new)
+        self._check_rename("material", name, new.name, self._material_references(name))
+        self._check_name_available(self.materials, name, new.name, "material")
+        return self._run(UpdateMaterial(old, new), new)
+
+    def remove_material(self, name: str) -> Material:
+        material = self._find_material(name)
+        if material is None:
+            raise UnknownReferenceError(f"material {name!r}")
+        self._ensure_unreferenced("material", name, self._material_references(name))
+        self._run(RemoveMaterial(material), material)
+        return material
+
+    def update_model(self, name: str, new: Model) -> Model:
+        old = self._find_model(name)
+        if old is None:
+            raise UnknownReferenceError(f"model {name!r}")
+        validate_model(new)
+        if new.dimension != self.dimension:
+            raise ValidationError(
+                f"model {new.name!r} is {new.dimension}D, project is {self.dimension}D"
+            )
+        self._check_rename("model", name, new.name, self._model_references(name))
+        self._check_name_available(self.models, name, new.name, "model")
+        return self._run(UpdateModel(old, new), new)
+
+    def remove_model(self, name: str) -> Model:
+        model = self._find_model(name)
+        if model is None:
+            raise UnknownReferenceError(f"model {name!r}")
+        self._ensure_unreferenced("model", name, self._model_references(name))
+        self._run(RemoveModel(model), model)
+        return model
+
+    def update_law(self, name: str, new: ContactLaw) -> ContactLaw:
+        old = self._find_law(name)
+        if old is None:
+            raise UnknownReferenceError(f"law {name!r}")
+        validate_contact_law(new)
+        self._check_rename("law", name, new.name, self._law_references(name))
+        self._check_name_available(self.laws, name, new.name, "law")
+        return self._run(UpdateLaw(old, new), new)
+
+    def remove_law(self, name: str) -> ContactLaw:
+        law = self._find_law(name)
+        if law is None:
+            raise UnknownReferenceError(f"law {name!r}")
+        self._ensure_unreferenced("law", name, self._law_references(name))
+        self._run(RemoveLaw(law), law)
+        return law
+
     def deposit(self, config: GranuloConfig) -> ParticlePopulation | None:
         """Place particles (SoA) or sample radii only if ``create_avatars`` is False."""
         if not getattr(config, "create_avatars", True):
@@ -198,12 +331,10 @@ class Project:
                 raise ValidationError(str(exc)) from exc
             config.radii = [float(x) for x in radii]
             config.population_id = None
-            # keep one entry per distribution intent
-            self.granulo.append(config)
+            self._run(AddGranuloConfig(config), config)
             return None
         result = NumpyGranulo().deposit(config)
-        self._insert_population(result.population, config)
-        return result.population
+        return self.add_population(result.population, config)
 
 
     def apply_loop(self, loop: Loop, template: Optional[Avatar] = None) -> list[Avatar]:
@@ -652,11 +783,25 @@ class Project:
     def _insert_material(self, m: Material) -> None:
         self.materials.append(m)
 
+    def _replace_material(self, name: str, material: Material) -> None:
+        for index, current in enumerate(self.materials):
+            if current.name == name:
+                self.materials[index] = material
+                return
+        raise UnknownReferenceError(f"material {name!r}")
+
     def _drop_material(self, name: str) -> None:
         self.materials[:] = [m for m in self.materials if m.name != name]
 
     def _insert_model(self, m: Model) -> None:
         self.models.append(m)
+
+    def _replace_model(self, name: str, model: Model) -> None:
+        for index, current in enumerate(self.models):
+            if current.name == name:
+                self.models[index] = model
+                return
+        raise UnknownReferenceError(f"model {name!r}")
 
     def _drop_model(self, name: str) -> None:
         self.models[:] = [m for m in self.models if m.name != name]
@@ -695,6 +840,13 @@ class Project:
 
     def _insert_law(self, law: ContactLaw) -> None:
         self.laws.append(law)
+
+    def _replace_law(self, name: str, law: ContactLaw) -> None:
+        for index, current in enumerate(self.laws):
+            if current.name == name:
+                self.laws[index] = law
+                return
+        raise UnknownReferenceError(f"law {name!r}")
 
     def _drop_law(self, name: str) -> None:
         self.laws[:] = [l for l in self.laws if l.name != name]

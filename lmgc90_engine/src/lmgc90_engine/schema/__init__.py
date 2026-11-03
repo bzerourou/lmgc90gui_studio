@@ -7,6 +7,7 @@ from .laws import (
 	contact_law_pair_compatibility,
 	contact_law_property_schema,
 )
+from .model_options import model_option_choices
 
 __all__ = [
 	"audit_core_catalogs",
@@ -14,4 +15,5 @@ __all__ = [
 	"contact_law_pair_compatibility",
 	"contact_law_property_schema",
 	"inspect_runtime",
+	"model_option_choices",
 ]

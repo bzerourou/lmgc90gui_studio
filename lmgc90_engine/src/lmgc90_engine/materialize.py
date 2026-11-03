@@ -14,12 +14,14 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from lmgc90_core.entities import Avatar, ContactLaw, Material, Model, VisibilityRule
+from lmgc90_core.naming import lmgc5
 from lmgc90_core.population import ParticlePopulation
 from lmgc90_core.project import Project
 from lmgc90_core.types import (
     MATERIAL_OPTIONS,
     MATERIAL_PROPERTY_SCHEMA,
     ORTHOTROPIC_FIELDS_3D,
+    STUDIO_ONLY_KEYS,
 )
 
 from .avatar_factory import build_avatar, build_population_bodies
@@ -139,13 +141,13 @@ def materialize_project(project: Project) -> MaterializedScene:
         tacts.addBehav(obj)
         # index under both original and 5-char LMGC name
         scene.law_by_name[law.name] = obj
-        scene.law_by_name[_lmgc5(law.name)] = obj
+        scene.law_by_name[lmgc5(law.name)] = obj
 
     # --- see tables ---
     for rule in project.visibility:
         behavior = scene.law_by_name.get(rule.behavior_name)
         if behavior is None:
-            behavior = scene.law_by_name.get(_lmgc5(rule.behavior_name))
+            behavior = scene.law_by_name.get(lmgc5(rule.behavior_name))
         if behavior is None:
             raise MaterializationError(
                 f"visibility references unavailable contact law {rule.behavior_name!r}"
@@ -199,16 +201,6 @@ def _bodies_for_group(project, scene, group_name: str) -> list:
     ]
 
 
-def _lmgc5(name: str, default: str = "XXXXX") -> str:
-    """LMGC90 Fortran identifiers are fixed-width 5 characters."""
-    s = (name or default).strip()
-    if len(s) > 5:
-        s = s[:5]
-    if len(s) < 5:
-        s = s + ("x" * (5 - len(s)))
-    return s
-
-
 # ---------------------------------------------------------------------------
 # Material kwargs: schema from lmgc90_core.types + engine-only extras
 # ---------------------------------------------------------------------------
@@ -259,7 +251,7 @@ def _make_material(pre, m: Material) -> Any:
     mtype = m.material_type.value
     allowed = _MATERIAL_OPTIONS.get(mtype, set())
     kwargs: dict[str, Any] = dict(
-        name=_lmgc5(m.name),
+        name=lmgc5(m.name),
         materialType=mtype,
     )
     if "density" in allowed:
@@ -348,7 +340,7 @@ def _make_model(pre, m: Model) -> Any:
             f"model {m.name!r}: spatial dimension must be 2 or 3, got {dim!r}"
         )
     kwargs: dict[str, Any] = dict(
-        name=_lmgc5(m.name),
+        name=lmgc5(m.name),
         physics=m.physics,
         element=m.element,
         dimension=dim,
@@ -363,7 +355,7 @@ def _make_model(pre, m: Model) -> Any:
 
 def _make_law(pre, law: ContactLaw) -> Any:
     # pylmgc90.pre.tact_behav requires name to be exactly 5 characters
-    kwargs: dict[str, Any] = dict(name=_lmgc5(law.name), law=law.law_type_name)
+    kwargs: dict[str, Any] = dict(name=lmgc5(law.name), law=law.law_type_name)
     if law.friction is not None:
         kwargs["fric"] = float(law.friction)
     kwargs.update(law.properties or {})
@@ -378,7 +370,7 @@ def _make_see(pre, rule: VisibilityRule, *, behavior: Any = None) -> Any:
         CorpsAntagoniste=rule.antagonist_body,
         antagoniste=rule.antagonist_contactor,
         colorAntagoniste=rule.antagonist_color,
-        behav=behavior if behavior is not None else _lmgc5(rule.behavior_name),
+        behav=behavior if behavior is not None else lmgc5(rule.behavior_name),
         alert=float(rule.alert),
     )
 
@@ -425,7 +417,10 @@ def _apply_dof(project: Project, scene: MaterializedScene, op) -> None:
 
     method = op.operation_type
     raw = dict(op.parameters or {})
-    params = raw
+    params = {
+        key: value for key, value in raw.items()
+        if key not in STUDIO_ONLY_KEYS
+    }
     if "evolution_file" in params and "evolutionFile" not in params:
         params["evolutionFile"] = params.pop("evolution_file")
     if str(params.get("description", "")).lower() == "evolution":

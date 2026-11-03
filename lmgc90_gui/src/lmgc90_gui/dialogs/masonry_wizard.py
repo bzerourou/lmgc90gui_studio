@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from lmgc90_core import MasonryConfig, Material, MaterialType, Model, ValidationError, pre
+from lmgc90_core import MasonryConfig, Material, MaterialType, Model, ValidationError, lmgc5, pre
 
 
 _PATTERN_INFO = {
@@ -26,19 +26,6 @@ _PANERESSE_PATTERNS = frozenset({
     "Paneresse double (pylmgc90)",
 })
 
-
-
-def _lmgc5(name: str, default: str = "XXXXX") -> str:
-    """Pad / truncate to exactly 5 characters (LMGC90 DATBOX convention)."""
-    s = (name or "").strip()
-    if not s:
-        s = default
-    # uppercase for materials/models/laws/colors is conventional but not mandatory
-    if len(s) > 5:
-        s = s[:5]
-    if len(s) < 5:
-        s = s + ("x" * (5 - len(s)))
-    return s
 
 
 def create_masonry_wizard(controller, parent=None):
@@ -429,8 +416,8 @@ def create_masonry_wizard(controller, parent=None):
             ctrl = self.controller
             dim = dim_p.dimension()
 
-            mat_name = _lmgc5(mat_p.material_name(), "brick")
-            mod_name = _lmgc5(mod_p.model_name(), "rigid" if int(dim_p.dimension()) == 2 else "rig3D")
+            mat_name = lmgc5(mat_p.material_name(), "brick")
+            mod_name = lmgc5(mod_p.model_name(), "rigid" if int(dim_p.dimension()) == 2 else "rig3D")
             if not mat_name or mat_name.startswith("("):
                 raise ValidationError("Matériau invalide (nom 5 caractères LMGC90)")
             if not mod_name or mod_name.startswith("("):
@@ -485,12 +472,12 @@ def create_masonry_wizard(controller, parent=None):
                 origin_z=lay_p.oz.value(),
                 material_name=mat_name,
                 model_name=mod_name,
-                color=_lmgc5(lay_p.color.text(), "REEDx"),
+                color=lmgc5(lay_p.color.text(), "REEDx"),
                 group_name=(
-                    _lmgc5(lay_p.group_name.text(), "mason")
+                    lmgc5(lay_p.group_name.text(), "mason")
                     if lay_p.store_group.isChecked() else None
                 ),
-                brick_name=_lmgc5(br_p.brick_name.text(), "stdxx"),
+                brick_name=lmgc5(br_p.brick_name.text(), "stdxx"),
                 fill_ends=lay_p.fill_ends.isChecked(),
                 disposition=lay_p.disposition.currentText(),
                 first_brick_type=lay_p.first_brick.currentText(),
@@ -541,12 +528,12 @@ def create_masonry_wizard(controller, parent=None):
                 bricks = ctrl.apply_masonry(cfg)
 
                 if lay_p.add_law.isChecked():
-                    law_name = _lmgc5(lay_p.law_name.text(), "IQSxx")
+                    law_name = lmgc5(lay_p.law_name.text(), "IQSxx")
                     if not any(l.name == law_name for l in ctrl.project.laws):
                         ctrl.add_law(pre.tact_behav(
                             name=law_name, law="IQS_CLB", fric=lay_p.fric.value(),
                         ))
-                    color = _lmgc5(lay_p.color.text(), "REEDx")
+                    color = lmgc5(lay_p.color.text(), "REEDx")
                     if not any(
                         r.candidate_color == color and r.antagonist_color == color
                         for r in ctrl.project.visibility

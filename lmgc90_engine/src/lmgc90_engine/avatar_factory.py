@@ -207,7 +207,7 @@ def build_avatar(
                 r=float(av.radius), center=center, model=mod, material=mat, color=color,
             )
         elif t == AvatarType.RIGID_CLUSTER:
-            nb = (av.wall_params or {}).get("nb_disk", 3)
+            nb = av.nb_vertices or 3
             body = pre.rigidCluster(
                 r=float(av.radius or 0.05), center=center, model=mod, material=mat,
                 color=color, nb_disk=int(nb),
@@ -550,12 +550,52 @@ def _build_wall_3d(pre, av: Avatar, mat, mod) -> Any:
 def resolve_mesh_filepath(filepath: str, *, dim: int = 2, mesh_size: float | None = None) -> str:
     """Return a path readable by ``pre.readMesh``.
 
+    * ``pkg://package/path`` — materialized to a stable temporary cache path
     * ``.msh`` / ``.vtk`` — used as-is
     * ``.brep`` / ``.step`` / ``.iges`` — meshed with **gmsh** (optional dep) to a
       sibling ``.msh`` file next to the CAD file
     """
     from pathlib import Path as _P
-    p = _P(filepath).expanduser()
+    if filepath.startswith("pkg://"):
+        import hashlib
+        import os
+        import tempfile
+
+        from importlib.resources import files
+
+        package, separator, resource_name = filepath[6:].partition("/")
+        parts = resource_name.split("/")
+        if not separator or not package or any(part in ("", ".", "..") for part in parts):
+            raise MaterializationError(f"invalid package mesh reference: {filepath!r}")
+        try:
+            resource = files(package).joinpath(*parts)
+            if not resource.is_file():
+                raise FileNotFoundError(resource_name)
+            content = resource.read_bytes()
+        except Exception as exc:
+            raise MaterializationError(
+                f"package mesh resource not found: {filepath!r}"
+            ) from exc
+
+        digest = hashlib.sha256(package.encode() + b"/" + resource_name.encode() + content).hexdigest()
+        cache_dir = _P(tempfile.gettempdir()) / "lmgc90_mesh_resources"
+        cached_path = cache_dir / digest / parts[-1]
+        if not cached_path.is_file():
+            cached_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temp_name = tempfile.mkstemp(
+                prefix=f".{parts[-1]}.", suffix=".tmp", dir=cached_path.parent,
+            )
+            try:
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(content)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temp_name, cached_path)
+            finally:
+                _P(temp_name).unlink(missing_ok=True)
+        p = cached_path
+    else:
+        p = _P(filepath).expanduser()
     if not p.is_file():
         raise MaterializationError(f"mesh file not found: {filepath}")
     suf = p.suffix.lower()

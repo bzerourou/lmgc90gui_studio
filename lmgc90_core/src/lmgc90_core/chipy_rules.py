@@ -41,17 +41,6 @@ DETECTORS_3D: dict[str, tuple[str, str]] = {
     "SPSPx": ("SPHER", "SPHER"),
 }
 
-# Anciennes clés de préférences -> détecteur réel
-LEGACY_FLAGS = {
-    "use_PT2Dx": "use_PTPT2",
-    "use_PT3Dx": "use_PTPT3",
-    "use_DKMECAx": "use_DKALp",
-    "use_ALpMECAx": "use_CLALp",
-}
-# Clés sans aucun équivalent chipy : ignorées
-DROPPED_FLAGS = ("use_SPMECAx", "use_ALpALp", "use_NODES")
-
-
 def canon_shape(shape: Optional[str]) -> str:
     """Normalise un nom de contacteur (casse ; CSpxx -> CSxxx, à confirmer)."""
     s = (shape or "").strip().lower()
@@ -73,16 +62,12 @@ def detector_for_pair(a: str, b: str, dimension: int) -> Optional[str]:
 
 
 def explicit_flags(params: Mapping[str, Any]) -> dict[str, bool]:
-    """Flags use_* réellement fournis par l'appelant, alias résolus."""
-    flags = {k: bool(v) for k, v in params.items()
-             if k.startswith("use_") and v is not None}
-    for old, new in LEGACY_FLAGS.items():
-        if old in flags:
-            if flags.pop(old):
-                flags[new] = True
-    for key in DROPPED_FLAGS:
-        flags.pop(key, None)
-    return flags
+    """Return explicitly provided flags for official contact detectors only."""
+    return {
+        f"use_{name}": bool(params[f"use_{name}"])
+        for name in (*DETECTORS_2D, *DETECTORS_3D)
+        if f"use_{name}" in params and params[f"use_{name}"] is not None
+    }
 
 
 def select_detectors(dimension: int,

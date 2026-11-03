@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lmgc90_core import GranuloConfig, ValidationError
+from lmgc90_core import GranuloConfig, ValidationError, lmgc5
 from lmgc90_core.types import AvatarType
 
 from .base_tab import BaseTab
@@ -38,15 +38,6 @@ _DISTRIBUTIONS = [
     ("granulo_BetaDistribution", "Distribution Beta"), #
     ("granulo_ReadFromFile", "Lire depuis un fichier"),
 ]
-
-
-def _lmgc5(name: str, default: str = "XXXXX") -> str:
-    s = (name or "").strip() or default
-    if len(s) > 5:
-        s = s[:5]
-    if len(s) < 5:
-        s = s + ("x" * (5 - len(s)))
-    return s
 
 
 def create_granulo_tab(parent=None):
@@ -349,8 +340,8 @@ def create_granulo_tab(parent=None):
                         "Distribution Beta: a, b et volume total doivent être > 0.",
                     )
                     return
-            color = _lmgc5(self.color_edit.text(), "BLUEx")
-            group = _lmgc5(self.group_edit.text(), "granx")
+            color = lmgc5(self.color_edit.text(), "BLUEx")
+            group = lmgc5(self.group_edit.text(), "granx")
             cfg = GranuloConfig(
                 nb_particles=nb_particles,
                 radius_min=radius_min,

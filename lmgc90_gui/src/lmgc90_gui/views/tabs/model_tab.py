@@ -10,6 +10,7 @@ from lmgc90_core.types import (
     MODEL_OPTION_DEFAULTS,
     MODEL_OPTIONS_BY_PHYSICS,
 )
+from lmgc90_engine.schema import model_option_choices
 
 from .base_tab import BaseTab
 from ...utils.naming import suggest_model_name
@@ -109,20 +110,21 @@ def create_model_tab(parent=None):
                 *MODEL_COMMON_OPTIONS_BY_PHYSICS.get(physics, ()),
             )
             for name in dict.fromkeys(option_names):
-                choices = MODEL_OPTION_CHOICES_BY_PHYSICS.get(
+                fallback_choices = MODEL_OPTION_CHOICES_BY_PHYSICS.get(
                     physics, {}
-                ).get(name, MODEL_OPTION_CHOICES[name])
+                ).get(name, MODEL_OPTION_CHOICES.get(name, ()))
+                choices = model_option_choices(physics, name, fallback_choices)
                 widget = QComboBox()
                 widget.setEditable(True)
                 widget.addItems(choices)
                 default = (
                     "class"
                     if physics == "THERx" and name == "formulation"
-                    else MODEL_OPTION_DEFAULTS[name]
+                    else MODEL_OPTION_DEFAULTS.get(name, "")
                 )
                 value = self._option_values.get(name, default)
                 if value not in choices:
-                    value = default
+                    value = default if default in choices else (choices[0] if choices else "")
                 index = widget.findText(value)
                 if index >= 0:
                     widget.setCurrentIndex(index)

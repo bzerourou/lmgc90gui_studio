@@ -4,6 +4,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
+# attempted relative import with no known parent package (fixes mypy import errors)
 from .introspection import _load_compatibility_catalogs
 
 

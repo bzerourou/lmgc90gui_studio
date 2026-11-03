@@ -7,7 +7,7 @@ from typing import Any
 from .entities import Avatar, ContactLaw, GranuloConfig, Material, Model, VisibilityRule
 from .population import ParticlePopulation
 from .project import Project
-from .types import AvatarType
+from .types import AvatarType, RIGID_AVATARS_2D, RIGID_AVATARS_3D, STUDIO_ONLY_KEYS
 
 
 def emit_pre(project: Project, *, use_loop: bool = False) -> str:
@@ -21,6 +21,7 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
     L(f"bodies    = {project.n_bodies}  (AoS {len(project.avatars)} + SoA {sum(len(p) for p in project.populations)})")
     L('"""')
     L("from pylmgc90 import pre")
+    L("import importlib.resources")
     L("import numpy as np")
     L()
     from .numpy_compat import PRE_PY_CROSS_PATCH
@@ -115,8 +116,6 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
         avatar_refs[av.avatar_id] = ref
         for line in _emit_contactors(av):
             L(line)
-        if av.avatar_type == AvatarType.EMPTY_AVATAR and av.contactors:
-            L(f"{ref}.computeRigidProperties()")
         L(f"bodies.addAvatar({ref})")
         L()
         i += 1
@@ -250,6 +249,11 @@ def _emit_avatar(
             f"{target} = pre.rigidSphere(r={radius}, center={c}, "
             f"model={mod}, material={mat}, color={color!r}{hollow})"
         )
+    if t == AvatarType.RIGID_DISCRETE:
+        return (
+            f"{target} = pre.rigidDiscreteDisk(r={radius}, center={c}, "
+            f"model={mod}, material={mat}, color={color!r})"
+        )
     if t == AvatarType.RIGID_JONC:
         ax = av.axis or {}
         return (
@@ -270,6 +274,12 @@ def _emit_avatar(
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
             f"nb_vertex={wp.get('nb_vertex', 10)})"
         )
+    if t == AvatarType.ROUGH_WALL_3D:
+        wp = av.wall_params or {}
+        return (
+            f"{target} = pre.roughWall3D(lx={wp.get('lx', 1.0)}, ly={wp.get('ly', 1.0)}, "
+            f"lz={wp.get('lz', 0.1)}, center={c}, model={mod}, material={mat}, color={color!r})"
+        )
     if t == AvatarType.FINE_WALL:
         wp = av.wall_params or {}
         radius = wp.get("h", 2.0 * wp.get("r", 0.02)) / 2.0
@@ -286,6 +296,13 @@ def _emit_avatar(
             f"rmin={wp.get('rmin')}, rmax={max_radius}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
             f"nb_vertex={wp.get('nb_vertex', 10)})"
+        )
+    if t == AvatarType.GRANULO_ROUGH_WALL_3D:
+        wp = av.wall_params or {}
+        return (
+            f"{target} = pre.granuloRoughWall3D(lx={wp.get('lx', 1.0)}, ly={wp.get('ly', 1.0)}, "
+            f"lz={wp.get('lz', 0.1)}, rmin={wp.get('rmin', 0.01)}, rmax={wp.get('rmax', 0.02)}, "
+            f"center={c}, model={mod}, material={mat}, color={color!r})"
         )
     if t == AvatarType.RIGID_CLUSTER:
         return (
@@ -305,6 +322,13 @@ def _emit_avatar(
             f"{target} = pre.rigidPlan(center={c}, model={mod}, material={mat}, "
             f"color={color!r}, axe1={ax.get('axe1')}, axe2={ax.get('axe2')}, axe3={ax.get('axe3')})"
         )
+    if t == AvatarType.RIGID_OVOID:
+        kwargs = [f"center={c}", f"model={mod}", f"material={mat}", f"color={color!r}"]
+        if radius is not None:
+            kwargs.append(f"radius={radius}")
+        if av.vertices is not None:
+            kwargs.append(f"vertices=np.array({av.vertices!r})")
+        return f"{target} = pre.rigidOvoidPolygon({', '.join(kwargs)})"
     if t == AvatarType.RIGID_POLYGON:
         if av.generation_type == "regular":
             return (
@@ -354,11 +378,29 @@ def _emit_avatar(
                 f"av_{ident} = pre.buildMeshedAvatar(mesh=mesh_{ident}, model={mod}, material={mat})"
             )
         if geom == "Fichier externe":
+            filepath = str(mp.get("filepath", ""))
+            if filepath.startswith("pkg://"):
+                package, separator, resource_name = filepath[6:].partition("/")
+                parts = resource_name.split("/")
+                if not separator or not package or any(
+                    part in ("", ".", "..") for part in parts
+                ):
+                    raise ValueError(f"invalid package mesh reference: {filepath!r}")
+                resource_parts = ", ".join(repr(part) for part in parts)
+                mesh_file = f"_mesh_file_{ident}"
+                return "\n".join((
+                    f"with importlib.resources.as_file(importlib.resources.files({package!r}).joinpath({resource_parts})) as {mesh_file}:",
+                    f"    mesh_{ident} = pre.readMesh(str({mesh_file}), {mp.get('dim', 2)})",
+                    f"av_{ident} = pre.buildMeshedAvatar(mesh=mesh_{ident}, model={mod}, material={mat})",
+                ))
             return (
-                f"mesh_{ident} = pre.readMesh({mp.get('filepath', '')!r}, {mp.get('dim', 2)})\n"
+                f"mesh_{ident} = pre.readMesh({filepath!r}, {mp.get('dim', 2)})\n"
                 f"av_{ident} = pre.buildMeshedAvatar(mesh=mesh_{ident}, model={mod}, material={mat})"
             )
-        return f"av_{ident} = None  # MESH_DEFORMABLE geom={geom!r} not emitted"
+        raise NotImplementedError(
+            f"pre.py emission is not implemented for mesh geometry {geom!r} "
+            f"(avatar_id={av.avatar_id})"
+        )
     if t == AvatarType.EMPTY_AVATAR:
         dimension = 3 if len(av.center) >= 3 else 2
         return "\n".join((
@@ -368,11 +410,10 @@ def _emit_avatar(
             f"{target}.defineGroups()",
             f"{target}.defineModel(model={mod})",
             f"{target}.defineMaterial(material={mat})",
-            f"{target}.computeRigidProperties()",
         ))
-    return (
-        f"# TODO {t.value}: av_{ident} — stored in .lmgc90, emit not yet specialised\n"
-        f"av_{ident} = None"
+    raise NotImplementedError(
+        f"pre.py emission is not implemented for avatar type {t.value!r} "
+        f"(avatar_id={av.avatar_id})"
     )
 
 
@@ -452,21 +493,30 @@ def _emit_contactors(av: Avatar) -> list[str]:
             kwargs.append(f"{key}={value}")
         extra = ", " + ", ".join(kwargs) if kwargs else ""
         color = contactor.get("color", av.color)
+        shift_arg = f", shift={shift!r}" if shift is not None else ""
         lines.append(
-            f"av_{ident}.addContactors(shape={shape!r}, color={color!r}{extra}, shift={shift!r})"
-            f"\nav_{ident}.computeRigidProperties()"
+            f"av_{ident}.addContactors(shape={shape!r}, color={color!r}{extra}{shift_arg})"
         )
+    rigid_types = RIGID_AVATARS_2D | RIGID_AVATARS_3D | {AvatarType.EMPTY_AVATAR}
+    if lines and av.avatar_type in rigid_types:
+        lines.append(f"av_{ident}.computeRigidProperties()")
     return lines
 
 
 def _emit_population(pop: ParticlePopulation) -> str:
-    fn = {
+    fn_map = {
         AvatarType.RIGID_DISK: "rigidDisk",
         AvatarType.RIGID_SPHERE: "rigidSphere",
         AvatarType.RIGID_DISCRETE: "rigidDiscreteDisk",
         AvatarType.RIGID_CLUSTER: "rigidCluster",
         AvatarType.RIGID_CYLINDER: "rigidCylinder",
-    }.get(pop.avatar_type, "rigidDisk")
+    }
+    fn = fn_map.get(pop.avatar_type)
+    if fn is None:
+        raise ValueError(
+            f"pre.py population emission is not implemented for "
+            f"avatar type {pop.avatar_type!r}"
+        )
     extra = ""
     if pop.avatar_type == AvatarType.RIGID_CLUSTER:
         extra = f", nb_disk={pop.extra_params.get('nb_disk', 3)}"
@@ -535,7 +585,11 @@ def _emit_dof(
             raise ValueError(f"No avatars have contactor color {color!r}.")
     else:
         raise ValueError(f"Unsupported DOF target type {op.target_type!r}.")
-    params = ", ".join(f"{k}={v!r}" for k, v in op.parameters.items())
+    params = ", ".join(
+        f"{k}={v!r}"
+        for k, v in op.parameters.items()
+        if k not in STUDIO_ONLY_KEYS
+    )
     return "\n".join(
         f"{target}.{op.operation_type}({params})"
         for target in target_refs

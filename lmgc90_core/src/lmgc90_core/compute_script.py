@@ -38,14 +38,11 @@ class ComputeScriptGenerator:
         'mhyp': 1, 'deformable': False, 'physics': 'MECAx',
         'Rloc_tol': 5e-2,
         'use_RBDY2': True,  'use_RBDY3': False,
-        'use_DKDKx': True,  'use_DKJCx': False, 'use_DKKDx': False,
+        'use_DKDKx': False,  'use_DKJCx': False, 'use_DKKDx': False,
         'use_PLPLx': False, 'use_CLALp': False,
         'use_SPSPx': False, 'use_SPCDx': False,  'use_SPPLx': False,
         'use_CDCDx': False, 'use_CDPLx': False,  'use_PRPRx': False,
         'use_mecaMAILx': False, 'use_therMAILx': False, 'use_poroMAILx': False,
-        'use_DKMECAx': False, 'use_ALpMECAx': False, 'use_SPMECAx': False,
-        'use_PT2Dx': False,   'use_PT3Dx': False,
-        'use_NODES': False,   'use_bulk_behav': False,
         'visu_RBDY2': True,  'visu_RBDY3': False,
         'visu_mecaMAILx': False, 'visu_therMAILx': False, 'visu_poroMAILx': False,
         'display_in_loop': True,
@@ -127,8 +124,6 @@ class ComputeScriptGenerator:
         'SPSPx_GetNbSPSPx', 'SPCDx_GetNbSPCDx',
         'SPPLx_GetNbSPPLx', 'CDCDx_GetNbCDCDx',
         'CDPLx_GetNbCDPLx', 'PRPRx_GetNbPRPRx',
-        'DKMECAx_GetNbDKMECAx', 'ALpMECAx_GetNbALpMECAx',
-        'SPMECAx_GetNbSPMECAx',
     })
 
     def __init__(
@@ -181,8 +176,7 @@ class ComputeScriptGenerator:
         visibility = getattr(self.project, 'visibility', None) or ()
         detector_flags = {
             f'use_{name}' for name in (*DETECTORS_2D, *DETECTORS_3D)
-        } | {'use_PT2Dx', 'use_PT3Dx', 'use_DKMECAx', 'use_ALpMECAx',
-             'use_SPMECAx', 'use_ALpALp', 'use_NODES'}
+        }
         detector_params = params
         if not any(key in params for key in detector_flags) and not visibility:
             detector_params = {'use_DKDKx': True} if dim == 2 else {}
@@ -213,8 +207,6 @@ class ComputeScriptGenerator:
         # ── 2. Initialisation ─────────────────────────────────────────────────
         w('chipy.Initialize()\n')
         w('chipy.checkDirectories()\n')
-        if p.get('disable_log'):
-            w('chipy.utilities_DisableLogMes()\n')
         w('\n')
 
         # ── 3. Parametres ─────────────────────────────────────────────────────
@@ -829,11 +821,6 @@ class ComputeScriptGenerator:
         w('\n')
 
         # e. Comportement volumique
-        if p.get('use_bulk_behav'):
-            L("chipy.utilities_logMes('UPDATE BULK BEHAV')")
-            L('chipy.UpdateBulkBehav()')
-            w('\n')
-
         # f. ComputeDof + UpdateStep
         L("chipy.utilities_logMes('COMPUTE DOF')")
         L('chipy.ComputeDof()')
@@ -1125,6 +1112,12 @@ _AVATAR_CONTACTORS_3D = {
     "mesh": ("ASpxx", "CSxxx"),
 }
 
+_TAGS = {"DISKx", "JONCx", "POLYG", "PT2Dx", "PT2DL", "xKSID", "DISKL", 
+         "SPHER", "PLANx", "CYLND", "POLYR", "PT3Dx", "DNLYC",
+         "ALpxx", "CLxxx", "ASpxx", "CSxxx", "CSpxx"}
+_TAG_BY_FOLD= {t.casefold(): t for t in _TAGS}
+_TAG_BY_FOLD['cspxx'] = 'CSxxx'  # normalize common typo
+
 
 def infer_chipy_contact_routines(project) -> Dict[str, bool]:
     """Infer ``use_<Detector>`` flags from a Project (avatars, see-tables, laws).
@@ -1150,18 +1143,10 @@ def infer_chipy_contact_routines(project) -> Dict[str, bool]:
             present.add(c)
         # explicit contactors on empty/mesh avatars
         for cont in getattr(av, "contactors", None) or []:
-            shape = str(cont.get("shape", cont.get("type", ""))).upper()
-            if not shape:
-                continue
-            # normalize common shapes to 5-char tags
-            for tag in (
-                "DISKx", "JONCx", "POLYG", "PT2Dx", "PT2DL", "xKSID", "DISKL",
-                "SPHER", "PLANx", "CYLND", "POLYR", "PT3Dx", "DNLYC",
-                "ALpxx", "CLxxx", "ASpxx", "CSxxx", "CSpxx",
-            ):
-                if shape.startswith(tag[:4]) or shape.startswith(tag.rstrip("x")):
-                    present.add(tag if tag != "CSpxx" else "CSxxx")
-                    break
+            raw = str(cont.get("shape", cont.get("type", ""))).casefold()
+            tag = _TAG_BY_FOLD.get(raw)
+            if tag:
+                present.add(tag)
 
     for pop in getattr(project, "populations", []) or []:
         at = getattr(getattr(pop, "avatar_type", None), "value", None) or ""
@@ -1221,6 +1206,16 @@ def infer_chipy_contact_routines(project) -> Dict[str, bool]:
         if "PLANx" in present and "SPHER" in present:
             flags["use_SPPLx"] = True
 
+    return flags
+
+def default_routines(project: Project) -> Dict[str, Any]:
+    """Réglages chipy déduit du projet
+    """
+    dim = int(getattr(project, "dimension", 2) or 2)
+    flags = infer_chipy_contact_routines(project)
+    flags["use_RBDY2"] = dim == 2
+    flags["use_RBDY3"] = dim == 3
+    flags['deformable'] = bool(flags.get('use_mecaMAILx'))
     return flags
 
 def generate_command_script(

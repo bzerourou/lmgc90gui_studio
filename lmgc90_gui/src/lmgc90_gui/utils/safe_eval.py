@@ -3,8 +3,46 @@ from __future__ import annotations
 
 import ast
 import math
+import numbers
 import operator
+import types
 from typing import Any
+
+_MAX_POWER_EXPONENT = 1000
+_MAX_POWER_BITS = 100_000
+
+
+def _safe_power(base: Any, exponent: Any) -> Any:
+    if isinstance(base, numbers.Integral):
+        base = int(base)
+    elif isinstance(base, numbers.Real):
+        base = float(base)
+        if not math.isfinite(base):
+            raise ValueError("base de puissance non finie")
+    else:
+        raise ValueError("la puissance exige des nombres réels")
+
+    if isinstance(exponent, numbers.Integral):
+        exponent = int(exponent)
+    elif isinstance(exponent, numbers.Real):
+        exponent = float(exponent)
+        if not math.isfinite(exponent):
+            raise ValueError("exposant non fini")
+    else:
+        raise ValueError("la puissance exige des nombres réels")
+
+    if abs(exponent) > _MAX_POWER_EXPONENT:
+        raise ValueError(f"exposant limité à ±{_MAX_POWER_EXPONENT}")
+    if (
+        isinstance(base, int)
+        and isinstance(exponent, int)
+        and exponent > 0
+        and abs(base) > 1
+        and base.bit_length() * exponent > _MAX_POWER_BITS
+    ):
+        raise ValueError("résultat de puissance trop volumineux")
+    return operator.pow(base, exponent)
+
 
 _BIN = {
     ast.Add: operator.add,
@@ -13,7 +51,7 @@ _BIN = {
     ast.Div: operator.truediv,
     ast.FloorDiv: operator.floordiv,
     ast.Mod: operator.mod,
-    ast.Pow: operator.pow,
+    ast.Pow: _safe_power,
 }
 _UNARY = {ast.UAdd: operator.pos, ast.USub: operator.neg, ast.Not: operator.not_}
 _CMP = {
@@ -45,11 +83,17 @@ _ALLOWED_FUNCS = {
     "str": str,
     "bool": bool,
 }
+_ALLOWED_CONTEXT_FUNCS = frozenset({
+    "avatars_by_color",
+    "avatars_by_material",
+    "avatars_by_type",
+    "avatars_by_origin",
+})
 
 
 class SafeEvaluator:
     def __init__(self, allowed_names: dict[str, Any] | None = None):
-        self.allowed_names = {**_ALLOWED_FUNCS, **(allowed_names or {})}
+        self.allowed_names = {**(allowed_names or {}), **_ALLOWED_FUNCS}
 
     def eval_expression(self, expr: str) -> Any:
         tree = ast.parse(expr, mode="eval")
@@ -108,12 +152,13 @@ def _eval(node: ast.AST, ctx: dict[str, Any]) -> Any:
         return _eval(node.body, ctx) if _eval(node.test, ctx) else _eval(node.orelse, ctx)
     if isinstance(node, ast.Call):
         if isinstance(node.func, ast.Name):
-            if node.func.id not in ctx:
+            if node.func.id not in _ALLOWED_FUNCS and node.func.id not in _ALLOWED_CONTEXT_FUNCS:
                 raise ValueError(f"fonction non autorisée : {node.func.id}")
-            fn = ctx[node.func.id]
+            fn = ctx.get(node.func.id)
+            if not callable(fn):
+                raise ValueError(f"fonction non autorisée : {node.func.id}")
         elif isinstance(node.func, ast.Attribute):
-            obj = _eval(node.func.value, ctx)
-            fn = getattr(obj, node.func.attr)
+            raise ValueError("appel de méthode/attribut non autorisé")
         else:
             raise ValueError("Opération non autorisée : Call")
         args = [_eval(a, ctx) for a in node.args]
@@ -123,7 +168,14 @@ def _eval(node: ast.AST, ctx: dict[str, Any]) -> Any:
         if node.attr.startswith("_"):
             raise ValueError("Opération non autorisée : private attr")
         obj = _eval(node.value, ctx)
-        return getattr(obj, node.attr)
+        if isinstance(obj, types.ModuleType):
+            raise ValueError("accès aux modules non autorisé")
+        if node.attr in {"format", "format_map"}:
+            raise ValueError("format de chaîne non autorisé")
+        value = getattr(obj, node.attr)
+        if callable(value):
+            raise ValueError("accès aux attributs appelables non autorisé")
+        return value
     if isinstance(node, ast.Subscript):
         obj = _eval(node.value, ctx)
         key = _eval(node.slice, ctx)

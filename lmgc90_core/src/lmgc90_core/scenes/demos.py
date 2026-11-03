@@ -9,6 +9,7 @@ Architecture::
 from __future__ import annotations
 
 import math
+from typing import List, Tuple
 
 import numpy as np
 
@@ -2592,8 +2593,6 @@ def mesh_rigids_from_file(project: Project) -> None:
     Vous pouvez remplacer ``filepath`` par un .msh / .brep externe (gmsh).
     """
     from ..entities import DOFOperation
-    from pathlib import Path
-    import importlib.resources
 
     if not any(m.name == "TDURx" for m in project.materials):
         project.add(Material(
@@ -2608,20 +2607,7 @@ def mesh_rigids_from_file(project: Project) -> None:
             name="rigid", physics="MECAx", element="Rxx2D", dimension=2,
         ))
 
-    # resolve packaged mesh
-    mesh_path = None
-    try:
-        ref = importlib.resources.files("lmgc90_core").joinpath("data/meshes/Carre.msh")
-        with importlib.resources.as_file(ref) as p:
-            mesh_path = str(p)
-    except Exception:
-        # fallback: relative to package source
-        root = Path(__file__).resolve().parents[1]  # lmgc90_core/
-        cand = root / "data" / "meshes" / "Carre.msh"
-        if cand.is_file():
-            mesh_path = str(cand)
-    if not mesh_path:
-        mesh_path = "Carre.msh"  # user-provided next to CWD
+    mesh_path = "pkg://lmgc90_core/data/meshes/Carre.msh"
 
     # placeholder avatar → expanded to many POLYG at materialize
     # EMPTY_AVATAR: placeholder — engine expands to many rigid POLYG (not FEM)

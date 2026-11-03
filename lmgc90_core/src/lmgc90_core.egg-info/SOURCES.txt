@@ -12,6 +12,7 @@ src/lmgc90_core/ids.py
 src/lmgc90_core/io.py
 src/lmgc90_core/lmgc_dicts.py
 src/lmgc90_core/masonry.py
+src/lmgc90_core/naming.py
 src/lmgc90_core/numpy_compat.py
 src/lmgc90_core/pipeline.py
 src/lmgc90_core/population.py

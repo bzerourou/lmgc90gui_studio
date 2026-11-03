@@ -62,19 +62,22 @@ class Model:
             "element": self.element,
             "dimension": self.dimension,
         }
-        d.update(self.options)
-        return d
+        if self.options:
+            d["options"] = jsonable(self.options)
+        return jsonable(d)
 
     @classmethod
     def from_dict(cls, data: dict) -> Model:
         base = {"name", "physics", "element", "dimension"}
-        options = {k: v for k, v in data.items() if k not in base}
+        options = data.get("options")
+        if not isinstance(options, dict):
+            options = {k: v for k, v in data.items() if k not in base}
         return cls(
             name=data["name"],
             physics=data["physics"],
             element=data["element"],
             dimension=int(data["dimension"]),
-            options=options,
+            options=dict(options or {}),
         )
 
 
@@ -136,7 +139,7 @@ class Avatar:
         if self.is_hollow:
             data["is_Hollow"] = True
         if self.wall_params:
-            data.update(jsonable(self.wall_params))
+            data["wall_params"] = jsonable(self.wall_params)
         if self.contactors:
             data["contactors"] = jsonable(self.contactors)
         if self.mesh_params is not None:
@@ -151,11 +154,13 @@ class Avatar:
             if "axe3" in data:
                 axis["axe3"] = data["axe3"]
         center = list(data.get("center") or [])
-        wall_keys = (
-            "l", "h", "r", "rmin", "rmax", "nb_vertex", "nb_polyg",
-            "lx", "ly", "lz", "ra", "rb", "faces", "brick_name",
-        )
-        wall = {k: data[k] for k in wall_keys if k in data}
+        wall = data.get("wall_params")
+        if not isinstance(wall, dict):
+            wall_keys = (
+                "l", "h", "r", "rmin", "rmax", "nb_vertex", "nb_polyg",
+                "lx", "ly", "lz", "ra", "rb", "faces", "brick_name",
+            )
+            wall = {k: data[k] for k in wall_keys if k in data}
         return cls(
             avatar_type=AvatarType(data["type"]),
             center=center,
@@ -170,7 +175,7 @@ class Avatar:
             nb_vertices=data.get("nb_vertices"),
             generation_type=data.get("gen_type"),
             is_hollow=bool(data.get("is_Hollow", False)),
-            wall_params=wall or None,
+            wall_params=dict(wall) if wall else None,
             contactors=list(data.get("contactors") or []),
             mesh_params=data.get("mesh_params"),
         )
@@ -191,22 +196,26 @@ class ContactLaw:
         data: dict[str, Any] = {"name": self.name, "law": self.law_type_name}
         if self.friction is not None:
             data["fric"] = self.friction
-        data.update(self.properties)
-        return data
+        if self.properties:
+            data["properties"] = jsonable(self.properties)
+        return jsonable(data)
 
     @classmethod
     def from_dict(cls, data: dict) -> ContactLaw:
-        skip = {"name", "law", "fric"}
+        skip = {"name", "law", "fric", "properties"}
         law_name = str(data["law"])
         try:
             law_type: ContactLawType | str = ContactLawType(law_name)
         except ValueError:
             law_type = law_name
+        properties = data.get("properties")
+        if not isinstance(properties, dict):
+            properties = {k: v for k, v in data.items() if k not in skip}
         return cls(
             name=data["name"],
             law_type=law_type,
             friction=data.get("fric"),
-            properties={k: v for k, v in data.items() if k not in skip},
+            properties=dict(properties or {}),
         )
 
 

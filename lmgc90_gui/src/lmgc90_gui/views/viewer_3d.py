@@ -40,6 +40,7 @@ from PyQt6.QtCore import pyqtSignal, Qt
 
 from lmgc90_core import Avatar, ParticlePopulation
 from lmgc90_core.types import AvatarType, AvatarOrigin
+from lmgc90_engine.avatar_factory import resolve_mesh_filepath
 
 
 # ============================================================================
@@ -659,6 +660,11 @@ def _mesh_deformable(av: Avatar) -> Optional[pv.PolyData]:
         # ── Fichier externe ──────────────────────────────────────────────────
         if effective_src in _MESH_SRC_FILE or mp.get('filepath') or mp.get('mesh_file'):
             filepath = (mp.get('mesh_file') or mp.get('filepath') or '').strip()
+            if filepath.startswith('pkg://'):
+                try:
+                    filepath = resolve_mesh_filepath(filepath)
+                except Exception:
+                    filepath = ''
             if filepath and os.path.isfile(filepath):
                 return _read_mesh_file(filepath, center=c)
             # Fichier absent → boîte placeholder avec indicateur

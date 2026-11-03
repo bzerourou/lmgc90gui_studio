@@ -126,9 +126,32 @@ class AddPopulation:
         return {
             "op": "add_population",
             "payload": {
-                "population": self.population.to_dict(),
+                "population": self.population.to_meta_dict(),
                 "config": self.config.to_dict() if self.config is not None else None,
             },
+        }
+
+
+@dataclass
+class AddGranuloConfig:
+    config: GranuloConfig
+    index: int = -1
+
+    def apply(self, project: Project) -> None:
+        self.index = len(project.granulo)
+        project.granulo.append(self.config)
+
+    def revert(self, project: Project) -> None:
+        if 0 <= self.index < len(project.granulo):
+            project.granulo.pop(self.index)
+
+    def describe(self) -> str:
+        return f"add granulo distribution n={self.config.nb_particles}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {
+            "op": "add_granulo_config",
+            "payload": {"config": self.config.to_dict(), "index": self.index},
         }
 
 
@@ -147,6 +170,144 @@ class AddLaw:
 
     def to_journal(self) -> dict[str, Any]:
         return {"op": "add_law", "payload": self.law.to_dict()}
+
+
+@dataclass
+class UpdateMaterial:
+    old: Material
+    new: Material
+
+    def apply(self, project: Project) -> None:
+        project._replace_material(self.old.name, self.new)
+
+    def revert(self, project: Project) -> None:
+        project._replace_material(self.new.name, self.old)
+
+    def describe(self) -> str:
+        return f"update material {self.old.name} -> {self.new.name}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "update_material", "payload": {
+            "old": self.old.to_dict(), "new": self.new.to_dict(),
+        }}
+
+
+@dataclass
+class RemoveMaterial:
+    material: Material
+    index: int = -1
+
+    def apply(self, project: Project) -> None:
+        self.index = next(
+            (i for i, item in enumerate(project.materials) if item.name == self.material.name),
+            -1,
+        )
+        if self.index < 0:
+            raise HistoryError(f"material {self.material.name!r} not found")
+        project.materials.pop(self.index)
+
+    def revert(self, project: Project) -> None:
+        project.materials.insert(self.index, self.material)
+
+    def describe(self) -> str:
+        return f"remove material {self.material.name}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "remove_material", "payload": {
+            "material": self.material.to_dict(), "index": self.index,
+        }}
+
+
+@dataclass
+class UpdateModel:
+    old: Model
+    new: Model
+
+    def apply(self, project: Project) -> None:
+        project._replace_model(self.old.name, self.new)
+
+    def revert(self, project: Project) -> None:
+        project._replace_model(self.new.name, self.old)
+
+    def describe(self) -> str:
+        return f"update model {self.old.name} -> {self.new.name}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "update_model", "payload": {
+            "old": self.old.to_dict(), "new": self.new.to_dict(),
+        }}
+
+
+@dataclass
+class RemoveModel:
+    model: Model
+    index: int = -1
+
+    def apply(self, project: Project) -> None:
+        self.index = next(
+            (i for i, item in enumerate(project.models) if item.name == self.model.name),
+            -1,
+        )
+        if self.index < 0:
+            raise HistoryError(f"model {self.model.name!r} not found")
+        project.models.pop(self.index)
+
+    def revert(self, project: Project) -> None:
+        project.models.insert(self.index, self.model)
+
+    def describe(self) -> str:
+        return f"remove model {self.model.name}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "remove_model", "payload": {
+            "model": self.model.to_dict(), "index": self.index,
+        }}
+
+
+@dataclass
+class UpdateLaw:
+    old: ContactLaw
+    new: ContactLaw
+
+    def apply(self, project: Project) -> None:
+        project._replace_law(self.old.name, self.new)
+
+    def revert(self, project: Project) -> None:
+        project._replace_law(self.new.name, self.old)
+
+    def describe(self) -> str:
+        return f"update law {self.old.name} -> {self.new.name}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "update_law", "payload": {
+            "old": self.old.to_dict(), "new": self.new.to_dict(),
+        }}
+
+
+@dataclass
+class RemoveLaw:
+    law: ContactLaw
+    index: int = -1
+
+    def apply(self, project: Project) -> None:
+        self.index = next(
+            (i for i, item in enumerate(project.laws) if item.name == self.law.name),
+            -1,
+        )
+        if self.index < 0:
+            raise HistoryError(f"law {self.law.name!r} not found")
+        project.laws.pop(self.index)
+
+    def revert(self, project: Project) -> None:
+        project.laws.insert(self.index, self.law)
+
+    def describe(self) -> str:
+        return f"remove law {self.law.name}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "remove_law", "payload": {
+            "law": self.law.to_dict(), "index": self.index,
+        }}
 
 
 @dataclass
@@ -361,11 +522,36 @@ class RemoveForLoop:
                 -1,
             )
             collection = getattr(project, collection_name)
-            generated_objects = {id(item) for item in self.for_loop._generated_items}
+            generated_ids = set(self.for_loop.generated_ids)
+            if not generated_ids and self.for_loop._generated_items:
+                for item in self.for_loop._generated_items:
+                    if hasattr(item, "avatar_id"):
+                        generated_ids.add(item.avatar_id)
+                    elif hasattr(item, "name"):
+                        generated_ids.add(item.name)
+                    elif hasattr(item, "population_id"):
+                        generated_ids.add(item.population_id)
+                    elif hasattr(item, "target_value"):
+                        generated_ids.add(str(item.target_value))
+
+            def is_generated(item: Any, index: int) -> bool:
+                if hasattr(item, "avatar_id"):
+                    return item.avatar_id in generated_ids
+                if hasattr(item, "name"):
+                    return item.name in generated_ids
+                if hasattr(item, "population_id"):
+                    return item.population_id in generated_ids
+                if hasattr(item, "target_value"):
+                    return (
+                        str(item.target_value) in generated_ids
+                        or str(index) in generated_ids
+                    )
+                return str(index) in generated_ids
+
             self.items = [
                 (collection_name, index, item)
                 for index, item in enumerate(collection)
-                if id(item) in generated_objects
+                if is_generated(item, index)
             ]
             if collection_name == "avatars":
                 generated_ids = {item.avatar_id for _, _, item in self.items}
@@ -469,7 +655,11 @@ class RemoveForLoop:
                         "collection": collection,
                         "index": index,
                         "type": type_names[type(item)],
-                        "item": item.to_dict(),
+                        "item": (
+                            item.to_meta_dict()
+                            if isinstance(item, ParticlePopulation)
+                            else item.to_dict()
+                        ),
                     }
                     for collection, index, item in self.items
                 ],
@@ -563,14 +753,48 @@ class CommandHistory:
         return len(self._undo)
 
 
-def command_from_journal(entry: dict[str, Any]) -> Command:
+def command_from_journal(
+    entry: dict[str, Any],
+    population_arrays: dict[str, tuple[Any, Any]] | None = None,
+    populations: dict[str, ParticlePopulation] | None = None,
+) -> Command:
     """Rebuild a Command from a journal entry (for save/load). Does not apply it."""
     op = entry.get("op") or entry.get("type") or ""
     payload = entry.get("payload") or {}
+
+    def population_from_data(data: dict[str, Any]) -> ParticlePopulation:
+        if "centers" in data and "radii" in data:
+            return ParticlePopulation.from_dict(data)
+        population_id = str(data.get("population_id", ""))
+        if populations and population_id in populations:
+            return populations[population_id]
+        arrays = (population_arrays or {}).get(population_id)
+        if arrays is not None:
+            return ParticlePopulation.from_meta_and_arrays(data, *arrays)
+        raise HistoryError(
+            f"population arrays for history entry {population_id!r} are missing"
+        )
+
     if op == "add_material":
         return AddMaterial(Material.from_dict(payload))
     if op == "add_model":
         return AddModel(Model.from_dict(payload))
+    if op == "update_material":
+        return UpdateMaterial(
+            Material.from_dict(payload["old"]), Material.from_dict(payload["new"]),
+        )
+    if op == "remove_material":
+        return RemoveMaterial(
+            Material.from_dict(payload["material"]), int(payload.get("index", -1)),
+        )
+    if op == "update_model":
+        return UpdateModel(
+            Model.from_dict(payload["old"]), Model.from_dict(payload["new"]),
+        )
+    if op == "remove_model":
+        return RemoveModel(
+            Model.from_dict(payload["model"]), int(payload.get("index", -1)),
+        )
     if op == "add_avatar":
         return AddAvatar(Avatar.from_dict(payload))
     if op == "remove_avatar":
@@ -581,9 +805,22 @@ def command_from_journal(entry: dict[str, Any]) -> Command:
         pop_data = payload.get("population") or payload
         cfg_data = payload.get("config")
         cfg = GranuloConfig.from_dict(cfg_data) if cfg_data else None
-        return AddPopulation(ParticlePopulation.from_dict(pop_data), cfg)
+        return AddPopulation(population_from_data(pop_data), cfg)
+    if op == "add_granulo_config":
+        return AddGranuloConfig(
+            GranuloConfig.from_dict(payload["config"]),
+            int(payload.get("index", -1)),
+        )
     if op == "add_law":
         return AddLaw(ContactLaw.from_dict(payload))
+    if op == "update_law":
+        return UpdateLaw(
+            ContactLaw.from_dict(payload["old"]), ContactLaw.from_dict(payload["new"]),
+        )
+    if op == "remove_law":
+        return RemoveLaw(
+            ContactLaw.from_dict(payload["law"]), int(payload.get("index", -1)),
+        )
     if op == "add_see":
         return AddSeeTable(VisibilityRule.from_dict(payload))
     if op == "add_dof":
@@ -626,14 +863,17 @@ def command_from_journal(entry: dict[str, Any]) -> Command:
             "Model": Model.from_dict,
             "DOFOperation": DOFOperation.from_dict,
             "VisibilityRule": VisibilityRule.from_dict,
-            "ParticlePopulation": ParticlePopulation.from_dict,
             "GranuloConfig": GranuloConfig.from_dict,
         }
         items = [
             (
                 str(item["collection"]),
                 int(item["index"]),
-                item_types[item["type"]](item["item"]),
+                (
+                    population_from_data(item["item"])
+                    if item["type"] == "ParticlePopulation"
+                    else item_types[item["type"]](item["item"])
+                ),
             )
             for item in payload.get("items") or []
         ]
@@ -676,7 +916,12 @@ def _history_to_dict(self) -> dict[str, Any]:
     }
 
 
-def _history_load_stacks(self, data: dict[str, Any] | None) -> None:
+def _history_load_stacks(
+    self,
+    data: dict[str, Any] | None,
+    population_arrays: dict[str, tuple[Any, Any]] | None = None,
+    populations: dict[str, ParticlePopulation] | None = None,
+) -> None:
     """Restore undo/redo from saved journal without re-applying commands."""
     if not data:
         self._undo.clear()
@@ -690,13 +935,17 @@ def _history_load_stacks(self, data: dict[str, Any] | None) -> None:
     self._redo = []
     for entry in undo_entries:
         try:
-            self._undo.append(command_from_journal(entry))
+            self._undo.append(
+                command_from_journal(entry, population_arrays, populations)
+            )
         except Exception as exc:
             # skip unreadable entries rather than fail the whole load
             print(f"WARNING: skip history undo entry: {exc}")
     for entry in redo_entries:
         try:
-            self._redo.append(command_from_journal(entry))
+            self._redo.append(
+                command_from_journal(entry, population_arrays, populations)
+            )
         except Exception as exc:
             print(f"WARNING: skip history redo entry: {exc}")
 

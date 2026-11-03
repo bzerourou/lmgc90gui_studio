@@ -203,42 +203,35 @@ class ProjectController(_QObject):
         return self.add(model)
 
 
-    def update_material(self, name: str, material: Material) -> None:
-        """Replace material *name* with *material* (name may change)."""
-        found = False
-        for i, m in enumerate(self._project.materials):
-            if m.name == name:
-                self._project.materials[i] = material
-                found = True
-                break
-        if not found:
-            self._project.materials.append(material)
-        self._session.mark_dirty()
-        self._emit()
+    def update_material(self, name: str, material: Material) -> Material:
+        try:
+            result = self._project.update_material(name, material)
+            self._session.mark_dirty()
+            self._emit()
+            return result
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
-    def update_model(self, name: str, model: Model) -> None:
-        found = False
-        for i, m in enumerate(self._project.models):
-            if m.name == name:
-                self._project.models[i] = model
-                found = True
-                break
-        if not found:
-            self._project.models.append(model)
-        self._session.mark_dirty()
-        self._emit()
+    def update_model(self, name: str, model: Model) -> Model:
+        try:
+            result = self._project.update_model(name, model)
+            self._session.mark_dirty()
+            self._emit()
+            return result
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
-    def update_law(self, name: str, law: ContactLaw) -> None:
-        found = False
-        for i, l in enumerate(self._project.laws):
-            if l.name == name:
-                self._project.laws[i] = law
-                found = True
-                break
-        if not found:
-            self._project.laws.append(law)
-        self._session.mark_dirty()
-        self._emit()
+    def update_law(self, name: str, law: ContactLaw) -> ContactLaw:
+        try:
+            result = self._project.update_law(name, law)
+            self._session.mark_dirty()
+            self._emit()
+            return result
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     def update_avatar(self, avatar_id: str, avatar: Avatar) -> None:
         for i, a in enumerate(self._project.avatars):
@@ -263,16 +256,25 @@ class ProjectController(_QObject):
             self._session.mark_dirty()
             self._emit()
 
-    def remove_material(self, name: str) -> None:
-        # keep API; core may grow remove later — for now filter + dirty
-        self._project.materials[:] = [m for m in self._project.materials if m.name != name]
-        self._session.mark_dirty()
-        self._emit()
+    def remove_material(self, name: str) -> Material:
+        try:
+            result = self._project.remove_material(name)
+            self._session.mark_dirty()
+            self._emit()
+            return result
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
-    def remove_model(self, name: str) -> None:
-        self._project.models[:] = [m for m in self._project.models if m.name != name]
-        self._session.mark_dirty()
-        self._emit()
+    def remove_model(self, name: str) -> Model:
+        try:
+            result = self._project.remove_model(name)
+            self._session.mark_dirty()
+            self._emit()
+            return result
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     # ------------------------------------------------------------------ avatars (by id)
     def add_avatar(self, avatar: Avatar) -> Avatar:
@@ -331,14 +333,10 @@ class ProjectController(_QObject):
         try:
             if not getattr(config, "create_avatars", True):
                 pop = self._project.deposit(config)
-                self._session.mark_dirty()
-                self._emit()
-                return pop  # None
-            if self.pylmgc_available():
+            elif self.pylmgc_available():
                 try:
-                    pop = self._session.run_granulo(config)
-                    self._emit()
-                    return pop
+                    generated = self._session.run_granulo(config)
+                    pop = self._project.add_population(generated, config)
                 except Exception as eng_exc:
                     try:
                         self.journal.warning(
@@ -346,7 +344,9 @@ class ProjectController(_QObject):
                         )
                     except Exception:
                         pass
-            pop = self._project.deposit(config)
+                    pop = self._project.deposit(config)
+            else:
+                pop = self._project.deposit(config)
             self._session.mark_dirty()
             self._emit()
             return pop
@@ -357,7 +357,9 @@ class ProjectController(_QObject):
     def run_granulo_pylmgc(self, config: GranuloConfig, **kwargs) -> ParticlePopulation:
         """Deposit via engine (pylmgc if available, else fallback grid)."""
         try:
-            pop = self._session.run_granulo(config, **kwargs)
+            generated = self._session.run_granulo(config, **kwargs)
+            pop = self._project.add_population(generated, config)
+            self._session.mark_dirty()
             self._emit()
             return pop
         except Exception as exc:
@@ -424,10 +426,15 @@ class ProjectController(_QObject):
     def add_law(self, law: ContactLaw) -> ContactLaw:
         return self.add(law)
 
-    def remove_law(self, name: str) -> None:
-        self._project._drop_law(name)
-        self._session.mark_dirty()
-        self._emit()
+    def remove_law(self, name: str) -> ContactLaw:
+        try:
+            result = self._project.remove_law(name)
+            self._session.mark_dirty()
+            self._emit()
+            return result
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     def add_visibility(self, rule: VisibilityRule) -> VisibilityRule:
         return self.add(rule)

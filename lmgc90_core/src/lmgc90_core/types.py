@@ -12,6 +12,8 @@ from enum import Enum
 from typing import Any
 import importlib
 
+STUDIO_ONLY_KEYS = frozenset({"phase"})
+
 
 class MaterialType(str, Enum):
     RIGID = "RIGID"

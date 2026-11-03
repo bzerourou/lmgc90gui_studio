@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from .compute_script import generate_command_script
 from .project import Project
+from .compute_script import default_routines, generate_command_script
 
 # Backward-compatible defaults (subset); full defaults live in ComputeScriptGenerator
 _DEFAULTS: dict[str, Any] = {
@@ -18,7 +19,7 @@ _DEFAULTS: dict[str, Any] = {
     "relax": 1.0,
     "norm": "Quad ",
     "gs_it1": 50,
-    "gs_it2": 1000,
+    "gs_it2": 1000, 
     "solver_type": "Stored_Delassus_Loops         ",
     "freq_write": 50,
     "freq_display": 50,
@@ -36,7 +37,11 @@ def emit_chipy(project: Project, **params: Any) -> str:
     generator defaults merge.
     """
     p = dict(_DEFAULTS)
+    inferred = default_routines(project)
+    p.update(inferred)
     p.update({k: v for k, v in params.items() if v is not None})
+    if inferred.get("deformable") : 
+        p["deformable"] = True
     if p.get("dimension") is None:
         p["dimension"] = project.dimension
     return generate_command_script(project, p)

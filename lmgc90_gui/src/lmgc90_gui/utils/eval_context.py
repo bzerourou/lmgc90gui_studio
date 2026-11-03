@@ -4,8 +4,6 @@ from __future__ import annotations
 import math
 from typing import Any, Iterable, List, Optional
 
-import numpy as np
-
 from lmgc90_core import Project
 
 
@@ -296,8 +294,6 @@ def _base_names(project: Project) -> dict[str, Any]:
         "float": float,
         "str": str,
         "bool": bool,
-        "math": math,
-        "np": np,
         "dimension": project.dimension,
         "n_bodies": project.n_bodies,
         "avatar": avatars,

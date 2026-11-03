@@ -23,12 +23,16 @@ from .entities import (
 )
 from .errors import HistoryError, LMGC90Error, UnknownReferenceError, ValidationError
 from .ids import new_avatar_id, new_population_id
+from .naming import lmgc5
 from .pipeline import Pipeline, render_sbatch
 from .masonry import MasonryConfig, expand_masonry
 from .population import ParticlePopulation
 from .pre_script import emit_equivalent, emit_pre
 from .project import Project
-from .types import AvatarOrigin, AvatarType, ContactLawType, MaterialType, UnitSystem
+from .types import (
+    AvatarOrigin, AvatarType, ContactLawType, MaterialType, STUDIO_ONLY_KEYS,
+    UnitSystem,
+)
 from .validate import compatible_contactors, is_shape_compatible
 
 __version__ = "0.1.2"
@@ -38,11 +42,13 @@ __all__ = [
     "ContactLaw", "VisibilityRule", "DOFOperation", "PostProCommand",
     "Loop", "ForLoop", "GranuloConfig", "MasonryConfig", "expand_masonry",
     "MaterialType", "AvatarType", "AvatarOrigin", "ContactLawType", "UnitSystem",
+    "STUDIO_ONLY_KEYS",
     "CommandHistory", "Pipeline", "render_sbatch",
     "emit_pre", "emit_chipy", "emit_equivalent",
     "ComputeScriptGenerator", "generate_command_script", "write_command_script",
     "ValidationError", "UnknownReferenceError", "HistoryError", "LMGC90Error",
     "new_avatar_id", "new_population_id",
+    "lmgc5",
     "compatible_contactors", "is_shape_compatible",
     "__version__",
 ]
