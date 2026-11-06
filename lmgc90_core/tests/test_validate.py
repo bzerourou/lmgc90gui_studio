@@ -29,6 +29,22 @@ def test_model_wrong_element():
         pass
 
 
+def test_poro_and_multiphysics_elements_are_not_classified_as_rigid():
+    for physics, dimension, elements in (
+        ("POROx", 2, ("T33xx", "Q44xx")),
+        ("POROx", 3, ("TE44x", "H88xx")),
+        ("MULTI", 2, ("T33xx", "Q44xx")),
+        ("MULTI", 3, ("TE44x", "H88xx")),
+    ):
+        for element in elements:
+            validate_model(Model(
+                name="MODEL",
+                physics=physics,
+                element=element,
+                dimension=dimension,
+            ))
+
+
 def test_disk_needs_2d_model():
     model = Model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2)
     av = pre.rigidDisk(r=0.1, center=[0, 0, 0], model="rigid", material="STEEL")

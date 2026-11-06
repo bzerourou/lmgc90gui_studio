@@ -10,16 +10,18 @@ from pathlib import Path
 from typing import Any, Iterable, Optional, Union
 
 from .commands import (
-    AddAvatar, AddDOF, AddGranuloConfig, AddLaw, AddLoop, AddMaterial,
-    AddModel, AddPopulation, AddPostPro, AddSeeTable, CommandHistory,
-    RemoveAvatar, RemoveForLoop, RemoveLaw, RemoveLoop, RemoveMaterial,
-    RemoveModel, SetGroup, UpdateLaw, UpdateMaterial, UpdateModel,
+    AddAvatar, AddAvatarBatch, AddDOF, AddForLoop, AddGranuloConfig, AddLaw,
+    AddLoop, AddMaterial, AddModel, AddPopulation, AddPostPro, AddSeeTable,
+    CommandHistory, CompositeCommand, RemoveAvatar, RemoveDOF, RemoveForLoop,
+    RemoveLaw, RemoveLoop, RemoveMaterial, RemoveModel, RemoveSeeTable,
+    RemoveGroup, SetGroup, UpdateAvatar, UpdateDOF, UpdateLaw, UpdateMaterial,
+    UpdateModel, UpdateSeeTable,
 )
 from .entities import (
     Avatar, ContactLaw, DOFOperation, ForLoop, GranuloConfig, Loop, Material, Model,
     PostProCommand, VisibilityRule,
 )
-from .errors import UnknownReferenceError, ValidationError
+from .errors import HistoryError, UnknownReferenceError, ValidationError
 from .generate import NumpyGranulo, expand_for_loop, expand_loop, sample_radii
 from .masonry import MasonryConfig, expand_masonry
 from .population import ParticlePopulation
@@ -57,6 +59,7 @@ class Project:
     load_warnings: list[str] = field(default_factory=list)
     history: CommandHistory = field(default_factory=CommandHistory, repr=False)
     record: bool = True
+    _command_batch: list[Any] | None = field(default=None, repr=False)
 
     # ------------------------------------------------------------------ API
 
@@ -256,10 +259,23 @@ class Project:
         else:
             self._run(SetGroup(name, id_list))
 
+    def remove_group(self, name: str) -> None:
+        if name not in self.avatar_groups and name not in self.population_groups:
+            return
+        self._run(RemoveGroup(name))
+
     def remove_avatar(self, avatar_id: str) -> Avatar:
         av = self.avatar(avatar_id)
         self._run(RemoveAvatar(av))
         return av
+
+    def update_avatar(self, avatar_id: str, new: Avatar) -> Avatar:
+        old = self.avatar(avatar_id)
+        new.avatar_id = avatar_id
+        self.material(new.material_name)
+        model = self.model(new.model_name)
+        validate_avatar(new, model)
+        return self._run(UpdateAvatar(old, new), new)
 
     def add_population(
         self, population: ParticlePopulation, config: GranuloConfig | None = None,
@@ -314,6 +330,34 @@ class Project:
         self._check_name_available(self.laws, name, new.name, "law")
         return self._run(UpdateLaw(old, new), new)
 
+    def update_visibility(self, index: int, new: VisibilityRule) -> VisibilityRule:
+        if not 0 <= index < len(self.visibility):
+            raise ValidationError(f"visibility rule index {index} out of range")
+        validate_visibility(new, {law.name for law in self.laws})
+        old = self.visibility[index]
+        return self._run(UpdateSeeTable(index, old, new), new)
+
+    def remove_visibility(self, index: int) -> VisibilityRule:
+        if not 0 <= index < len(self.visibility):
+            raise ValidationError(f"visibility rule index {index} out of range")
+        rule = self.visibility[index]
+        self._run(RemoveSeeTable(rule, index))
+        return rule
+
+    def update_dof(self, index: int, new: DOFOperation) -> DOFOperation:
+        if not 0 <= index < len(self.operations):
+            raise ValidationError(f"DOF operation index {index} out of range")
+        self._check_dof(new)
+        old = self.operations[index]
+        return self._run(UpdateDOF(index, old, new), new)
+
+    def remove_dof(self, index: int) -> DOFOperation:
+        if not 0 <= index < len(self.operations):
+            raise ValidationError(f"DOF operation index {index} out of range")
+        operation = self.operations[index]
+        self._run(RemoveDOF(operation, index))
+        return operation
+
     def remove_law(self, name: str) -> ContactLaw:
         law = self._find_law(name)
         if law is None:
@@ -358,6 +402,23 @@ class Project:
         return loop
 
     def apply_for_loop(self, for_loop: ForLoop, template: Optional[Avatar] = None):
+        if self._command_batch is not None:
+            raise HistoryError("nested ForLoop transactions are not supported")
+        commands: list[Any] = []
+        self._command_batch = commands
+        try:
+            generated = self._apply_for_loop(for_loop, template)
+        except Exception:
+            for command in reversed(commands):
+                command.revert(self)
+            raise
+        finally:
+            self._command_batch = None
+        if self.record and commands:
+            self.history.record_applied(CompositeCommand(commands))
+        return generated
+
+    def _apply_for_loop(self, for_loop: ForLoop, template: Optional[Avatar] = None):
         """Expand ForLoop for avatar | material | model | dof | visibility | granulo | granulo_dist."""
         from .generate import (
             expand_for_loop, for_loop_values, _lmgc5_name, _safe_arith,
@@ -405,12 +466,15 @@ class Project:
             tmpl = template or self.avatar(for_loop.model_avatar_id)
             generated = expand_for_loop(for_loop, tmpl, dimension=self.dimension)
             for av in generated:
-                self._check_avatar(av)
-                self.avatars.append(av)
+                self.add(av)
                 generated_ids.append(av.avatar_id)
             out = generated
             if for_loop.group_name and generated_ids:
-                self.avatar_groups.setdefault(for_loop.group_name, []).extend(generated_ids)
+                existing = self.avatar_groups.get(for_loop.group_name, [])
+                self.group(
+                    for_loop.group_name,
+                    list(dict.fromkeys([*existing, *generated_ids])),
+                )
 
         elif kind in ("material", "materials"):
             base = next((m for m in self.materials if m.name == for_loop.template_name), None)
@@ -632,7 +696,7 @@ class Project:
 
         for_loop.generated_ids = list(generated_ids)
         for_loop._generated_items = list(out)
-        self.for_loops.append(for_loop)
+        self._run(AddForLoop(for_loop), for_loop)
         return out
 
     def remove_for_loop(self, loop_id: str) -> ForLoop:
@@ -651,12 +715,7 @@ class Project:
         generated = expand_masonry(config)
         for av in generated:
             self._check_avatar(av)
-        for av in generated:
-            self.avatars.append(av)
-        if config.group_name:
-            self.avatar_groups.setdefault(config.group_name, []).extend(
-                [a.avatar_id for a in generated]
-            )
+        self._run(AddAvatarBatch(generated, config.group_name), generated)
         return generated
 
 
@@ -752,6 +811,10 @@ class Project:
 
     # ---------------------------------------------------------- internals
     def _run(self, cmd, result=None):
+        if self._command_batch is not None:
+            cmd.apply(self)
+            self._command_batch.append(cmd)
+            return result if result is not None else cmd
         if self.record:
             self.history.do(cmd, self)
         else:
@@ -777,7 +840,10 @@ class Project:
         if op.target_type == "avatar":
             self.avatar(str(op.target_value))
         elif op.target_type == "group":
-            if op.target_value not in self.avatar_groups:
+            if (
+                op.target_value not in self.avatar_groups
+                and op.target_value not in self.population_groups
+            ):
                 raise UnknownReferenceError(f"group {op.target_value!r}")
 
     def _insert_material(self, m: Material) -> None:
@@ -809,6 +875,13 @@ class Project:
     def _insert_avatar(self, a: Avatar) -> None:
         self.avatars.append(a)
 
+    def _replace_avatar(self, avatar_id: str, avatar: Avatar) -> None:
+        for index, current in enumerate(self.avatars):
+            if current.avatar_id == avatar_id:
+                self.avatars[index] = avatar
+                return
+        raise UnknownReferenceError(f"avatar {avatar_id!r}")
+
     def _drop_avatar(self, avatar_id: str) -> dict[str, list[str]]:
         snapshot = {k: list(v) for k, v in self.avatar_groups.items() if avatar_id in v}
         self.avatars[:] = [a for a in self.avatars if a.avatar_id != avatar_id]
@@ -829,6 +902,7 @@ class Project:
             self.granulo.append(config)
         if pop.group_name:
             self.population_groups.setdefault(pop.group_name, []).append(pop.population_id)
+            self.avatar_groups.setdefault(pop.group_name, []).append(pop.population_id)
 
     def _drop_population(self, population_id: str) -> None:
         self.populations[:] = [p for p in self.populations if p.population_id != population_id]
@@ -837,6 +911,11 @@ class Project:
             self.population_groups[name] = [i for i in ids if i != population_id]
             if not self.population_groups[name]:
                 del self.population_groups[name]
+        for name, ids in list(self.avatar_groups.items()):
+            if population_id in ids:
+                self.avatar_groups[name] = [i for i in ids if i != population_id]
+                if not self.avatar_groups[name]:
+                    del self.avatar_groups[name]
 
     def _insert_law(self, law: ContactLaw) -> None:
         self.laws.append(law)
@@ -859,9 +938,21 @@ class Project:
         if 0 <= index < len(self.visibility):
             self.visibility.pop(index)
 
+    def _replace_see(self, index: int, rule: VisibilityRule) -> None:
+        if 0 <= index < len(self.visibility):
+            self.visibility[index] = rule
+            return
+        raise ValidationError(f"visibility rule index {index} out of range")
+
     def _insert_dof(self, op: DOFOperation) -> int:
         self.operations.append(op)
         return len(self.operations) - 1
+
+    def _replace_dof(self, index: int, operation: DOFOperation) -> None:
+        if 0 <= index < len(self.operations):
+            self.operations[index] = operation
+            return
+        raise ValidationError(f"DOF operation index {index} out of range")
 
     def _drop_dof(self, index: int) -> None:
         if 0 <= index < len(self.operations):

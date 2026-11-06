@@ -4,9 +4,13 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import inspect
+import re
 from collections.abc import Mapping
 from enum import Enum
+from functools import lru_cache
 from typing import Any
+
+from lmgc90_core.lmgc_dicts import load_capability_snapshot
 
 
 _CATALOG_NAMES = (
@@ -16,7 +20,10 @@ _CATALOG_NAMES = (
     "contactorOptionalOptions",
     "dimension2contactor",
     "dimension2element",
+    "discreteElements",
+    "element2ddl",
     "geo2element",
+    "jointElements",
     "modelOptions",
     "materialOptions",
     "materialTypeOptions",
@@ -29,6 +36,8 @@ _CATALOG_NAMES = (
     "listeAntagoniste",
     "listeContactor",
     "listeTactBehav",
+    "checkModelOptions",
+    "rigidElements",
     "rigidContactor",
     "pointContactor",
 )
@@ -39,6 +48,11 @@ def _safe_value(value: Any) -> Any:
         return _safe_value(value.value)
     if isinstance(value, Mapping):
         return {str(key): _safe_value(item) for key, item in value.items()}
+    if hasattr(value, "root") and hasattr(value, "childs"):
+        return {
+            "root": _safe_value(value.root),
+            "children": [_safe_value(child) for child in value.childs],
+        }
     if isinstance(value, (list, tuple, set)):
         return [_safe_value(item) for item in value]
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -49,13 +63,32 @@ def _safe_value(value: Any) -> Any:
 def _describe_callable(name: str, member: Any) -> dict[str, Any]:
     parameters: list[dict[str, Any]] = []
     signature_text = None
+    arity = None
+    arity_source = "unknown"
     try:
         signature = inspect.signature(member)
     except (TypeError, ValueError):
         signature = None
     if signature is not None:
         signature_text = str(signature)
-        for parameter in signature.parameters.values():
+        signature_parameters = tuple(signature.parameters.values())
+        has_variadic = any(
+            parameter.kind in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            )
+            for parameter in signature_parameters
+        )
+        if not has_variadic:
+            arity = sum(
+                parameter.kind in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                )
+                for parameter in signature_parameters
+            )
+            arity_source = "signature"
+        for parameter in signature_parameters:
             required = parameter.default is inspect.Parameter.empty
             default = None if required else _safe_value(parameter.default)
             parameters.append({
@@ -65,11 +98,22 @@ def _describe_callable(name: str, member: Any) -> dict[str, Any]:
                 "default": default,
             })
 
+    doc = inspect.getdoc(member)
+    if arity is None and doc:
+        first_line = doc.strip().splitlines()[0]
+        match = re.match(r"^[\w.]*\((.*?)\)", first_line)
+        if match is not None:
+            arguments = match.group(1).strip()
+            arity = 0 if not arguments else len(arguments.split(","))
+            arity_source = "docstring"
+
     return {
         "name": name,
         "signature": signature_text,
         "parameters": parameters,
-        "doc": inspect.getdoc(member),
+        "arity": arity,
+        "arity_source": arity_source,
+        "doc": doc,
     }
 
 
@@ -87,10 +131,11 @@ def _public_callables(module: Any) -> dict[str, dict[str, Any]]:
     return result
 
 
-def _load_compatibility_catalogs() -> dict[str, Any]:
+def _runtime_catalogs() -> dict[str, Any]:
     module = None
     for module_name in (
         "pylmgc90.pre.config.lmgc90dicts",
+        "pylmgc90.pre.config.lmgc90_dicts",
         "pylmgc90.pre_lmgc.config.lmgc90dicts",
     ):
         try:
@@ -107,11 +152,52 @@ def _load_compatibility_catalogs() -> dict[str, Any]:
     }
 
 
+def _snapshot_catalogs(version: str | None = None) -> dict[str, Any]:
+    try:
+        return load_capability_snapshot(version)["catalogs"]
+    except LookupError:
+        return {}
+
+
+def _installed_runtime_version() -> str | None:
+    try:
+        return importlib.metadata.version("pylmgc90")
+    except importlib.metadata.PackageNotFoundError:
+        try:
+            runtime = importlib.import_module("pylmgc90")
+        except ImportError:
+            return None
+        version = getattr(runtime, "__version__", None)
+        return version if isinstance(version, str) and version else None
+
+
+@lru_cache(maxsize=1)
+def _catalog_data() -> tuple[str, dict[str, Any]]:
+    runtime_catalogs = _runtime_catalogs()
+    if runtime_catalogs:
+        return "INTROSPECTION", runtime_catalogs
+    snapshot_catalogs = _snapshot_catalogs(_installed_runtime_version())
+    if snapshot_catalogs:
+        return "SNAPSHOT", snapshot_catalogs
+    return "FALLBACK", {}
+
+
+@lru_cache(maxsize=1)
+def load_compatibility_catalogs() -> dict[str, Any]:
+    """Load runtime catalogs, or bundled snapshot catalogs when runtime is absent."""
+    return _catalog_data()[1]
+
+
+def compatibility_catalog_source() -> str:
+    """Return whether runtime, bundled snapshot, or core fallback data is active."""
+    return _catalog_data()[0]
+
+
 def inspect_runtime() -> dict[str, Any]:
     """Return pylmgc90 callables and compatibility data, or an unavailable marker.
 
-    Imports of pylmgc90 are kept inside this function. Other engine/core package
-    initialization may independently probe the optional compatibility catalogs.
+    Imports of pylmgc90 stay in this module and are only executed when runtime
+    data is requested. Core package initialization never probes the runtime.
     """
     try:
         pylmgc = importlib.import_module("pylmgc90")
@@ -138,5 +224,5 @@ def inspect_runtime() -> dict[str, Any]:
             "pre": _public_callables(pre),
             "chipy": _public_callables(chipy),
         },
-        "catalogs": _load_compatibility_catalogs(),
+        "catalogs": load_compatibility_catalogs(),
     }

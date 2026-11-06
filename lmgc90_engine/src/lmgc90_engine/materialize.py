@@ -5,12 +5,12 @@ Does not write DATBOX (see datbox.py / EngineSession.write_datbox).
 
 Material property allow-lists and orthotropic field names come from
 ``lmgc90_core.types`` (single source of truth with the GUI schema).
-Contact-law parameter vocab is also owned by types (optional live
-import from pylmgc90.pre.config.lmgc90dicts).
+Runtime dictionary introspection is owned by lmgc90_engine.schema.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Optional
 
 from lmgc90_core.entities import Avatar, ContactLaw, Material, Model, VisibilityRule
@@ -193,12 +193,16 @@ def materialize_project(project: Project) -> MaterializedScene:
 
 
 def _bodies_for_group(project, scene, group_name: str) -> list:
-    ids = project.avatar_groups.get(group_name, []) or []
-    return [
-        scene.body_by_avatar_id[aid]
-        for aid in ids
-        if aid in scene.body_by_avatar_id
+    avatar_ids = project.avatar_groups.get(group_name, []) or []
+    population_ids = project.population_groups.get(group_name, []) or []
+    bodies = [
+        scene.body_by_avatar_id[avatar_id]
+        for avatar_id in avatar_ids
+        if avatar_id in scene.body_by_avatar_id
     ]
+    for population_id in population_ids:
+        bodies.extend(scene.bodies_by_population_id.get(population_id, []))
+    return bodies
 
 
 # ---------------------------------------------------------------------------
@@ -225,22 +229,49 @@ _ENGINE_EXTRA_MATERIAL_KEYS: dict[str, set[str]] = {
 # Orthotropic property names — single source: types.ORTHOTROPIC_FIELDS_3D
 _ORTHOTROPIC_FIELDS = tuple(ORTHOTROPIC_FIELDS_3D)
 
-# Allow-list per material type:
-#   1) live MATERIAL_OPTIONS from types (pylmgc90dicts or fallback)
-#   2) union with GUI schema field names
-#   3) engine-only extras (e.g. therm_cpl)
-_MATERIAL_OPTIONS: dict[str, set[str]] = {}
-_all_mtypes = set(MATERIAL_OPTIONS) | set(MATERIAL_PROPERTY_SCHEMA) | set(_ENGINE_EXTRA_MATERIAL_KEYS)
-for mtype in _all_mtypes:
-    names: set[str] = set(MATERIAL_OPTIONS.get(mtype, ()))
-    for name, _default, _kind in MATERIAL_PROPERTY_SCHEMA.get(mtype, ()):
-        names.add(name)
-    names |= _ENGINE_EXTRA_MATERIAL_KEYS.get(mtype, set())
-    if mtype != "EXTERNAL" and "density" not in names and mtype in MATERIAL_PROPERTY_SCHEMA:
-        # density is a top-level Material field for most types
-        if mtype != "DISCRETE":
+@lru_cache(maxsize=1)
+def _material_options() -> dict[str, set[str]]:
+    from .schema.introspection import load_compatibility_catalogs
+
+    catalogs = load_compatibility_catalogs()
+    runtime_options = next((
+        catalogs[name] for name in (
+            "materialTypeOptions", "materialOptions", "bulkBehavOptions",
+            "bulk_behav_options", "material_type_options",
+        ) if isinstance(catalogs.get(name), dict)
+    ), {})
+    options_by_type = dict(MATERIAL_OPTIONS)
+    options_by_type.update({
+        str(material_type): tuple(
+            str(option) for option in (
+                options.keys() if isinstance(options, dict) else options
+            )
+        )
+        for material_type, options in runtime_options.items()
+        if isinstance(options, (dict, list, tuple))
+    })
+
+    result: dict[str, set[str]] = {}
+    material_types = (
+        set(options_by_type)
+        | set(MATERIAL_PROPERTY_SCHEMA)
+        | set(_ENGINE_EXTRA_MATERIAL_KEYS)
+    )
+    for material_type in material_types:
+        names = set(options_by_type.get(material_type, ()))
+        names.update(
+            field[0] for field in MATERIAL_PROPERTY_SCHEMA.get(material_type, ())
+        )
+        names.update(_ENGINE_EXTRA_MATERIAL_KEYS.get(material_type, set()))
+        if (
+            material_type != "EXTERNAL"
+            and "density" not in names
+            and material_type in MATERIAL_PROPERTY_SCHEMA
+            and material_type != "DISCRETE"
+        ):
             names.add("density")
-    _MATERIAL_OPTIONS[mtype] = names
+        result[material_type] = names
+    return result
 
 _STALE_VISCOUS_OPTIONS = (
     "eta", "viscosity",
@@ -249,7 +280,7 @@ _STALE_VISCOUS_OPTIONS = (
 
 def _make_material(pre, m: Material) -> Any:
     mtype = m.material_type.value
-    allowed = _MATERIAL_OPTIONS.get(mtype, set())
+    allowed = _material_options().get(mtype, set())
     kwargs: dict[str, Any] = dict(
         name=lmgc5(m.name),
         materialType=mtype,
@@ -386,11 +417,7 @@ def _apply_dof(project: Project, scene: MaterializedScene, op) -> None:
             )
         targets = [body]
     elif op.target_type == "group":
-        ids = project.avatar_groups.get(str(op.target_value), [])
-        for aid in ids:
-            body = scene.body_by_avatar_id.get(aid)
-            if body is not None:
-                targets.append(body)
+        targets = _bodies_for_group(project, scene, str(op.target_value))
         if not targets:
             raise MaterializationError(
                 f"DOF target group {op.target_value!r} has no avatars in the scene"

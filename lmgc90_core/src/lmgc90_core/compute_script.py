@@ -24,6 +24,7 @@ from .chipy_rules import (
     stop_criterion_lines,
     takes_no_id,
 )
+from .ids import parse_particle_id
 from .project import Project
 
 
@@ -147,7 +148,8 @@ class ComputeScriptGenerator:
 
     def generate_string(self, params: Dict[str, Any]) -> str:
         """Retourne le script complet sous forme de chaine."""
-        p   = {**self._DEFAULTS, **params}
+        inferred_routines = infer_chipy_contact_routines(self.project)
+        p   = {**self._DEFAULTS, **inferred_routines, **params}
         buf = StringIO()
         w   = buf.write
 
@@ -178,8 +180,14 @@ class ComputeScriptGenerator:
             f'use_{name}' for name in (*DETECTORS_2D, *DETECTORS_3D)
         }
         detector_params = params
-        if not any(key in params for key in detector_flags) and not visibility:
-            detector_params = {'use_DKDKx': True} if dim == 2 else {}
+        if not any(key in params for key in detector_flags):
+            detector_params = inferred_routines
+            if (
+                not visibility
+                and dim == 2
+                and not any(inferred_routines.get(f'use_{name}') for name in DETECTORS_2D)
+            ):
+                detector_params = {'use_DKDKx': True}
         all_tacts = select_detectors(dim, detector_params, visibility)
 
         use_multi   = p.get('use_multi_step', False)
@@ -322,43 +330,58 @@ class ComputeScriptGenerator:
         def _resolve_group_ids(grp_name: str):
             """
             Retourne les numéros de corps LMGC90 (1-based, en chaînes) pour
-            les avatars du groupe donné.
-
-            Deux stratégies selon l'origine de l'avatar :
-            - Avatar NORMAL  → position dans state.avatars + 1
-            - Avatar FACTORY → body_index_start + i depuis FactoryConfig
-              (les parois de conteneur décalent les indices, l'index de position
-              serait faux ; seul body_collection.pkl / FactoryConfig est fiable)
+            les membres du groupe : avatars AoS, puis particules SoA.
             """
             if not grp_name or self.project is None:
                 return []
             groups = getattr(self.project, "avatar_groups", None) or {}
-            avatar_ids = groups.get(grp_name, [])
-            if not avatar_ids:
+            member_ids = list(groups.get(grp_name, []))
+            population_groups = getattr(self.project, "population_groups", None) or {}
+            member_ids.extend(
+                population_id
+                for population_id in population_groups.get(grp_name, [])
+                if population_id not in member_ids
+            )
+            if not member_ids:
                 return []
-
-            factory_body_map: dict = {}
-            # ParticleFactory optional — body indices from avatar order in Project
 
             id_to_idx = {
                 av.avatar_id: i for i, av in enumerate(self.project.avatars)
             }
+            population_body_indices: dict[str, tuple[int, int]] = {}
+            next_body_index = len(self.project.avatars) + 1
+            for population in self.project.populations:
+                population_body_indices[population.population_id] = (
+                    next_body_index, len(population),
+                )
+                next_body_index += len(population)
 
             result = []
             missing = []
-            for aid in avatar_ids:
-                if aid in factory_body_map:
-                    # Numéro exact depuis FactoryConfig
-                    result.append(str(factory_body_map[aid]))
-                elif aid in id_to_idx:
+            for aid in member_ids:
+                if aid in id_to_idx:
                     # Position dans state.avatars + 1 (correct pour non-factory)
                     result.append(str(id_to_idx[aid] + 1))
+                elif aid in population_body_indices:
+                    first, count = population_body_indices[aid]
+                    result.extend(str(index) for index in range(first, first + count))
                 else:
+                    particle = parse_particle_id(aid)
+                    population = (
+                        population_body_indices.get(particle[0])
+                        if particle is not None else None
+                    )
+                    if population is not None and particle is not None:
+                        first, count = population
+                        if 0 <= particle[1] < count:
+                            result.append(str(first + particle[1]))
+                            continue
                     missing.append(aid)
             if missing:
                 msg = (
-                    f"Groupe '{grp_name}' : {len(missing)} avatar_id introuvable(s) — "
-                    f"ignoré(s) (résolu={len(result)}/{len(avatar_ids)}). "
+                    f"Groupe '{grp_name}' : {len(missing)} identifiant(s) introuvable(s) — "
+                    f"ignoré(s) (résolu={len(member_ids) - len(missing)}/"
+                    f"{len(member_ids)} membres, {len(result)} corps). "
                     f"IDs: {', '.join(m[:8] + '…' for m in missing[:10])}"
                 )
                 if self.journal is not None:
@@ -798,6 +821,7 @@ class ComputeScriptGenerator:
             w('\n')
 
         # c. Detection de contact
+        # si use_SelectProx_macro est activé autres sont désactivés
         L("chipy.utilities_logMes('SELECT PROX TACTORS')")
         if p.get('use_SelectProx_macro'):
             L('chipy.SelectProxTactors()')
@@ -806,8 +830,6 @@ class ComputeScriptGenerator:
         elif all_tacts:
             for t in all_tacts:
                 L(f'chipy.{t}_SelectProxTactors()')
-        else:
-            L('chipy.SelectProxTactors()')
         w('\n')
 
         # d. Resolution

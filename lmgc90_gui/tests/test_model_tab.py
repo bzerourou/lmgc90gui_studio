@@ -105,6 +105,7 @@ def test_model_tab_shows_physics_specific_finite_element_parameters():
     assert set(tab.option_widgets) == {
         "kinematic", "mass_storage", "capacity_storage", "material",
         "anisotropy", "external_model", "physical_type", "convection_type",
+        "formulation",
     }
 
     tab.physics_combo.setCurrentText("MECAx")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lmgc90-core"
-version = "0.1.2"
+version = "0.7.0"
 description = "Headless scientific core for LMGC90 scene preparation — no Qt, no pylmgc90."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,4 +28,4 @@ python_files = ["test_*.py"]
 addopts = "-q --tb=short"
 
 [tool.setuptools.package-data]
-lmgc90_core = ["data/meshes/*"]
+lmgc90_core = ["data/meshes/*", "capabilities/*.json"]

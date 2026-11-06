@@ -4,6 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from lmgc90_gui import __version__ as APP_VERSION
+from lmgc90_engine.schema import compatibility_catalog_source
+
 from ..controller.project_controller import ProjectController
 from ..controller.signals import qt_available
 
@@ -43,7 +46,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def __init__(self, controller: Optional[ProjectController] = None):
             super().__init__()
             self.controller = controller or ProjectController()
-            self.setWindowTitle(f"LMGC90_GUI Studio v0.7.0 — {self.controller.project.name}")
+            self.setWindowTitle(f"LMGC90_GUI Studio v{APP_VERSION} — {self.controller.project.name}")
             self.resize(1280, 720)
             apply_app_style(self)
             self._build_ui()
@@ -306,15 +309,17 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def _update_status(self) -> None:
             p = self.controller.project
             n_vars = len(p.dynamic_vars)
+            source = compatibility_catalog_source()
             self.statusBar().showMessage(
                 f"📁 {p.name}  ·  {p.dimension}D  ·  🔵 bodies={p.n_bodies}  ·  "
                 f"𝑥 vars={n_vars}  ·  "
+                f"{source}  ·  "
                 f"pylmgc={'✅' if self.controller.pylmgc_available() else '—'}"
             )
-            self.setWindowTitle(f"LMGC90_GUI Studio v0.7.0 — {p.name}")
+            self.setWindowTitle(f"LMGC90_GUI Studio v{APP_VERSION} — {p.name}")
 
         def _on_error(self, msg: str) -> None:
-            QMessageBox.warning(self, "LMGC90_GUI Studio v0.7.0", msg)
+            QMessageBox.warning(self, f"LMGC90_GUI Studio v{APP_VERSION}", msg)
 
         def _on_loaded(self) -> None:
             self._update_status()
@@ -614,7 +619,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def _open_docs(self) -> None:
             # vers un lien externe (docs en ligne)
             import webbrowser
-            webbrowser.open("https://github.com/bzerourou/lmgc90gui_studio/blob/main/docs/en/overview.md")
+            webbrowser.open("https://github.com/bzerourou/lmgc90gui_studio/blob/main/docs/fr/overview.md")
 
         def _on_refresh_viewer(self) -> None:
             try:

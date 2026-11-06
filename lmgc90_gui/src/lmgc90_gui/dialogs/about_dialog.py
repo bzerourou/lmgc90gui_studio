@@ -10,6 +10,10 @@ def create_about_dialog(parent=None):
     except Exception:
         core_v = "?"
     try:
+        from lmgc90_engine import __version__ as engine_v
+    except Exception:
+        engine_v = "?"
+    try:
         from lmgc90_gui import __version__ as gui_v
     except Exception:
         gui_v = "?"
@@ -20,7 +24,9 @@ def create_about_dialog(parent=None):
             self.setWindowTitle("About LMGC90_GUI")
             self.resize(520, 420)
             layout = QVBoxLayout(self)
-            layout.addWidget(QLabel(f"<b>LMGC90_GUI</b>  gui={gui_v}  core={core_v}"))
+            layout.addWidget(QLabel(
+                f"<b>LMGC90_GUI Studio</b>  gui={gui_v}  engine={engine_v}  core={core_v}"
+            ))
             text = QTextEdit()
             text.setReadOnly(True)
             text.setHtml("""

@@ -464,27 +464,27 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
             tip="chipy.DKJCx_SelectProxTactors() — detecteur officiel.",
         )
         self._cb_DKKDx = _cb(
-            "DKKDx  — DISKx / POLYG — disque/polygone",
+            "DKKDx  — DISKx / xKSID",
             tip="chipy.DKKDx_SelectProxTactors() — detecteur officiel.",
         )
         self._cb_DKPLx = _cb(
-            "DKPLx  — DISKx / PLANx — disque/plan",
-            tip="chipy.DKPLx_SelectProxTactors() — detecteur officiel.",
+            "DKPLx  — DISKx / POLYG — disque/polygone",
+            tip="chipy.DKPLx_SelectProxTactors() — détecteur officiel.",
         )
         self._cb_P2P2L = _cb(
             "P2P2L  — PT2DL / PT2DL — point/point linéaire",
             tip="chipy.P2P2L_SelectProxTactors() — detecteur officiel.",
         )
         self._cb_PLALp = _cb(
-            "PLALp  — PLANx / ALpxx — plan/ligne MAILx",
+            "PLALp  — POLYG / ALpxx — polygone/ligne MAILx",
             tip="chipy.PLALp_SelectProxTactors() — detecteur officiel.",
         )
         self._cb_PLJCx = _cb(
-            "PLJCx  — PLANx / JONCx — plan/jonc",
+            "PLJCx  — POLYG / JONCx — polygone/jonc",
             tip="chipy.PLJCx_SelectProxTactors() — detecteur officiel.",
         )
         self._cb_PLPLx = _cb(
-            "PLPLx  — PLANx / PLANx — plan/plan",
+            "PLPLx  — POLYG / POLYG — polygone/polygone",
             tip="chipy.PLPLx_SelectProxTactors() — detecteur officiel.",
         )
         self._cb_PTPT2 = _cb(
@@ -1393,8 +1393,8 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         ("mp_solver_GetBrancheValues", "Valeurs des branches du solveur mp", 1),
     ]
 
-    # Arity follows the lmgc90_user_2025 Python API; None means the routine is
-    # not present in that reference version (the catalogue remains cross-version).
+    # Arity follows the lmgc90_user_2025 Python API; unavailable routines are
+    # omitted so every entry can be called in the reference version.
     _SET_FUNCS = [
         # --- CDCDx (Contacteur-Contacteur) ----------------------------------------
         ("CDCDx_SetContactRadius", "Rayon de contact du CDCDx", 1),
@@ -1560,54 +1560,12 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         ("nlgs_SetWithQuickScramble", "Avec mélange rapide pour nlgs", 0),
 
         ("overall_SetWorkingDirectory", "Répertoire de travail pour overall", 1),
-        ("overall_SetWorkingFileName", "Nom de fichier de travail pour overall", None),
 
-        ("poroMAILx_SetCoroAllBodies", "Corps tous pour poroMAILx", None),
-        ("poroMAILx_SetCoroBody", "Corps pour poroMAILx", None),
-        ("poroMAILx_SetEquilibriumNorm", "Norme d'équilibre pour poroMAILx", None),
-        ("poroMAILx_SetInvisible", "Invisible pour poroMAILx", None),
-        ("poroMAILx_SetInvisibleVlocyDrivenDof", "Invisible VlocyDrivenDof pour poroMAILx", None),
         ("poroMAILx_SetPreconAllBodies", "Préconditionnement tous pour poroMAILx", 0),
-        ("poroMAILx_SetPreconBody", "Préconditionnement pour poroMAILx", None),
-        ("poroMAILx_SetRVDrivenDofValue", "Valeur Dof RVDriven pour poroMAILx", None),
-        ("poroMAILx_SetRVDrivenDofs", "Dofs RVDriven pour poroMAILx", None),
-        ("poroMAILx_SetRigidAllBodies", "Corps rigides tous pour poroMAILx", None),
-        ("poroMAILx_SetRigidBody", "Corps rigide pour poroMAILx", None),
-        ("poroMAILx_SetScalarFieldByElement", "Champ scalaire par élément pour poroMAILx", None),
-        ("poroMAILx_SetScalarFieldByNode", "Champ scalaire par nœud pour poroMAILx", None),
-        ("poroMAILx_SetTolCoro", "Tolérance pour poroMAILx", None),
-        ("poroMAILx_SetVectorFieldByElement", "Champ vectoriel par élément pour poroMAILx", 3),
-        ("poroMAILx_SetVectorFieldByNode", "Champ vectoriel par nœud pour poroMAILx", None),
-        ("poroMAILx_SetVisible", "Visible pour poroMAILx", None),
-        ("poroMAILx_SetVisibleVlocyDrivenDof", "Visible VlocyDrivenDof pour poroMAILx", None),
         ("poroMAILx_SetMecaScalarFieldByElement", "Champ mécanique scalaire par élément pour poroMAILx", 3),
         ("poroMAILx_SetMecaScalarFieldByNode", "Champ mécanique scalaire par nœud pour poroMAILx", 3),
         ("poroMAILx_SetMecaVectorFieldByElement", "Champ mécanique vectoriel par élément pour poroMAILx", 5),
         ("poroMAILx_SetMecaVectorFieldByNode", "Champ mécanique vectoriel par nœud pour poroMAILx", 5),
-        ("poroMAILx_SetPreconAllBodies", "Préconditionnement tous pour poroMAILx", 0),
-        ("poroMAILx_SetPreconBody", "Préconditionnement pour poroMAILx", None),
-        ("poroMAILx_SetRVDrivenDofValue", "Valeur Dof RVDriven pour poroMAILx", None),
-        ("poroMAILx_SetRVDrivenDofs", "Dofs RVDriven pour poroMAILx", None),
-        ("poroMAILx_SetRigidAllBodies", "Corps rigides tous pour poroMAILx", None),
-        ("poroMAILx_SetRigidBody", "Corps rigide pour poroMAILx", None),
-        ("poroMAILx_SetScalarFieldByElement", "Champ scalaire par élément pour poroMAILx", None),
-        ("poroMAILx_SetScalarFieldByNode", "Champ scalaire par nœud pour poroMAILx", None),
-        ("poroMAILx_SetTolCoro", "Tolérance pour poroMAILx", None),
-        ("poroMAILx_SetVectorFieldByElement", "Champ vectoriel par élément pour poroMAILx", 3),
-        ("poroMAILx_SetVectorFieldByNode", "Champ vectoriel par nœud pour poroMAILx", None),
-        ("poroMAILx_SetVisible", "Visible pour poroMAILx", None),
-        ("poroMAILx_SetVisibleVlocyDrivenDof", "Visible VlocyDrivenDof pour poroMAILx", None),
-        ("poroMAILx_SetMecaScalarFieldByElement", "Champ mécanique scalaire par élément pour poroMAILx", 3),
-        ("poroMAILx_SetMecaScalarFieldByNode", "Champ mécanique scalaire par nœud pour poroMAILx", 3),
-        ("poroMAILx_SetMecaVectorFieldByElement", "Champ mécanique vectoriel par élément pour poroMAILx", 5),
-        ("poroMAILx_SetMecaVectorFieldByNode", "Champ mécanique vectoriel par nœud pour poroMAILx", 5),
-        ("poroMAILx_SetPreconAllBodies", "Préconditionnement tous pour poroMAILx", 0),
-        ("poroMAILx_SetPreconBody", "Préconditionnement pour poroMAILx", None),
-        ("poroMAILx_SetRVDrivenDofValue", "Valeur Dof RVDriven pour poroMAILx", None),
-        ("poroMAILx_SetRVDrivenDofs", "Dofs RVDriven pour poroMAILx", None),
-        ("poroMAILx_SetRigidAllBodies", "Corps rigides tous pour poroMAILx", None),
-        ("poroMAILx_SetRigidBody", "Corps rigide pour poroMAILx", None),
-        ("poroMAILx_SetTherScalarFieldByElement", "Champ thermique scalaire par élément pour poroMAILx", 3),    
         ("poroMAILx_SetTherScalarFieldByElement", "Champ thermique scalaire par élément pour poroMAILx", 3),
         ("poroMAILx_SetTherScalarFieldByNode", "Champ thermique scalaire par nœud pour poroMAILx", 4),
         ("poroMAILx_SetTherVectorFieldByElement", "Champ thermique vectoriel par élément pour poroMAILx", 5),
@@ -1615,50 +1573,12 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         ("poroMAILx_SetVlocyDrivenDof", "Dof VlocyDriven pour poroMAILx", 4),
 
         ("postpro_SetCircularSelectionZone", "Zone de sélection circulaire pour postpro", 3),
-        ("postpro_SetRectangularSelectionZone", "Zone de sélection rectangulaire pour postpro", None),
-        ("postpro_SetSelectionZone", "Zone de sélection pour postpro", None),
 
-        ("tact_behav_SetCohesionParameters", "Paramètres de cohésion pour tact_behav", None),
-        ("tact_behav_SetDampingParameters", "Paramètres d'amortissement pour tact_behav", None),
-        ("tact_behav_SetElasticityParameters", "Paramètres d'élasticité pour tact_behav", None),
-        ("tact_behav_SetFrictionParameters", "Paramètres de frottement pour tact_behav", None),
-        ("tact_behav_SetLawInternalComment", "Commentaires internes sur la loi pour tact_behav", None),
-        ("tact_behav_SetLawName", "Nom de la loi pour tact_behav", None),
-        ("tact_behav_SetLawParameters", "Paramètres de la loi pour tact_behav", None),
-        ("tact_behav_SetLawType", "Type de loi pour tact_behav", None),
-        ("tact_behav_SetLawVersion", "Version de la loi pour tact_behav", None),
-        ("tact_behav_SetNbLawParameters", "Nombre de paramètres de la loi pour tact_behav", None),
-        ("tact_behav_SetNbTactBehav", "Nombre de comportements de contact pour tact_behav", None),
-        ("tact_behav_SetNormalDampingParameters", "Paramètres d'amortissement normal pour tact_behav", None),
-        ("tact_behav_SetNormalElasticityParameters", "Paramètres d'élasticité normale pour tact_behav", None),
-        ("tact_behav_SetNormalFrictionParameters", "Paramètres de frottement normal pour tact_behav", None),
-        ("tact_behav_SetNormalLawParameters", "Paramètres de la loi normale pour tact_behav", None),
-        ("tact_behav_SetNormalLawType", "Type de loi normale pour tact_behav", None),
-        ("tact_behav_SetNormalLawVersion", "Version de la loi normale pour tact_behav", None),
-        ("tact_behav_SetNormalNbLawParameters", "Nombre de paramètres de la loi normale pour tact_behav", None),
-        ("tact_behav_SetNormalStiffnessParameters", "Paramètres de raideur normale pour tact_behav", None),
         ("tact_behav_SetParam", "Paramètre pour tact_behav", 3),
         ("tact_behav_SetPressureParameters", "Paramètres de pression pour tact_behav", 3),
         ("tact_behav_SetRNcap", "Capacité RN pour tact_behav", 1),
-        ("tact_behav_SetTangentialDampingParameters", "Paramètres d'amortissement tangentiels pour tact_behav", None),
-        ("tact_behav_SetTangentialElasticityParameters", "Paramètres d'élasticité tangentiels pour tact_behav", None),
-        ("tact_behav_SetTangentialFrictionParameters", "Paramètres de frottement tangentiels pour tact_behav", None),
-        ("tact_behav_SetTangentialLawParameters", "Paramètres de la loi tangentiels pour tact_behav", None),
-        ("tact_behav_SetTangentialLawType", "Type de loi tangentiels pour tact_behav", None),
-        ("tact_behav_SetTangentialLawVersion", "Version de la loi tangentiels pour tact_behav", None),
-        ("tact_behav_SetTangentialNbLawParameters", "Nombre de paramètres de la loi tangentiels pour tact_behav", None),
-        ("tact_behav_SetTangentialStiffnessParameters", "Paramètres de raideur tangentiels pour tact_behav", None),
         ("tact_behav_SetCZMwithInitialFriction", "CZM avec frottement initial pour tact_behav", 1),
-        ("tact_behav_SetCZMwithInitialFrictionParameters", "Paramètres de CZM avec frottement initial pour tact_behav", None),
-        ("tact_behav_SetCZMwithInitialFrictionLawParameters", "Paramètres de la loi CZM avec frottement initial pour tact_behav", None),
-        ("tact_behav_SetCZMwithInitialFrictionLawType", "Type de loi CZM avec frottement initial pour tact_behav", None),
-        ("tact_behav_SetCZMwithInitialFrictionLawVersion", "Version de la loi CZM avec frottement initial pour tact_behav", None),
-        ("tact_behav_SetCZMwithInitialFrictionNbLawParameters", "Nombre de paramètres de la loi CZM avec frottement initial pour tact_behav", None),
-        ("tact_behav_SetCZMwithInitialFrictionStiffnessParameters", "Paramètres de raideur CZM avec frottement initial pour tact_behav", None),
         ("tact_behav_SetDilatancyParameters", "Paramètres de dilatance pour tact_behav", 2),
-        ("tact_behav_SetParam", "Paramètre pour tact_behav", 3),
-        ("tact_behav_SetPressureParameters", "Paramètres de pression pour tact_behav", 3),
-        ("tact_behav_SetRNcap", "Capacité RN pour tact_behav", 1),
         
         ("therMAILx_SetScalarFieldByElement", "Champ scalaire par élément pour therMAILx", 3),
         ("therMAILx_SetScalarFieldByNode", "Champ scalaire par nœud pour therMAILx", 3),

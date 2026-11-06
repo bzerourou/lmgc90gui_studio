@@ -12,14 +12,14 @@ from lmgc90_core import DOFOperation, GranuloConfig, Loop, Project, pre
 OUT = Path(__file__).resolve().parent / "_out_granular"
 
 
-def build(n: int = 400, seed: int = 1) -> Project:
+def build(n: int = 50_000, seed: int = 1) -> Project:
     p = Project(name="granular_box", dimension=2)
     p.add(pre.material(name="TDURx", materialType="RIGID", density=2500.0))
     p.add(pre.material(name="WALLx", materialType="RIGID", density=7800.0))
     p.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
 
     floor = pre.smoothWall(
-        l=1.0, h=0.04, center=[0.0, -0.02],
+        l=8.0, h=0.04, center=[4.0, -0.02],
         model="rigid", material="WALLx", color="GRAYx",
     )
     p.add(floor)
@@ -33,7 +33,7 @@ def build(n: int = 400, seed: int = 1) -> Project:
         radius_min=0.008,
         radius_max=0.016,
         container_type="Box2D",
-        container_params={"lx": 0.90, "ly": 0.70},
+        container_params={"lx": 8.0, "ly": 8.0},
         material_name="TDURx",
         model_name="rigid",
         avatar_type="rigidDisk",
@@ -74,7 +74,7 @@ def demo_undo_and_loop() -> None:
 
 def main() -> None:
     demo_undo_and_loop()
-    p = build(n=400)
+    p = build()
     OUT.mkdir(exist_ok=True)
     p.save(OUT / "granular_box.lmgc90")
     (OUT / "pre.py").write_text(p.to_pre_script(), encoding="utf-8")

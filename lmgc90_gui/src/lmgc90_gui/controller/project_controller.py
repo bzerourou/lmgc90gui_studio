@@ -234,27 +234,31 @@ class ProjectController(_QObject):
             raise
 
     def update_avatar(self, avatar_id: str, avatar: Avatar) -> None:
-        for i, a in enumerate(self._project.avatars):
-            if a.avatar_id == avatar_id:
-                # keep stable id
-                avatar.avatar_id = avatar_id
-                self._project.avatars[i] = avatar
-                self._session.mark_dirty()
-                self._emit()
-                return
-        raise ValidationError(f"avatar {avatar_id!r} not found")
+        try:
+            self._project.update_avatar(avatar_id, avatar)
+            self._session.mark_dirty()
+            self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     def update_visibility(self, index: int, rule: VisibilityRule) -> None:
-        if 0 <= index < len(self._project.visibility):
-            self._project.visibility[index] = rule
+        try:
+            self._project.update_visibility(index, rule)
             self._session.mark_dirty()
             self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     def update_dof(self, index: int, op: DOFOperation) -> None:
-        if 0 <= index < len(self._project.operations):
-            self._project.operations[index] = op
+        try:
+            self._project.update_dof(index, op)
             self._session.mark_dirty()
             self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     def remove_material(self, name: str) -> Material:
         try:
@@ -316,13 +320,16 @@ class ProjectController(_QObject):
         self._emit()
 
     def remove_group(self, name: str) -> None:
-        """Delete a group (undoable via empty set + pop)."""
-        if name not in self._project.avatar_groups:
+        """Delete a group through the project history."""
+        if name not in self._project.avatar_groups and name not in self._project.population_groups:
             return
-        self._project.group(name, [])
-        self._project.avatar_groups.pop(name, None)
-        self._session.mark_dirty()
-        self._emit()
+        try:
+            self._project.remove_group(name)
+            self._session.mark_dirty()
+            self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     # ------------------------------------------------------------------ populations / granulo
     def add_population(self, pop: ParticlePopulation) -> ParticlePopulation:
@@ -335,8 +342,9 @@ class ProjectController(_QObject):
                 pop = self._project.deposit(config)
             elif self.pylmgc_available():
                 try:
-                    generated = self._session.run_granulo(config)
-                    pop = self._project.add_population(generated, config)
+                    generated = self._session.run_granulo(
+                        config, add_to_project=False,
+                    )
                 except Exception as eng_exc:
                     try:
                         self.journal.warning(
@@ -345,6 +353,8 @@ class ProjectController(_QObject):
                     except Exception:
                         pass
                     pop = self._project.deposit(config)
+                else:
+                    pop = self._project.add_population(generated, config)
             else:
                 pop = self._project.deposit(config)
             self._session.mark_dirty()
@@ -357,7 +367,9 @@ class ProjectController(_QObject):
     def run_granulo_pylmgc(self, config: GranuloConfig, **kwargs) -> ParticlePopulation:
         """Deposit via engine (pylmgc if available, else fallback grid)."""
         try:
-            generated = self._session.run_granulo(config, **kwargs)
+            generated = self._session.run_granulo(
+                config, **{**kwargs, "add_to_project": False},
+            )
             pop = self._project.add_population(generated, config)
             self._session.mark_dirty()
             self._emit()
@@ -440,17 +452,25 @@ class ProjectController(_QObject):
         return self.add(rule)
 
     def remove_visibility(self, index: int) -> None:
-        self._project._drop_see(index)
-        self._session.mark_dirty()
-        self._emit()
+        try:
+            self._project.remove_visibility(index)
+            self._session.mark_dirty()
+            self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     def add_dof(self, op: DOFOperation) -> DOFOperation:
         return self.add(op)
 
     def remove_dof(self, index: int) -> None:
-        self._project._drop_dof(index)
-        self._session.mark_dirty()
-        self._emit()
+        try:
+            self._project.remove_dof(index)
+            self._session.mark_dirty()
+            self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     def add_postpro(self, cmd: PostProCommand) -> PostProCommand:
         return self.add(cmd)

@@ -35,6 +35,7 @@ MACROS_TO_SHOW = ("ExSolver", "SetDimension", "SelectProxTactors", "ComputeFext"
 MAILX_TOKENS = ("mecaMAILx", "therMAILx", "poroMAILx", "multiMAILx")
 
 problems = 0
+uninspectable_arities = 0
 
 
 def bad(msg: str) -> None:
@@ -84,21 +85,24 @@ def chipy_names_in(source: str) -> Counter:
 
 
 def real_arity(fn) -> int | None:
-    """Nb d'arguments positionnels (signature, sinon 1re ligne de la docstring)."""
+    """Nombre de paramètres positionnels, si la signature est inspectable."""
     try:
-        return len([p for p in inspect.signature(fn).parameters.values()
-                    if p.default is p.empty])
+        parameters = inspect.signature(fn).parameters.values()
+        if not any(p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD) for p in parameters):
+            return sum(p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                       for p in parameters)
     except (TypeError, ValueError):
         pass
     first = (fn.__doc__ or "").strip().splitlines()[:1]
     m = re.match(r"^[\w.]*\((.*?)\)", first[0]) if first else None
     if m is None:
         return None
-    return len([a for a in m.group(1).split(",") if a.strip() and "=" not in a])
+    return len([a for a in m.group(1).split(",") if a.strip()])
 
 
 # --------------------------------------------------------------------------
 def check_catalogs(chipy, path: Path) -> dict[str, list[tuple]]:
+    global uninspectable_arities
     print(f"== 1. Catalogues du dialogue ({path})")
     if not path.is_file():
         bad(f"fichier introuvable : {path} (utilisez --dialog)")
@@ -123,16 +127,23 @@ def check_catalogs(chipy, path: Path) -> dict[str, list[tuple]]:
             bad(f"{len(missing)} nom(s) absents de chipy : " + ", ".join(missing[:10])
                 + (" ..." if len(missing) > 10 else ""))
         mism = []
+        unknown_arity = []
         for e in entries:
             if len(e) > 2 and isinstance(e[2], int) and hasattr(chipy, e[0]):
                 ra = real_arity(getattr(chipy, e[0]))
-                if ra is not None and ra != e[2]:
+                if ra is None:
+                    unknown_arity.append(e[0])
+                elif ra != e[2]:
                     mism.append(f"{e[0]} (catalogue {e[2]}, chipy {ra})")
         if mism:
             bad(f"{len(mism)} arité(s) divergente(s) : " + "; ".join(mism[:6])
                 + (" ..." if len(mism) > 6 else ""))
         if not (dups or none or missing or mism):
             ok("rien à signaler")
+        if unknown_arity:
+            uninspectable_arities += len(set(unknown_arity))
+            info(f"{len(set(unknown_arity))} arité(s) non introspectable(s) "
+                 "(signature Chipy opaque, vérification par signature ignorée)")
     return cats
 
 
@@ -309,7 +320,13 @@ def main() -> int:
     if args.script:
         check_scripts(chipy, args.script)
     check_macros(chipy)
-    print(f"\n{'AUCUN problème' if not problems else str(problems) + ' problème(s) relevé(s)'}")
+    if problems:
+        print(f"\n{problems} problème(s) relevé(s)")
+    elif uninspectable_arities:
+        print(f"\nAucun problème détecté; {uninspectable_arities} arités restent non vérifiables "
+              "à partir des signatures runtime.")
+    else:
+        print("\nAUCUN problème")
     return 1 if problems else 0
 
 

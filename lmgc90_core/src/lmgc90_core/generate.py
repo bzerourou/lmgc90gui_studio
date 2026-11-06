@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from itertools import product
 from dataclasses import dataclass
 from typing import Optional
 
@@ -368,8 +369,6 @@ class NumpyGranulo:
         rng = np.random.default_rng(config.seed)
         dim = config.dimension
         n = int(config.nb_particles)
-        centers = np.empty((0, dim), dtype=np.float64)
-        radii = np.empty(0, dtype=np.float64)
         attempts = 0
         max_attempts = n * self.MAX_ATTEMPTS_FACTOR
         pre_sampled_radii = None
@@ -382,8 +381,20 @@ class NumpyGranulo:
                 if n == 0:
                     raise ValueError("Beta distribution produced no particles")
 
-        while len(radii) < n and attempts < max_attempts:
-            remaining = n - len(radii)
+        centers = np.empty((n, dim), dtype=np.float64)
+        radii = np.empty(n, dtype=np.float64)
+        placed = 0
+        max_radius = (
+            float(np.max(pre_sampled_radii))
+            if pre_sampled_radii is not None
+            else float(config.radius_max)
+        )
+        cell_size = 2.0 * max_radius
+        neighbor_offsets = tuple(product((-1, 0, 1), repeat=dim))
+        spatial_grid: dict[tuple[int, ...], list[int]] = {}
+
+        while placed < n and attempts < max_attempts:
+            remaining = n - placed
             batch = min(self.CANDIDATE_BATCH, remaining * 4)
             if pre_sampled_radii is None:
                 cand_r = sample_radii(config, count=batch, rng=rng)
@@ -395,17 +406,22 @@ class NumpyGranulo:
             cand_c = self._sample(rng, batch_count, config, cand_r)
             mask = self._inside(cand_c, cand_r, config)
             cand_c, cand_r = cand_c[mask], cand_r[mask]
-            if len(centers) > 0 and len(cand_c) > 0:
-                free = self._no_hit_batch(cand_c, cand_r, centers, radii)
-                cand_c, cand_r = cand_c[free], cand_r[free]
             for i in range(len(cand_c)):
-                if len(radii) >= n:
+                if placed >= n:
                     break
                 c, r = cand_c[i], float(cand_r[i])
-                if len(centers) > 0 and not self._no_hit_one(c, r, centers, radii):
+                cell = tuple(
+                    math.floor(float(c[axis]) / cell_size)
+                    for axis in range(dim)
+                )
+                if not self._no_hit_spatial(
+                    c, r, centers, radii, spatial_grid, cell, neighbor_offsets,
+                ):
                     continue
-                centers = np.vstack([centers, c]) if len(centers) else c.reshape(1, dim)
-                radii = np.append(radii, r)
+                centers[placed] = c
+                radii[placed] = r
+                spatial_grid.setdefault(cell, []).append(placed)
+                placed += 1
             attempts += batch_count
 
         atype = AvatarType(config.avatar_type)
@@ -415,12 +431,12 @@ class NumpyGranulo:
             model_name=config.model_name,
             color=config.color,
             origin=AvatarOrigin.GRANULO,
-            centers=centers,
-            radii=radii,
+            centers=centers[:placed],
+            radii=radii[:placed],
             group_name=config.group_name,
         )
         config.population_id = pop.population_id
-        return GranuloResult(pop, n, len(pop), attempts)
+        return GranuloResult(pop, n, placed, attempts)
 
     def _sample(self, rng, n, cfg: GranuloConfig, radii) -> np.ndarray:
         p = cfg.container_params
@@ -505,13 +521,26 @@ class NumpyGranulo:
         return np.ones(len(centers), dtype=bool)
 
     @staticmethod
-    def _no_hit_batch(cand, cand_r, placed, placed_r) -> np.ndarray:
-        diff = cand[:, None, :] - placed[None, :, :]
-        dist2 = np.sum(diff ** 2, axis=2)
-        min2 = (cand_r[:, None] + placed_r[None, :]) ** 2
-        return ~np.any(dist2 < min2, axis=1)
-
-    @staticmethod
-    def _no_hit_one(center, radius, placed, placed_r) -> bool:
-        dist2 = np.sum((placed - center) ** 2, axis=1)
-        return not bool(np.any(dist2 < (placed_r + radius) ** 2))
+    def _no_hit_spatial(
+        center,
+        radius,
+        centers,
+        radii,
+        grid: dict[tuple[int, ...], list[int]],
+        cell: tuple[int, ...],
+        neighbor_offsets: tuple[tuple[int, ...], ...],
+    ) -> bool:
+        for offset in neighbor_offsets:
+            neighbor = tuple(
+                coordinate + delta
+                for coordinate, delta in zip(cell, offset)
+            )
+            for index in grid.get(neighbor, ()):
+                min_distance = radius + radii[index]
+                distance_squared = sum(
+                    (float(center[axis]) - centers[index, axis]) ** 2
+                    for axis in range(len(center))
+                )
+                if distance_squared < min_distance * min_distance:
+                    return False
+        return True

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lmgc90-engine"
-version = "0.1.0"
+version = "0.7.0"
 description = "LMGC90 runtime engine — materialize lmgc90_core.Project into pylmgc90.pre objects, write DATBOX, run granulo."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,9 +12,12 @@ license = {text = "Open Source"}
 authors = [{name = "Bachir Zerourou"}]
 keywords = ["LMGC90", "DEM", "granular", "pylmgc90", "scientific"]
 dependencies = [
-    "lmgc90-core>=0.1.0",
+    "lmgc90-core>=0.7.0",
     "numpy>=1.24",
 ]
+
+[project.scripts]
+lmgc90-engine-snapshot = "lmgc90_engine.schema.snapshot:main"
 
 [project.optional-dependencies]
 pylmgc = ["pylmgc90"]

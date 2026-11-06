@@ -235,7 +235,8 @@ def masonry_wall(project: Project) -> None:
 def rotating_drum(project: Project) -> None:
     """Tambour rotatif 2D — disque creux (xKSID) + dépôt Drum2D, comme MVC.
 
-    - Tambour : ``rigidDisk`` is_Hollow, r=2.2, translation fixée, ω = 0.5 rad/s
+    - Tambour : ``rigidDisk`` is_Hollow centré en [2, 2], translation fixée,
+      ω = 0.5 rad/s
     - Grains : ``GranuloConfig`` Drum2D r=2.0, 200 particules (résolu par controller.deposit)
     - Contacts DISKx/DISKx + DISKx/xKSID
     """
@@ -244,7 +245,7 @@ def rotating_drum(project: Project) -> None:
     ensure_rigid_2d(project, density=2600.0)
 
     drum = project.add(disk(
-        r=2.2, center=[0.0, 0.0], model="rigid", material="TDURx",
+        r=2.2, center=[2.0, 2.0], model="rigid", material="TDURx",
         color="GRAYx", is_hollow=True,
     ))
     project.add(DOFOperation(
@@ -2523,7 +2524,6 @@ def cylinder_deposit_3d(project: Project) -> None:
         radius=R,
         is_hollow=True,
         wall_params={"h": lz, "r": R},
-        contactors=[{"shape": "DNLYC", "color": "VERTx"}],
     ))
     for aid in (floor.avatar_id, cyl.avatar_id):
         project.add(DOFOperation(

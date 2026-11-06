@@ -3,7 +3,7 @@
 Granularity:
   - one entity (material, avatar, law, DOF) = one command
   - a whole ParticlePopulation = one command (never N avatars)
-  - a Loop expansion = one command holding the generated avatar_ids
+  - a Loop or ForLoop expansion = one command
 """
 from __future__ import annotations
 
@@ -77,6 +77,66 @@ class AddAvatar:
 
     def to_journal(self) -> dict[str, Any]:
         return {"op": "add_avatar", "payload": self.avatar.to_dict()}
+
+
+@dataclass
+class UpdateAvatar:
+    old: Avatar
+    new: Avatar
+
+    def apply(self, project: Project) -> None:
+        project._replace_avatar(self.old.avatar_id, self.new)
+
+    def revert(self, project: Project) -> None:
+        project._replace_avatar(self.new.avatar_id, self.old)
+
+    def describe(self) -> str:
+        return f"update avatar {self.old.avatar_id[:8]}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "update_avatar", "payload": {
+            "old": self.old.to_dict(), "new": self.new.to_dict(),
+        }}
+
+
+@dataclass
+class AddAvatarBatch:
+    avatars: list[Avatar]
+    group_name: str | None = None
+    previous_group: list[str] | None = None
+    _captured: bool = False
+
+    def apply(self, project: Project) -> None:
+        for avatar in self.avatars:
+            project._insert_avatar(avatar)
+        if self.group_name:
+            if not self._captured:
+                previous = project.avatar_groups.get(self.group_name)
+                self.previous_group = list(previous) if previous is not None else None
+                self._captured = True
+            project.avatar_groups.setdefault(self.group_name, []).extend(
+                avatar.avatar_id for avatar in self.avatars
+            )
+
+    def revert(self, project: Project) -> None:
+        for avatar in reversed(self.avatars):
+            project._drop_avatar(avatar.avatar_id)
+        if self.group_name:
+            if self.previous_group is None:
+                project.avatar_groups.pop(self.group_name, None)
+            else:
+                project.avatar_groups[self.group_name] = list(self.previous_group)
+
+    def describe(self) -> str:
+        return f"add {len(self.avatars)} masonry avatars"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "add_avatar_batch", "payload": {
+            "avatars": [avatar.to_dict() for avatar in self.avatars],
+            "group_name": self.group_name,
+            "previous_group": self.previous_group,
+            "captured": self._captured,
+        }}
 
 
 @dataclass
@@ -332,6 +392,56 @@ class AddSeeTable:
 
 
 @dataclass
+class UpdateSeeTable:
+    index: int
+    old: VisibilityRule
+    new: VisibilityRule
+
+    def apply(self, project: Project) -> None:
+        project._replace_see(self.index, self.new)
+
+    def revert(self, project: Project) -> None:
+        project._replace_see(self.index, self.old)
+
+    def describe(self) -> str:
+        return f"update see table {self.index}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "update_see", "payload": {
+            "index": self.index,
+            "old": self.old.to_dict(),
+            "new": self.new.to_dict(),
+        }}
+
+
+@dataclass
+class RemoveSeeTable:
+    rule: VisibilityRule
+    index: int = -1
+
+    def apply(self, project: Project) -> None:
+        if self.index < 0:
+            self.index = next(
+                (i for i, item in enumerate(project.visibility) if item is self.rule),
+                -1,
+            )
+        if self.index < 0 or self.index >= len(project.visibility):
+            raise HistoryError("visibility rule not found")
+        project._drop_see(self.index)
+
+    def revert(self, project: Project) -> None:
+        project.visibility.insert(min(self.index, len(project.visibility)), self.rule)
+
+    def describe(self) -> str:
+        return f"remove see table {self.index}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "remove_see", "payload": {
+            "rule": self.rule.to_dict(), "index": self.index,
+        }}
+
+
+@dataclass
 class AddDOF:
     operation: DOFOperation
     index: int = -1
@@ -347,6 +457,57 @@ class AddDOF:
 
     def to_journal(self) -> dict[str, Any]:
         return {"op": "add_dof", "payload": self.operation.to_dict()}
+
+
+@dataclass
+class UpdateDOF:
+    index: int
+    old: DOFOperation
+    new: DOFOperation
+
+    def apply(self, project: Project) -> None:
+        project._replace_dof(self.index, self.new)
+
+    def revert(self, project: Project) -> None:
+        project._replace_dof(self.index, self.old)
+
+    def describe(self) -> str:
+        return f"update DOF {self.index}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "update_dof", "payload": {
+            "index": self.index,
+            "old": self.old.to_dict(),
+            "new": self.new.to_dict(),
+        }}
+
+
+@dataclass
+class RemoveDOF:
+    operation: DOFOperation
+    index: int = -1
+
+    def apply(self, project: Project) -> None:
+        if self.index < 0:
+            self.index = next(
+                (i for i, item in enumerate(project.operations)
+                 if item is self.operation),
+                -1,
+            )
+        if self.index < 0 or self.index >= len(project.operations):
+            raise HistoryError("DOF operation not found")
+        project._drop_dof(self.index)
+
+    def revert(self, project: Project) -> None:
+        project.operations.insert(min(self.index, len(project.operations)), self.operation)
+
+    def describe(self) -> str:
+        return f"remove DOF {self.index}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "remove_dof", "payload": {
+            "operation": self.operation.to_dict(), "index": self.index,
+        }}
 
 
 @dataclass
@@ -397,6 +558,27 @@ class AddLoop:
                 "generated": [a.to_dict() for a in self.generated],
             },
         }
+
+
+@dataclass
+class AddForLoop:
+    for_loop: ForLoop
+
+    def apply(self, project: Project) -> None:
+        if not any(item.loop_id == self.for_loop.loop_id for item in project.for_loops):
+            project.for_loops.append(self.for_loop)
+
+    def revert(self, project: Project) -> None:
+        project.for_loops[:] = [
+            item for item in project.for_loops
+            if item.loop_id != self.for_loop.loop_id
+        ]
+
+    def describe(self) -> str:
+        return f"add ForLoop [{self.for_loop.target_kind}]"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "add_for_loop", "payload": self.for_loop.to_dict()}
 
 
 @dataclass
@@ -577,6 +759,11 @@ class RemoveForLoop:
                 ]
             elif collection_name == "populations":
                 generated_ids = {item.population_id for _, _, item in self.items}
+                self.avatar_groups_touched = {
+                    name: list(ids)
+                    for name, ids in project.avatar_groups.items()
+                    if generated_ids.intersection(ids)
+                }
                 self.population_groups_touched = {
                     name: list(ids)
                     for name, ids in project.population_groups.items()
@@ -713,6 +900,78 @@ class SetGroup:
         }
 
 
+@dataclass
+class RemoveGroup:
+    name: str
+    avatar_ids: list[str] | None = None
+    population_ids: list[str] | None = None
+    _captured: bool = False
+
+    def apply(self, project: Project) -> None:
+        if not self._captured:
+            avatar_ids = project.avatar_groups.get(self.name)
+            population_ids = project.population_groups.get(self.name)
+            self.avatar_ids = list(avatar_ids) if avatar_ids is not None else None
+            self.population_ids = (
+                list(population_ids) if population_ids is not None else None
+            )
+            self._captured = True
+        project.avatar_groups.pop(self.name, None)
+        project.population_groups.pop(self.name, None)
+
+    def revert(self, project: Project) -> None:
+        if self.avatar_ids is not None:
+            project.avatar_groups[self.name] = list(self.avatar_ids)
+        if self.population_ids is not None:
+            project.population_groups[self.name] = list(self.population_ids)
+
+    def describe(self) -> str:
+        return f"remove group {self.name}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "remove_group", "payload": {
+            "name": self.name,
+            "avatar_ids": self.avatar_ids,
+            "population_ids": self.population_ids,
+            "captured": self._captured,
+        }}
+
+
+@dataclass
+class CompositeCommand:
+    commands: list[Command]
+
+    def apply(self, project: Project) -> None:
+        applied: list[Command] = []
+        try:
+            for command in self.commands:
+                command.apply(project)
+                applied.append(command)
+        except Exception:
+            for command in reversed(applied):
+                command.revert(project)
+            raise
+
+    def revert(self, project: Project) -> None:
+        reverted: list[Command] = []
+        try:
+            for command in reversed(self.commands):
+                command.revert(project)
+                reverted.append(command)
+        except Exception:
+            for command in reversed(reverted):
+                command.apply(project)
+            raise
+
+    def describe(self) -> str:
+        return self.commands[-1].describe() if self.commands else "empty transaction"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "composite", "payload": {
+            "commands": [command.to_journal() for command in self.commands],
+        }}
+
+
 class CommandHistory:
     def __init__(self, limit: int = 200) -> None:
         self._undo: list[Command] = []
@@ -721,11 +980,14 @@ class CommandHistory:
 
     def do(self, cmd: Command, project: Project) -> Command:
         cmd.apply(project)
+        self.record_applied(cmd)
+        return cmd
+
+    def record_applied(self, cmd: Command) -> None:
         self._undo.append(cmd)
         if len(self._undo) > self.limit:
             self._undo.pop(0)
         self._redo.clear()
-        return cmd
 
     def undo(self, project: Project) -> Command:
         if not self._undo:
@@ -797,6 +1059,20 @@ def command_from_journal(
         )
     if op == "add_avatar":
         return AddAvatar(Avatar.from_dict(payload))
+    if op == "update_avatar":
+        return UpdateAvatar(
+            Avatar.from_dict(payload["old"]), Avatar.from_dict(payload["new"]),
+        )
+    if op == "add_avatar_batch":
+        return AddAvatarBatch(
+            avatars=[Avatar.from_dict(item) for item in payload.get("avatars") or []],
+            group_name=payload.get("group_name"),
+            previous_group=(
+                list(payload["previous_group"])
+                if payload.get("previous_group") is not None else None
+            ),
+            _captured=bool(payload.get("captured", False)),
+        )
     if op == "remove_avatar":
         av_data = payload.get("avatar") or payload
         groups = payload.get("groups_touched") or {}
@@ -823,14 +1099,43 @@ def command_from_journal(
         )
     if op == "add_see":
         return AddSeeTable(VisibilityRule.from_dict(payload))
+    if op == "update_see":
+        return UpdateSeeTable(
+            int(payload["index"]),
+            VisibilityRule.from_dict(payload["old"]),
+            VisibilityRule.from_dict(payload["new"]),
+        )
+    if op == "remove_see":
+        return RemoveSeeTable(
+            VisibilityRule.from_dict(payload["rule"]),
+            int(payload.get("index", -1)),
+        )
     if op == "add_dof":
         return AddDOF(DOFOperation.from_dict(payload))
+    if op == "update_dof":
+        return UpdateDOF(
+            int(payload["index"]),
+            DOFOperation.from_dict(payload["old"]),
+            DOFOperation.from_dict(payload["new"]),
+        )
+    if op == "remove_dof":
+        return RemoveDOF(
+            DOFOperation.from_dict(payload["operation"]),
+            int(payload.get("index", -1)),
+        )
     if op == "add_postpro":
         return AddPostPro(PostProCommand.from_dict(payload))
     if op == "add_loop":
         loop_data = payload.get("loop") or payload
         gens = [Avatar.from_dict(a) for a in (payload.get("generated") or [])]
         return AddLoop(Loop.from_dict(loop_data), gens)
+    if op == "add_for_loop":
+        return AddForLoop(ForLoop.from_dict(payload))
+    if op == "composite":
+        return CompositeCommand([
+            command_from_journal(item, population_arrays, populations)
+            for item in payload.get("commands") or []
+        ])
     if op == "remove_loop":
         loop_data = payload.get("loop") or {}
         gens = [Avatar.from_dict(a) for a in (payload.get("generated") or [])]
@@ -861,6 +1166,7 @@ def command_from_journal(
             "Avatar": Avatar.from_dict,
             "Material": Material.from_dict,
             "Model": Model.from_dict,
+            "ContactLaw": ContactLaw.from_dict,
             "DOFOperation": DOFOperation.from_dict,
             "VisibilityRule": VisibilityRule.from_dict,
             "GranuloConfig": GranuloConfig.from_dict,
@@ -904,6 +1210,19 @@ def command_from_journal(
         prev = payload.get("previous")
         cmd.previous = list(prev) if prev is not None else None
         return cmd
+    if op == "remove_group":
+        return RemoveGroup(
+            name=str(payload.get("name", "")),
+            avatar_ids=(
+                list(payload["avatar_ids"])
+                if payload.get("avatar_ids") is not None else None
+            ),
+            population_ids=(
+                list(payload["population_ids"])
+                if payload.get("population_ids") is not None else None
+            ),
+            _captured=bool(payload.get("captured", False)),
+        )
     raise HistoryError(f"unknown journal op {op!r}")
 
 

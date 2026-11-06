@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lmgc90-gui"
-version = "0.1.0"
+version = "0.7.0"
 description = "PyQt6 GUI client for lmgc90_core.Project + lmgc90_engine.EngineSession"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,8 +12,8 @@ license = {text = "Open Source"}
 authors = [{name = "Bachir Zerourou"}]
 keywords = ["LMGC90", "DEM", "granular", "PyQt6", "GUI"]
 dependencies = [
-    "lmgc90-core>=0.1.0",
-    "lmgc90-engine>=0.1.0",
+    "lmgc90-core>=0.7.0",
+    "lmgc90-engine>=0.7.0",
     "numpy>=1.24",
 ]
 

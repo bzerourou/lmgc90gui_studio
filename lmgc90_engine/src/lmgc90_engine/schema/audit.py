@@ -129,8 +129,8 @@ def audit_core_catalogs(snapshot: dict[str, Any] | None = None) -> dict[str, Any
         "comparison": "core fallbacks vs installed pylmgc90; read-only",
         "runtime_available": bool(snapshot.get("available")),
         "runtime_version": snapshot.get("version"),
-        "core_pylmgc_catalog_sources": dict(lmgc_dicts.SOURCES),
-        "core_runtime_dicts_loaded": bool(core_types.FROM_PYLMGC90),
-        "core_runtime_dict_names": sorted(core_types.FROM_PYLMGC90_KEYS),
+        "core_fallback_catalog_sources": dict(lmgc_dicts.SOURCES),
+        "runtime_dicts_loaded": bool(runtime),
+        "runtime_dict_names": sorted(runtime),
         "domains": domains,
     }

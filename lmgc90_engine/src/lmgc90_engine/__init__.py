@@ -25,7 +25,7 @@ from .granulo import deposit_population
 from .materialize import MaterializedScene, materialize_project
 from .session import EngineSession
 
-__version__ = "0.1.0"
+__version__ = "0.7.0"
 __all__ = [
     "EngineSession",
     "MaterializedScene",

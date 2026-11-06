@@ -56,6 +56,30 @@ Without `pylmgc90` installed, `materialize()` and `write_datbox()` raise
 `PylmgcNotAvailable`. Script emission (`session.emit_pre_script()`) always
 works — it delegates to `lmgc90_core`.
 
+## Runtime capability snapshots
+
+The engine can export the installed runtime's `pre.*` signatures, Chipy
+function arities, and available `lmgc90dicts` catalogs as a versioned JSON
+snapshot. Run this command in the environment where `pylmgc90` is installed:
+
+```bash
+lmgc90-engine-snapshot
+```
+
+By default, it writes `src/lmgc90_core/capabilities/pylmgc90-<version>.json`
+and updates `index.json`. The core package embeds and loads these pure-JSON
+snapshots without importing `pylmgc90`. The engine still prefers live runtime
+introspection when available and uses the core snapshot catalogs otherwise.
+Use `--output-dir` to write elsewhere; copy the generated snapshot and index
+into the core package's `capabilities` directory before rebuilding the core
+distribution if you used a custom output directory.
+
+Arity is the number of fixed positional parameters. For opaque native Chipy
+bindings, it is inferred from the first docstring signature when possible;
+otherwise `arity` is `null` and `arity_source` is `unknown`. Catalogs are
+captured as exposed by the installed version, so absent dictionaries are not
+fabricated.
+
 ## Package layout
 
 ```
@@ -80,7 +104,7 @@ lmgc90_engine/
 - Identity = `avatar_id` / `population_id`. Always.
 - Core remains import-pure: engine is the only place that may `import pylmgc90`.
 
-## Limits 0.1.0
+## Limits 0.7.0
 
 - Mesh builders (gmsh) are stubs / optional; deformable mesh emission relies
   on `mesh_params` already stored on the Avatar.

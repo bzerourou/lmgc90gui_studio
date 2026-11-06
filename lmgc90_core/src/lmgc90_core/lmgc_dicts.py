@@ -1,260 +1,206 @@
-"""
-lmgc_dicts.py — Dictionnaires LMGC90 : source pylmgc90 si disponible,
-sinon valeurs manuelles (le module core reste fonctionnel sans pylmgc90).
+"""Compatibility catalogs loaded from bundled, pure-JSON pylmgc90 snapshots."""
+from __future__ import annotations
 
-Usage :
-    from .lmgc_dicts import ELEMENTS_BY_PHYSICS, GEO2ELEMENT, SOURCES
-"""
-import importlib
-from typing import Any, Callable, Dict, List, Optional, Tuple
-
-# ============================================================================
-# 1. Valeurs manuelles (fallback)
-# ============================================================================
-_ELEMENTS_2D = [
-    "Rxx2D", "T3xxx", "T3Lxx", "T33xx", "T6xxx", "T63xx", "DKTxx",
-    "Q4xxx", "Q4P0x", "Q44xx", "Q8xxx", "Q8Rxx", "Q84xx", "Q9xxx",
-    "BARxx", "SPRG2", "S2xth",
-]
-_ELEMENTS_3D = [
-    "Rxx3D", "TE4xx", "TE4Lx", "TE44x", "TE10x", "TE104",
-    "H8xxx", "H88xx", "H20xx", "H20Rx", "H208x",
-    "PRI6x", "SHB6x", "PRI15", "BARxx", "SPRG3",
-]
-
-_MANUAL_ELEMENTS_BY_PHYSICS: Dict[str, Dict[int, List[str]]] = {
-    "MECAx": {2: _ELEMENTS_2D, 3: _ELEMENTS_3D},
-    "THERx": {
-        2: ["Rxx2D", "T3xxx", "T6xxx", "DKTxx", "Q4xxx", "Q4P0x",
-            "Q8xxx", "Q8Rxx", "SPRG2", "S2xth"],
-        3: ["Rxx3D", "TE4xx", "TE10x", "H8xxx", "H20xx", "H20Rx",
-            "PRI6x", "PRI15", "SPRG3"],
-    },
-    "POROx": {2: ["T33xx", "T63xx", "Q44xx", "Q84xx"],
-              3: ["TE44x", "TE104", "H88xx", "H208x"]},
-    "MULTI": {2: ["T33xx", "T63xx", "Q44xx", "Q84xx"],
-              3: ["TE44x", "TE104", "H8xxx", "H88xx", "H208x"]},
-}
-
-_MANUAL_GEO2ELEMENT: Dict[str, Tuple[str, ...]] = {
-    'Point': ('Rxx2D', 'Rxx3D'),
-    'S2xxx': ('SPRG2', 'SPRG3', 'BARxx', 'S2xth'),
-    'S3xxx': (),
-    'Q4xxx': ('Q4xxx', 'Q4P0x', 'Q44xx'),
-    'T3xxx': ('T3xxx', 'T3Lxx', 'DKTxx', 'T33xx'),
-    'Q8xxx': ('Q8xxx', 'Q8Rxx', 'Q84xx'),
-    'Q9xxx': ('Q9xxx',),
-    'T6xxx': ('T6xxx', 'T63xx'),
-    'TE4xx': ('TE4xx', 'TE4Lx', 'TE44x'),
-    'TE10x': ('TE10x', 'TE104'),
-    'H8xxx': ('H8xxx', 'H88xx'),
-    'H20xx': ('H20xx', 'H20Rx', 'H208x'),
-    'PRI6x': ('PRI6x', 'SHB6x'),
-    'PRI15': ('PRI15',),
-}
-
-_MANUAL_PHYSICS: List[str] = ["MECAx", "THERx", "POROx", "MULTI"]
-
-# Contacteurs (cf. contactor_compat.py)
-_MANUAL_CONTACTORS = {
-    "RBDY2": ["DISKx", "xKSID", "JONCx", "POLYG", "PT2Dx"],
-    "RBDY3": ["SPHER", "PLANx", "CYLND", "POLYR", "PT3Dx"],
-    "MAILx_2D": ["CLxxx", "ALpxx", "PT2Dx"],
-    "MAILx_3D": ["CSpxx", "ASpxx", "PT3Dx"],
-}
-
-# Lois de contact par catégorie (cf. models.py)
-_MANUAL_CONTACT_LAWS: Dict[str, List[str]] = {
-    "Rigide / Rigide": ["IQS_CLB", "IQS_CLB_g0", "IQS_DS_CLB",
-                        "IQS_MOHR_DS_CLB", "IQS_MAC_CZM", "RST_CLB"],
-    "Rigide / Déformable (ou Déf/Déf)": ["GAP_SGR_CLB", "GAP_SGR_CLB_g0",
-                                         "GAP_MOHR_DS_CLB", "MAC_CZM", "MAL_CZM"],
-    "Point / Point": ["ELASTIC_WIRE", "BRITTLE_ELASTIC_WIRE",
-                      "ELASTIC_ROD", "VOIGT_ROD"],
-    "Toutes (any / any)": ["COUPLED_DOF", "NORMAL_COUPLED_DOF",
-                           "ELASTIC_REPELL_CLB"],
-}
-
-# Options de modèle (spécifiques au GUI : on les garde manuelles par défaut,
-# mais on tente d'enrichir depuis pylmgc90 — voir _CANDIDATES)
-_MANUAL_OPTION_VALUES: Dict[str, List[str]] = {
-    "kinematic":      ["small", "large"],
-    "formulation":    ["UpdtL", "TotaL"],
-    "mass_storage":   ["lump_", "coher"],
-    "material":       ["elas_", "elasd", "J2iso", "J2mix", "kvisc"],
-    "anisotropy":     ["iso__", "ortho"],
-    "external_model": ["MatL_", "Demfi", "Umat_", "no___", "yes__"],
-}
-
-# ============================================================================
-# 2. Chargement de pylmgc90 (jamais bloquant)
-# ============================================================================
-_IMPORT_PATHS = [
-    "pylmgc90.pre_lmgc.lmgc90dicts",
-    "pylmgc90.pre_lmgc.config.lmgc90dicts",
-    "pylmgc90.lmgc90dicts",
-    "pylmgc90.pre_lmgc",
-]
+import json
+import re
+from importlib.resources import files
+from typing import Any
 
 
-def _load_pylmgc_module() -> Optional[Any]:
-    for path in _IMPORT_PATHS:
-        try:
-            mod = importlib.import_module(path)
-            return mod
-        except Exception:
-            continue
-    return None
+SNAPSHOT_SCHEMA_VERSION = 1
 
 
-_MOD = _load_pylmgc_module()
+def _version_numbers(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", version))
 
 
-def dump_pylmgc_dicts() -> Dict[str, str]:
-    """
-    Diagnostic : {nom: type} pour chaque attribut public de lmgc90dicts.
-    À lancer une fois pour ajuster _CANDIDATES ci-dessous :
-        python -c "from src.core.lmgc_dicts import dump_pylmgc_dicts as d; \
-                   import pprint; pprint.pprint(d())"
-    """
-    if _MOD is None:
+def _closest_snapshot_version(
+    requested: str,
+    available: list[str],
+) -> str:
+    requested_parts = _version_numbers(requested)
+    if not requested_parts:
+        return available[-1]
+
+    def distance(candidate: str) -> tuple[int, tuple[int, ...]]:
+        candidate_parts = _version_numbers(candidate)
+        width = max(len(requested_parts), len(candidate_parts), 1)
+        left = requested_parts + (0,) * (width - len(requested_parts))
+        right = candidate_parts + (0,) * (width - len(candidate_parts))
+        weighted_distance = sum(
+            abs(a - b) * 1000 ** (width - index - 1)
+            for index, (a, b) in enumerate(zip(left, right))
+        )
+        return weighted_distance, tuple(-part for part in candidate_parts)
+
+    return min(available, key=distance)
+
+
+def load_capability_snapshot(version: str | None = None) -> dict[str, Any]:
+    """Load the selected bundled snapshot without importing pylmgc90."""
+    capability_dir = files("lmgc90_core").joinpath("capabilities")
+    index_path = capability_dir.joinpath("index.json")
+    if not index_path.is_file():
+        raise FileNotFoundError("bundled pylmgc90 capability index is missing")
+
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    if index.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError(
+            "unsupported pylmgc90 capability index schema: "
+            f"{index.get('schema_version')!r}"
+        )
+    snapshots = index.get("snapshots", {})
+    if not isinstance(snapshots, dict):
+        raise ValueError("invalid snapshots mapping in capability index")
+
+    selected_version = None
+    if version is None:
+        filename = index.get("latest")
+    else:
+        selected_version = (
+            version if version in snapshots
+            else _closest_snapshot_version(version, list(snapshots))
+            if snapshots else None
+        )
+        filename = snapshots.get(selected_version) if selected_version else None
+        if filename is None:
+            raise LookupError("no bundled pylmgc90 capability snapshots are available")
+    if (
+        not isinstance(filename, str)
+        or not filename.startswith("pylmgc90-")
+        or not filename.endswith(".json")
+        or "/" in filename
+        or "\\" in filename
+    ):
+        raise ValueError("invalid snapshot filename in capability index")
+
+    snapshot_path = capability_dir.joinpath(filename)
+    if not snapshot_path.is_file():
+        raise FileNotFoundError(f"bundled pylmgc90 snapshot is missing: {filename}")
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    if snapshot.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError(
+            "unsupported pylmgc90 capability snapshot schema: "
+            f"{snapshot.get('schema_version')!r}"
+        )
+    runtime = snapshot.get("runtime")
+    if not isinstance(runtime, dict) or not isinstance(runtime.get("version"), str):
+        raise ValueError(f"invalid runtime metadata in capability snapshot {filename}")
+    if selected_version is not None and runtime["version"] != selected_version:
+        raise ValueError(
+            f"capability index maps {selected_version!r} to snapshot for "
+            f"{runtime['version']!r}"
+        )
+    if not isinstance(snapshot.get("catalogs"), dict):
+        raise ValueError(f"invalid catalogs in capability snapshot {filename}")
+    return snapshot
+
+
+def _as_name_lists(value: Any) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
         return {}
-    return {n: type(getattr(_MOD, n)).__name__
-            for n in dir(_MOD) if not n.startswith('_')}
+    return {
+        str(key): [str(item) for item in items]
+        for key, items in value.items()
+        if isinstance(items, (list, tuple))
+    }
 
 
-# ============================================================================
-# 3. Validateurs de forme + adaptateurs
-# ============================================================================
-def _is_name(s: Any) -> bool:
-    return isinstance(s, str) and len(s) == 5
+CAPABILITY_SNAPSHOT = load_capability_snapshot()
+CAPABILITY_VERSION = CAPABILITY_SNAPSHOT["runtime"]["version"]
+CAPABILITY_CATALOGS: dict[str, Any] = CAPABILITY_SNAPSHOT["catalogs"]
+SOURCES: dict[str, str] = {}
 
 
-def _is_name_seq(v: Any) -> bool:
-    return isinstance(v, (list, tuple)) and all(_is_name(x) for x in v)
+def _catalog(name: str) -> Any:
+    value = CAPABILITY_CATALOGS.get(name, {})
+    if value:
+        SOURCES[name] = f"snapshot:{CAPABILITY_VERSION}"
+    else:
+        SOURCES[name] = "snapshot:unavailable"
+    return value
 
 
-def _adapt_geo2element(raw: Any) -> Optional[Dict[str, Tuple[str, ...]]]:
-    if not isinstance(raw, dict) or not raw:
-        return None
-    out = {}
-    for k, v in raw.items():
-        if isinstance(v, str):
-            v = (v,)
-        if not (_is_name(k) and _is_name_seq(v)):
-            return None
-        out[k] = tuple(v)
-    return out
-
-
-def _adapt_physics(raw: Any) -> Optional[List[str]]:
-    if isinstance(raw, dict):
-        raw = list(raw.keys())
-    if isinstance(raw, (list, tuple)) and raw and _is_name_seq(raw):
-        return list(raw)
-    return None
-
-
-def _adapt_str_list_dict(raw: Any) -> Optional[Dict[str, List[str]]]:
-    if not isinstance(raw, dict) or not raw:
-        return None
-    out = {}
-    for k, v in raw.items():
-        if not isinstance(k, str):
-            return None
-        if isinstance(v, (list, tuple)) and all(isinstance(x, str) for x in v):
-            out[k] = list(v)
-        else:
-            return None
-    return out
-
-
-# nom_interne -> (noms candidats dans lmgc90dicts, adaptateur)
-# Complète/corrige ces noms après avoir lancé dump_pylmgc_dicts().
-_CANDIDATES: Dict[str, Tuple[List[str], Callable[[Any], Any]]] = {
-    "GEO2ELEMENT":   (["geo2elem", "geo2element", "geoToElement",
-                       "geo2elements"], _adapt_geo2element),
-    "PHYSICS":       (["physicsList", "physics", "physicsDict",
-                       "listPhysics"], _adapt_physics),
-    "OPTION_VALUES": (["optionValues", "modelOptions", "options",
-                       "optionsDict"], _adapt_str_list_dict),
+GEO2ELEMENT: dict[str, tuple[str, ...]] = {
+    str(geometry): tuple(str(element) for element in elements)
+    for geometry, elements in _as_name_lists(_catalog("geo2element")).items()
 }
 
+_DIMENSION_ELEMENTS = _as_name_lists(_catalog("dimension2element"))
+_ELEMENT_PHYSICS = _catalog("element2ddl")
+ELEMENTS_BY_PHYSICS: dict[str, dict[int, list[str]]] = {}
+for _element, _physics_map in _ELEMENT_PHYSICS.items():
+    if not isinstance(_physics_map, dict):
+        continue
+    for _physics in _physics_map:
+        for _dimension, _elements in _DIMENSION_ELEMENTS.items():
+            if _element in _elements:
+                ELEMENTS_BY_PHYSICS.setdefault(_physics, {}).setdefault(
+                    int(_dimension), []
+                ).append(_element)
+SOURCES["ELEMENTS_BY_PHYSICS"] = (
+    f"snapshot:{CAPABILITY_VERSION}"
+    if ELEMENTS_BY_PHYSICS else "snapshot:unavailable"
+)
+PHYSICS = list(ELEMENTS_BY_PHYSICS)
 
-def _from_pylmgc(key: str) -> Optional[Any]:
-    if _MOD is None or key not in _CANDIDATES:
-        return None
-    names, adapt = _CANDIDATES[key]
-    for n in names:
-        if hasattr(_MOD, n):
-            try:
-                val = adapt(getattr(_MOD, n))
-            except Exception:
-                val = None
-            if val is not None:
-                return val
-    return None
+CONTACTORS = _as_name_lists(_catalog("bodyType2contactor"))
+CONTACT_LAW_CATEGORIES = _as_name_lists(_catalog("contactorPair2TactBehav"))
+CONTACT_LAW_OPTIONS = _as_name_lists(_catalog("tactBehavOptions"))
+MATERIAL_OPTIONS = _as_name_lists(_catalog("bulkBehavOptions"))
+MODEL_OPTIONS_BY_PHYSICS = {
+    str(physics): _as_name_lists(options)
+    for physics, options in _catalog("modelOptions").items()
+    if isinstance(options, dict)
+}
 
+_DIMENSION_CONTACTORS = _as_name_lists(_catalog("dimension2contactor"))
+_MESH_CONTACTORS = set(CONTACTORS.get("MAILx", ()))
 
-# ============================================================================
-# 4. Résolution finale (pylmgc90 prioritaire, sinon manuel)
-# ============================================================================
-SOURCES: Dict[str, str] = {}
+CONTACTORS_RIGID_2D = tuple(
+    item for item in _DIMENSION_CONTACTORS.get("2", ())
+    if item in CONTACTORS.get("RBDY2", ())
+)
+CONTACTORS_RIGID_3D = tuple(
+    item for item in _DIMENSION_CONTACTORS.get("3", ())
+    if item in CONTACTORS.get("RBDY3", ())
+)
+CONTACTORS_MESH_2D = tuple(
+    item for item in _DIMENSION_CONTACTORS.get("2", ())
+    if item in _MESH_CONTACTORS
+)
+CONTACTORS_MESH_3D = tuple(
+    item for item in _DIMENSION_CONTACTORS.get("3", ())
+    if item in _MESH_CONTACTORS
+)
 
+_RIGID_ELEMENTS = set(_as_name_lists({"rigidElements": _catalog("rigidElements")})
+                      .get("rigidElements", ()))
+RIGID_ELEMENTS_BY_DIMENSION = {
+    int(dimension): tuple(
+        element for element in elements if element in _RIGID_ELEMENTS
+    )
+    for dimension, elements in _DIMENSION_ELEMENTS.items()
+}
 
-def _resolve(key: str, manual: Any, merge: bool = False) -> Any:
-    """
-    merge=True : valeurs pylmgc90 + clés manuelles absentes de pylmgc90
-    (utile pour les dicts enrichis par des entrées purement GUI).
-    """
-    ext = _from_pylmgc(key)
-    if ext is None:
-        SOURCES[key] = "manuel"
-        return manual
-    if merge and isinstance(ext, dict) and isinstance(manual, dict):
-        merged = dict(manual)
-        merged.update(ext)
-        SOURCES[key] = "pylmgc90+manuel"
-        return merged
-    SOURCES[key] = "pylmgc90"
-    return ext
+OPTION_VALUES: dict[str, list[str]] = {}
+for _options in MODEL_OPTIONS_BY_PHYSICS.values():
+    for _option, _values in _options.items():
+        _choices = OPTION_VALUES.setdefault(_option, [])
+        for _value in _values:
+            if _value not in _choices:
+                _choices.append(_value)
 
-
-GEO2ELEMENT = _resolve("GEO2ELEMENT", _MANUAL_GEO2ELEMENT)
-PHYSICS = _resolve("PHYSICS", _MANUAL_PHYSICS)
-OPTION_VALUES = _resolve("OPTION_VALUES", _MANUAL_OPTION_VALUES, merge=True)
-
-
-def _derive_elements_by_physics() -> Dict[str, Dict[int, List[str]]]:
-    """
-    pylmgc90 ne fournit pas (à ma connaissance) la table physique × dimension :
-    on la garde manuelle, mais on la FILTRE par les éléments connus de
-    pylmgc90 (GEO2ELEMENT) quand il vient de pylmgc90, pour détecter
-    les éléments manuels inexistants.
-    """
-    table = {p: {d: list(l) for d, l in dims.items()}
-             for p, dims in _MANUAL_ELEMENTS_BY_PHYSICS.items()}
-    if SOURCES.get("GEO2ELEMENT", "").startswith("pylmgc90"):
-        known = {e for els in GEO2ELEMENT.values() for e in els}
-        known |= {"Rxx2D", "Rxx3D"}
-        for p in table:
-            for d in table[p]:
-                dropped = [e for e in table[p][d] if e not in known]
-                if dropped:
-                    import warnings
-                    warnings.warn(
-                        f"lmgc_dicts: éléments absents de pylmgc90 "
-                        f"({p}, {d}D) : {dropped}"
-                    )
-    return table
-
-
-ELEMENTS_BY_PHYSICS = _derive_elements_by_physics()
-SOURCES["ELEMENTS_BY_PHYSICS"] = "manuel (validé par pylmgc90)" \
-    if SOURCES["GEO2ELEMENT"].startswith("pylmgc90") else "manuel"
-
-CONTACTORS = _MANUAL_CONTACTORS;       SOURCES["CONTACTORS"] = "manuel"
-CONTACT_LAW_CATEGORIES = _MANUAL_CONTACT_LAWS
-SOURCES["CONTACT_LAW_CATEGORIES"] = "manuel"
-
-PYLMGC90_DICTS_AVAILABLE = _MOD is not None
+for _name, _value in (
+    ("GEO2ELEMENT", GEO2ELEMENT),
+    ("PHYSICS", PHYSICS),
+    ("OPTION_VALUES", OPTION_VALUES),
+    ("CONTACTORS", CONTACTORS),
+    ("CONTACT_LAW_CATEGORIES", CONTACT_LAW_CATEGORIES),
+    ("CONTACT_LAW_OPTIONS", CONTACT_LAW_OPTIONS),
+    ("MATERIAL_OPTIONS", MATERIAL_OPTIONS),
+    ("MODEL_OPTIONS_BY_PHYSICS", MODEL_OPTIONS_BY_PHYSICS),
+):
+    SOURCES[_name] = (
+        f"snapshot:{CAPABILITY_VERSION}" if _value else "snapshot:unavailable"
+    )

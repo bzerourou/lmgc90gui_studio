@@ -4,13 +4,12 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-# attempted relative import with no known parent package (fixes mypy import errors)
-from .introspection import _load_compatibility_catalogs
+from .introspection import load_compatibility_catalogs
 
 
 @lru_cache(maxsize=1)
 def _runtime_law_options() -> dict[str, tuple[str, ...]]:
-    catalogs = _load_compatibility_catalogs()
+    catalogs = load_compatibility_catalogs()
     raw = catalogs.get("tactBehavOptions", {})
     return {
         str(law): tuple(str(option) for option in options)
@@ -20,7 +19,7 @@ def _runtime_law_options() -> dict[str, tuple[str, ...]]:
 
 @lru_cache(maxsize=1)
 def _runtime_law_categories() -> dict[str, tuple[str, ...]]:
-    catalogs = _load_compatibility_catalogs()
+    catalogs = load_compatibility_catalogs()
     raw = catalogs.get("contactorPair2TactBehav", {})
     return {
         str(category): tuple(str(law) for law in laws)
@@ -83,7 +82,7 @@ def contact_law_pair_compatibility(
     antagonist_contactor: str,
 ) -> bool | None:
     """Check a law/contact pair from pylmgc tables; None means no reliable data."""
-    catalogs = _load_compatibility_catalogs()
+    catalogs = load_compatibility_catalogs()
     categories = catalogs.get("contactorPair2TactBehav")
     body_contactors = catalogs.get("bodyType2contactor")
     rigid = set(catalogs.get("rigidContactor", ()))

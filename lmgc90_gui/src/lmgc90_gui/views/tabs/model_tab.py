@@ -10,7 +10,10 @@ from lmgc90_core.types import (
     MODEL_OPTION_DEFAULTS,
     MODEL_OPTIONS_BY_PHYSICS,
 )
-from lmgc90_engine.schema import model_option_choices
+from lmgc90_engine.schema import (
+    model_option_choices_for_values,
+    model_schema_catalog,
+)
 
 from .base_tab import BaseTab
 from ...utils.naming import suggest_model_name
@@ -28,6 +31,7 @@ def create_model_tab(parent=None):
         def __init__(self, parent=None):
             super().__init__(parent)
             self._editing_name: str | None = None
+            self._updating_option_choices = False
             layout = QVBoxLayout(self)
             layout.addWidget(QLabel("List of models — select to modify"))
             self.tree = create_entity_tree(
@@ -40,9 +44,35 @@ def create_model_tab(parent=None):
             self.name_edit = QLineEdit()
             self.name_edit.setMaxLength(5)
             self.physics_combo = QComboBox()
-            self.physics_combo.addItems(list(ELEMENTS_BY_PHYSICS.keys()) if ELEMENTS_BY_PHYSICS else ["MECAx", "THERx", "POROx", "MULTI"])
             self.element_combo = QComboBox()
             self.dim_label = QLabel("—")
+            model_option_fallback = {}
+            for physics in dict.fromkeys((
+                *MODEL_OPTIONS_BY_PHYSICS,
+                *MODEL_COMMON_OPTIONS_BY_PHYSICS,
+            )):
+                names = set(MODEL_COMMON_OPTIONS_BY_PHYSICS.get(physics, ()))
+                names.update(
+                    name
+                    for options in MODEL_OPTIONS_BY_PHYSICS.get(physics, {}).values()
+                    for name in options
+                )
+                model_option_fallback[physics] = {
+                    name: MODEL_OPTION_CHOICES_BY_PHYSICS.get(
+                        physics, {}
+                    ).get(name, MODEL_OPTION_CHOICES.get(name, ()))
+                    for name in names
+                }
+            self._model_schema = model_schema_catalog(
+                ELEMENTS_BY_PHYSICS,
+                model_option_fallback,
+                fallback_rigid_elements=("Rxx2D", "Rxx3D"),
+                fallback_discrete_elements=("SPRG2", "SPRG3"),
+                fallback_joint_elements=("J2xx2", "J3xx2", "J3xx3", "J4xx3"),
+            )
+            self.physics_combo.addItems(list(self._model_schema) or [
+                "MECAx", "THERx", "POROx", "MULTI",
+            ])
             form.addRow("Name", self.name_edit)
             form.addRow("Physics", self.physics_combo)
             form.addRow("Element", self.element_combo)
@@ -82,8 +112,9 @@ def create_model_tab(parent=None):
         def _refresh_elements(self, *_a) -> None:
             phys = self.physics_combo.currentText()
             dim = self.controller.project.dimension if self.controller else 2
-            table = ELEMENTS_BY_PHYSICS.get(phys) or {}
-            elems = list(table.get(dim) or table.get(str(dim)) or ())
+            physics_schema = self._model_schema.get(phys, {})
+            elements = physics_schema.get("elements_by_dimension", {})
+            elems = list(elements.get(str(dim), ()))
             cur = self.element_combo.currentText()
             self.element_combo.blockSignals(True)
             self.element_combo.clear()
@@ -105,23 +136,18 @@ def create_model_tab(parent=None):
             self.option_widgets.clear()
             physics = self.physics_combo.currentText()
             element = self.element_combo.currentText()
-            option_names = () if element in ("Rxx2D", "Rxx3D") else (
-                *MODEL_OPTIONS_BY_PHYSICS.get(physics, {}).get(element, ()),
-                *MODEL_COMMON_OPTIONS_BY_PHYSICS.get(physics, ()),
-            )
+            physics_schema = self._model_schema.get(physics, {})
+            option_names = physics_schema.get("element_options", {}).get(element, ())
+            element_choices = physics_schema.get("element_choices", {}).get(element, {})
             for name in dict.fromkeys(option_names):
                 fallback_choices = MODEL_OPTION_CHOICES_BY_PHYSICS.get(
                     physics, {}
                 ).get(name, MODEL_OPTION_CHOICES.get(name, ()))
-                choices = model_option_choices(physics, name, fallback_choices)
+                choices = element_choices.get(name, fallback_choices)
                 widget = QComboBox()
                 widget.setEditable(True)
                 widget.addItems(choices)
-                default = (
-                    "class"
-                    if physics == "THERx" and name == "formulation"
-                    else MODEL_OPTION_DEFAULTS.get(name, "")
-                )
+                default = self._option_default(physics_schema, physics, element, name)
                 value = self._option_values.get(name, default)
                 if value not in choices:
                     value = default if default in choices else (choices[0] if choices else "")
@@ -132,7 +158,55 @@ def create_model_tab(parent=None):
                     widget.setCurrentText(value)
                 self.options_form.addRow(name, widget)
                 self.option_widgets[name] = widget
+                widget.currentTextChanged.connect(self._refresh_option_choices)
             self.options_box.setVisible(bool(option_names))
+            self._refresh_option_choices()
+
+        def _option_default(
+            self, physics_schema: dict, physics: str, element: str, option: str,
+        ) -> str:
+            if element in physics_schema.get("discrete_elements", ()):
+                if option == "discrete":
+                    return "yes__"
+                if option == "external_model":
+                    return "no___"
+            elif option == "discrete":
+                return "no___"
+            if physics == "THERx" and option == "formulation":
+                return "class"
+            return MODEL_OPTION_DEFAULTS.get(option, "")
+
+        def _refresh_option_choices(self, *_a) -> None:
+            if self._updating_option_choices:
+                return
+            physics = self.physics_combo.currentText()
+            element = self.element_combo.currentText()
+            physics_schema = self._model_schema.get(physics, {})
+            values = {
+                name: widget.currentText()
+                for name, widget in self.option_widgets.items()
+            }
+            self._updating_option_choices = True
+            try:
+                for name, widget in self.option_widgets.items():
+                    choices = model_option_choices_for_values(
+                        physics_schema, element, name, values,
+                    )
+                    if not choices:
+                        continue
+                    current = widget.currentText()
+                    if current not in choices:
+                        default = self._option_default(
+                            physics_schema, physics, element, name,
+                        )
+                        current = default if default in choices else choices[0]
+                    widget.blockSignals(True)
+                    widget.clear()
+                    widget.addItems(choices)
+                    widget.setCurrentText(current)
+                    widget.blockSignals(False)
+            finally:
+                self._updating_option_choices = False
 
         def _suggest_name(self, *_a) -> None:
             if self.controller is None or self._editing_name:
@@ -209,7 +283,7 @@ def create_model_tab(parent=None):
                     "class"
                     if self.physics_combo.currentText() == "THERx"
                     and name == "formulation"
-                    else MODEL_OPTION_DEFAULTS[name]
+                    else MODEL_OPTION_DEFAULTS.get(name, "")
                 )
                 widget.setCurrentText(default)
             self._suggest_name()
