@@ -4,6 +4,7 @@ Port of useful legacy LMGC90_GUI preferences into Studio.
 """
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -178,7 +179,7 @@ def create_preferences_dialog(prefs: "Preferences", parent=None):
             prefs.solver_type = self.solver.text()
             prefs.deformable = self.deformable.isChecked()
             prefs.disable_log = self.disable_log.isChecked()
-            prefs.python_executable = self.python.text().strip() or "python"
+            prefs.python_executable = self.python.text().strip() or sys.executable
             prefs.work_directory = self.workdir.text().strip()
             prefs.projects_directory = self.projdir.text().strip()
             prefs.auto_write_datbox = self.auto_datbox.isChecked()

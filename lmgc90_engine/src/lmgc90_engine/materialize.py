@@ -173,6 +173,13 @@ def materialize_project(project: Project) -> MaterializedScene:
                     _bodies_for_group(project, scene, g) if isinstance(g, str) else list(g)
                     for g in names
                 ]
+            elif tt == "avatar":
+                body = scene.body_by_avatar_id.get(str(tv))
+                if body is None:
+                    raise MaterializationError(
+                        f"Post-processing target avatar_id={tv!r} is not in the scene"
+                    )
+                kwargs["rigid_set"] = [body]
             elif name_u in ("TORQUE EVOLUTION", "BODY TRACKING") or tt in ("group", "rigid_set"):
                 if isinstance(tv, str):
                     kwargs["rigid_set"] = _bodies_for_group(project, scene, tv)

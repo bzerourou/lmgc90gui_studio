@@ -6,6 +6,7 @@ performance) plus Studio computation / environment settings.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -30,7 +31,7 @@ class Preferences:
     chipy_options: dict[str, Any] = field(default_factory=dict)
 
     # --- environment ---
-    python_executable: str = "python"
+    python_executable: str = sys.executable
     work_directory: str = ""
     projects_directory: str = ""  # default Open/Save path (legacy "Paths")
     auto_write_datbox: bool = True
@@ -104,7 +105,7 @@ class Preferences:
         p = str(Path(path).resolve())
         rec = [x for x in (self.recent_projects or []) if x != p]
         rec.insert(0, p)
-        self.recent_projects = rec[: max(1, int(self.recent_max))]
+        self.recent_projects = rec[: max(0, int(self.recent_max))]
 
 
 def default_prefs_path() -> Path:

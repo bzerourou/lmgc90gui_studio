@@ -11,7 +11,7 @@ pytest.importorskip("PyQt6.QtWidgets")
 from PyQt6.QtWidgets import QApplication
 
 from lmgc90_core import pre
-from lmgc90_core.types import AvatarType
+from lmgc90_core.types import AvatarOrigin, AvatarType
 from lmgc90_gui import ProjectController
 from lmgc90_gui.views.tabs.avatar_tab import create_avatar_tab
 
@@ -107,3 +107,60 @@ def test_wall_forms_take_user_height_and_derive_constructor_radii(qt_app):
     controller.add(granulo_wall)
     assert granulo_wall.wall_params["h"] == 0.06
     assert granulo_wall.wall_params["rmax"] == 0.03
+
+
+def test_update_avatar_preserves_origin_contactors_and_brick_wall_params(qt_app):
+    controller = ProjectController()
+    controller.new_project("avatar-update-brick", dimension=2)
+    controller.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    controller.add(pre.model(
+        name="rigid", physics="MECAx", element="Rxx2D", dimension=2,
+    ))
+    brick = pre.emptyAvatar(
+        center=[0.0, 0.0], model="rigid", material="STEEL", color="BLUEx",
+    )
+    brick.origin = AvatarOrigin.LOOP
+    brick.wall_params = {"brick_name": "jointed", "l": 0.2, "h": 0.1}
+    brick.contactors.append({
+        "shape": "DISKx", "color": "BLUEx", "params": {"byrd": 0.05},
+    })
+    controller.add_avatar(brick)
+
+    tab = create_avatar_tab()
+    tab.bind_controller(controller)
+    tab.on_state_changed()
+    tab._load_selected(brick.avatar_id)
+    tab._on_update()
+
+    updated = controller.project.avatar(brick.avatar_id)
+    assert updated.origin == AvatarOrigin.LOOP
+    assert updated.contactors == brick.contactors
+    assert updated.wall_params == brick.wall_params
+
+
+def test_update_mesh_avatar_preserves_contactors_and_unrepresented_mesh_params(qt_app):
+    controller = ProjectController()
+    controller.new_project("avatar-update-mesh", dimension=2)
+    controller.add(pre.material(name="STEEL", materialType="ELAS", density=7800, young=1e6, nu=0.25))
+    controller.add(pre.model(
+        name="mesh", physics="MECAx", element="T3xxx", dimension=2,
+    ))
+    mesh = pre.meshed_rectangle(
+        lx=1.0, ly=0.5, nx=2, ny=2, center=[0.0, 0.0],
+        model="mesh", material="STEEL",
+        contactors=[{"shape": "CLxxx", "color": "CYANx"}],
+    )
+    mesh.origin = AvatarOrigin.FACTORY
+    mesh.mesh_params["source_mesh_tag"] = "preserve-me"
+    controller.add_avatar(mesh)
+
+    tab = create_avatar_tab()
+    tab.bind_controller(controller)
+    tab.on_state_changed()
+    tab._load_selected(mesh.avatar_id)
+    tab._on_update()
+
+    updated = controller.project.avatar(mesh.avatar_id)
+    assert updated.origin == AvatarOrigin.FACTORY
+    assert updated.contactors == mesh.contactors
+    assert updated.mesh_params["source_mesh_tag"] == "preserve-me"

@@ -12,7 +12,7 @@ def create_compute_worker(
     work_dir: Path,
     *,
     command_script: str = "command.py",
-    python_executable: str = "python",
+    python_executable: str = sys.executable,
     env: Optional[dict] = None,
 ):
     from PyQt6.QtCore import QObject, QThread, pyqtSignal

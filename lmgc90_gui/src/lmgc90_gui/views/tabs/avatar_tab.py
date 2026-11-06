@@ -270,7 +270,7 @@ def create_avatar_tab(parent=None):
             if t == AvatarType.RIGID_DISK:
                 return pre.rigidDisk(r=p.get("r", 0.1), center=center, model=mod, material=mat, color=color, is_Hollow=p.get("is_Hollow", False))
             if t == AvatarType.RIGID_SPHERE:
-                return pre.rigidSphere(r=p.get("r", 0.1), center=center, model=mod, material=mat, color=color, is_Hollow=p.get("is_Hollow", False))
+                return pre.rigidSphere(r=p.get("r", 0.1), center=center, model=mod, material=mat, color=color)
             if t == AvatarType.RIGID_DISCRETE:
                 return pre.rigidDiscreteDisk(r=p.get("r", 0.1), center=center, model=mod, material=mat, color=color)
             if t == AvatarType.RIGID_JONC:
@@ -433,7 +433,20 @@ def create_avatar_tab(parent=None):
                     center.append(self.eval_float(self.cz.text(), 0.0, "center Z"))
                 color = self.color_edit.text().strip() or "BLUEx"
                 p = self._read_params()
+                existing = self.controller.project.avatar(self._editing_id)
                 av = self._build(pre, atype, center, mat, mod, color, p)
+                av.avatar_id = existing.avatar_id
+                av.origin = existing.origin
+                av.contactors = [dict(contactor) for contactor in existing.contactors]
+                if av.avatar_type == existing.avatar_type:
+                    av.wall_params = {
+                        **(existing.wall_params or {}),
+                        **(av.wall_params or {}),
+                    } or None
+                    av.mesh_params = {
+                        **(existing.mesh_params or {}),
+                        **(av.mesh_params or {}),
+                    } or None
                 self.controller.update_avatar(self._editing_id, av)
                 self.controller.journal.info(f"Avatar updated {self._editing_id[:8]}…")
             except Exception as exc:

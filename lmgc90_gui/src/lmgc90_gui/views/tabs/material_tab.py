@@ -375,14 +375,7 @@ def create_material_tab(parent=None):
                 return
             try:
                 mat = self._build_material()
-                # remove old if renamed
-                if mat.name != self._editing_name:
-                    self.controller.remove_material(self._editing_name)
-                    self.controller.add_material(mat)
-                else:
-                    # replace in place via remove+add to keep simple API
-                    self.controller.remove_material(self._editing_name)
-                    self.controller.add_material(mat)
+                self.controller.update_material(self._editing_name, mat)
                 self._editing_name = mat.name
                 QMessageBox.information(self, "Material", f"{mat.name} mis à jour")
             except (ValidationError, ValueError) as exc:

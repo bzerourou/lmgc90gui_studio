@@ -4,7 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
-from .ids import new_avatar_id
+from .ids import (
+    new_avatar_id, new_generation_id, new_operation_id, new_visibility_id,
+)
 from .types import AvatarOrigin, AvatarType, ContactLawType, MaterialType
 
 
@@ -229,9 +231,11 @@ class VisibilityRule:
     antagonist_color: str
     behavior_name: str
     alert: float = 0.1
+    visibility_id: str = field(default_factory=new_visibility_id)
 
     def to_dict(self) -> dict:
         return {
+            "visibility_id": self.visibility_id,
             "CorpsCandidat": self.candidate_body,
             "candidat": self.candidate_contactor,
             "colorCandidat": self.candidate_color,
@@ -253,6 +257,7 @@ class VisibilityRule:
             antagonist_color=data["colorAntagoniste"],
             behavior_name=data["behav"],
             alert=float(data.get("alert", 0.1)),
+            visibility_id=data.get("visibility_id") or new_visibility_id(),
         )
 
 
@@ -262,9 +267,11 @@ class DOFOperation:
     target_type: str
     target_value: Any
     parameters: dict[str, Any] = field(default_factory=dict)
+    operation_id: str = field(default_factory=new_operation_id)
 
     def to_dict(self) -> dict:
         return {
+            "operation_id": self.operation_id,
             "type": self.operation_type,
             "target": self.target_type,
             "target_value": self.target_value,
@@ -274,14 +281,23 @@ class DOFOperation:
     @classmethod
     def from_dict(cls, data: dict) -> DOFOperation:
         if "body_index" in data:
-            return cls(data["type"], "avatar", data["body_index"], data.get("params") or {})
+            return cls(
+                data["type"], "avatar", data["body_index"],
+                data.get("params") or {},
+                operation_id=data.get("operation_id") or new_operation_id(),
+            )
         if "group_name" in data:
-            return cls(data["type"], "group", data["group_name"], data.get("params") or {})
+            return cls(
+                data["type"], "group", data["group_name"],
+                data.get("params") or {},
+                operation_id=data.get("operation_id") or new_operation_id(),
+            )
         return cls(
             data["type"],
             data.get("target", "avatar"),
             data.get("target_value", 0),
             data.get("params") or {},
+            operation_id=data.get("operation_id") or new_operation_id(),
         )
 
 
@@ -459,9 +475,11 @@ class GranuloConfig:
     distribution_type: str = "granulo_Random"
     distribution_params: dict[str, Any] = field(default_factory=dict)
     distribution_file: Optional[str] = None
+    generation_id: str = field(default_factory=new_generation_id)
 
     def to_dict(self) -> dict:
         d = {
+            "generation_id": self.generation_id,
             "nb_particles": self.nb_particles,
             "radius_min": self.radius_min,
             "radius_max": self.radius_max,
@@ -513,4 +531,5 @@ class GranuloConfig:
             distribution_type=data.get("distribution_type", "granulo_Random"),
             distribution_params=dict(data.get("distribution_params") or {}),
             distribution_file=data.get("distribution_file"),
+            generation_id=data.get("generation_id") or new_generation_id(),
         )

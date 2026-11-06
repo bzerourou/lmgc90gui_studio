@@ -2,7 +2,7 @@ import ast
 
 import pytest
 
-from lmgc90_core import Project
+from lmgc90_core import Avatar, AvatarType, ParticlePopulation, Project, pre
 from lmgc90_core.compute_script import ComputeScriptGenerator
 
 
@@ -77,3 +77,89 @@ def test_set_actions_are_generated_at_the_selected_times():
 def test_invalid_set_actions_fail_with_a_clear_error(entry, message):
     with pytest.raises(ValueError, match=message):
         _generate([entry])
+
+
+def _group_visibility_script(project):
+    return ComputeScriptGenerator(project).generate_string({
+        "use_RBDY2": True,
+        "use_mecaMAILx": True,
+        "vis_entries": [{
+            "action": "visible",
+            "dim": "2D",
+            "group": "selected",
+            "ids": "",
+        }],
+    })
+
+
+def test_group_indices_follow_rigid_body_order_and_mesh_expansion():
+    project = Project(name="group_indices", dimension=2)
+    rigid_before = pre.rigidDisk(
+        r=0.1, center=[0, 0], model="rigid", material="STEEL",
+    )
+    deformable = Avatar(
+        avatar_type=AvatarType.MESH_DEFORMABLE,
+        center=[0, 0],
+        material_name="STEEL",
+        model_name="mesh",
+    )
+    from_mesh = Avatar(
+        avatar_type=AvatarType.EMPTY_AVATAR,
+        center=[0, 0],
+        material_name="STEEL",
+        model_name="rigid",
+        mesh_params={
+            "source": "rigidsFromMesh2D",
+            "filepath": "pkg://lmgc90_core/data/meshes/Carre.msh",
+            "dim": 2,
+        },
+    )
+    rigid_after = pre.rigidDisk(
+        r=0.1, center=[1, 0], model="rigid", material="STEEL",
+    )
+    project.avatars.extend([rigid_before, deformable, from_mesh, rigid_after])
+    project.group("selected", [deformable.avatar_id, from_mesh.avatar_id, rigid_after.avatar_id])
+
+    script = _group_visibility_script(project)
+
+    assert "\nchipy.RBDY2_SetVisible(1)\n" not in script
+    for body_index in range(2, 7):
+        assert f"chipy.RBDY2_SetVisible({body_index})" in script
+
+
+def test_group_indices_recompute_after_remove_and_undo():
+    project = Project(name="group_undo", dimension=2)
+    avatars = [
+        pre.rigidDisk(r=0.1, center=[index, 0], model="rigid", material="STEEL")
+        for index in range(3)
+    ]
+    project.avatars.extend(avatars)
+    project.group("selected", [avatars[2].avatar_id])
+
+    assert "chipy.RBDY2_SetVisible(3)" in _group_visibility_script(project)
+    project.remove_avatar(avatars[1].avatar_id)
+    assert "chipy.RBDY2_SetVisible(2)" in _group_visibility_script(project)
+    project.history.undo(project)
+    assert "chipy.RBDY2_SetVisible(3)" in _group_visibility_script(project)
+
+
+def test_group_indices_include_soa_after_aos_bodies():
+    project = Project(name="group_soa_indices", dimension=2)
+    rigid = pre.rigidDisk(
+        r=0.1, center=[0, 0], model="rigid", material="STEEL",
+    )
+    project.avatars.append(rigid)
+    population = ParticlePopulation.create(
+        avatar_type=AvatarType.RIGID_DISK,
+        material_name="STEEL",
+        model_name="rigid",
+        centers=[[0.0, 0.0], [1.0, 0.0]],
+        radii=[0.1, 0.1],
+    )
+    project.populations.append(population)
+    project.group("selected", [population.population_id])
+
+    script = _group_visibility_script(project)
+
+    assert "chipy.RBDY2_SetVisible(2)" in script
+    assert "chipy.RBDY2_SetVisible(3)" in script

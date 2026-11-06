@@ -143,14 +143,45 @@ class AddAvatarBatch:
 class RemoveAvatar:
     avatar: Avatar
     groups_touched: dict[str, list[str]] = field(default_factory=dict)
+    avatar_index: int = -1
+    operations_touched: list[tuple[int, DOFOperation]] = field(default_factory=list)
+    _captured: bool = False
 
     def apply(self, project: Project) -> None:
-        self.groups_touched = project._drop_avatar(self.avatar.avatar_id)
+        if not self._captured:
+            self.avatar_index = next(
+                (
+                    index for index, avatar in enumerate(project.avatars)
+                    if avatar.avatar_id == self.avatar.avatar_id
+                ),
+                -1,
+            )
+            if self.avatar_index < 0:
+                raise HistoryError(f"avatar {self.avatar.avatar_id!r} not found")
+            self.groups_touched = {
+                name: list(ids)
+                for name, ids in project.avatar_groups.items()
+                if self.avatar.avatar_id in ids
+            }
+            self.operations_touched = [
+                (index, operation)
+                for index, operation in enumerate(project.operations)
+                if operation.target_type == "avatar"
+                and operation.target_value == self.avatar.avatar_id
+            ]
+            self._captured = True
+        project._drop_avatar(self.avatar.avatar_id)
 
     def revert(self, project: Project) -> None:
-        project._insert_avatar(self.avatar)
+        index = (
+            min(self.avatar_index, len(project.avatars))
+            if self.avatar_index >= 0 else len(project.avatars)
+        )
+        project.avatars.insert(index, self.avatar)
         for name, ids in self.groups_touched.items():
             project.avatar_groups[name] = list(ids)
+        for index, operation in self.operations_touched:
+            project.operations.insert(min(index, len(project.operations)), operation)
 
     def describe(self) -> str:
         return f"remove {self.avatar.avatar_type.value} {self.avatar.avatar_id[:8]}"
@@ -161,6 +192,12 @@ class RemoveAvatar:
             "payload": {
                 "avatar": self.avatar.to_dict(),
                 "groups_touched": {k: list(v) for k, v in (self.groups_touched or {}).items()},
+                "avatar_index": self.avatar_index,
+                "operations_touched": [
+                    {"index": index, "operation": operation.to_dict()}
+                    for index, operation in self.operations_touched
+                ],
+                "captured": self._captured,
             },
         }
 
@@ -190,6 +227,86 @@ class AddPopulation:
                 "config": self.config.to_dict() if self.config is not None else None,
             },
         }
+
+
+@dataclass
+class RemovePopulation:
+    population_id: str
+    population: ParticlePopulation | None = None
+    index: int = -1
+    granulo_items: list[tuple[int, GranuloConfig]] = field(default_factory=list)
+    avatar_groups_touched: dict[str, list[str]] = field(default_factory=dict)
+    population_groups_touched: dict[str, list[str]] = field(default_factory=dict)
+    _captured: bool = False
+
+    def apply(self, project: Project) -> None:
+        if not self._captured:
+            self.index = next(
+                (i for i, item in enumerate(project.populations)
+                 if item.population_id == self.population_id),
+                -1,
+            )
+            if self.index < 0:
+                raise HistoryError(f"population {self.population_id!r} not found")
+            self.population = project.populations[self.index]
+            self.granulo_items = [
+                (i, config) for i, config in enumerate(project.granulo)
+                if config.population_id == self.population_id
+            ]
+            self.avatar_groups_touched = {
+                name: list(ids)
+                for name, ids in project.avatar_groups.items()
+                if self.population_id in ids
+            }
+            self.population_groups_touched = {
+                name: list(ids)
+                for name, ids in project.population_groups.items()
+                if self.population_id in ids
+            }
+            self._captured = True
+        project._drop_population(self.population_id)
+
+    def revert(self, project: Project) -> None:
+        if self.population is None:
+            raise HistoryError(
+                f"population data for {self.population_id!r} is unavailable"
+            )
+        project.populations.insert(
+            min(self.index, len(project.populations)), self.population,
+        )
+        for index, config in self.granulo_items:
+            project.granulo.insert(min(index, len(project.granulo)), config)
+        project.avatar_groups.update({
+            name: list(ids) for name, ids in self.avatar_groups_touched.items()
+        })
+        project.population_groups.update({
+            name: list(ids) for name, ids in self.population_groups_touched.items()
+        })
+
+    def describe(self) -> str:
+        return f"remove population {self.population_id[:12]}"
+
+    def to_journal(self) -> dict[str, Any]:
+        if self.population is None:
+            raise HistoryError(
+                f"population data for {self.population_id!r} is unavailable"
+            )
+        return {"op": "remove_population", "payload": {
+            "population": self.population.to_meta_dict(),
+            "index": self.index,
+            "granulo_items": [
+                {"index": index, "config": config.to_dict()}
+                for index, config in self.granulo_items
+            ],
+            "avatar_groups_touched": {
+                name: list(ids) for name, ids in self.avatar_groups_touched.items()
+            },
+            "population_groups_touched": {
+                name: list(ids)
+                for name, ids in self.population_groups_touched.items()
+            },
+            "captured": self._captured,
+        }}
 
 
 @dataclass
@@ -519,13 +636,88 @@ class AddPostPro:
         self.index = project._insert_postpro(self.command)
 
     def revert(self, project: Project) -> None:
-        project._drop_postpro(self.index)
+        index = next(
+            (i for i, item in enumerate(project.postpro) if item is self.command),
+            -1,
+        )
+        if index < 0:
+            raise HistoryError("post-processing command not found")
+        project._drop_postpro(index)
 
     def describe(self) -> str:
         return f"postpro {self.command.name} every {self.command.step}"
 
     def to_journal(self) -> dict[str, Any]:
         return {"op": "add_postpro", "payload": self.command.to_dict()}
+
+
+@dataclass
+class RemovePostPro:
+    command: PostProCommand
+    index: int = -1
+
+    def apply(self, project: Project) -> None:
+        if self.index < 0:
+            self.index = next(
+                (i for i, item in enumerate(project.postpro)
+                 if item is self.command),
+                -1,
+            )
+        if self.index < 0 or self.index >= len(project.postpro):
+            raise HistoryError("post-processing command not found")
+        project._drop_postpro(self.index)
+
+    def revert(self, project: Project) -> None:
+        project.postpro.insert(min(self.index, len(project.postpro)), self.command)
+
+    def describe(self) -> str:
+        return f"remove postpro {self.command.name}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "remove_postpro", "payload": {
+            "command": self.command.to_dict(),
+            "index": self.index,
+        }}
+
+
+@dataclass
+class SetDynamicVar:
+    name: str
+    value: Any = None
+    remove: bool = False
+    previous_value: Any = None
+    had_previous: bool = False
+    _captured: bool = False
+
+    def apply(self, project: Project) -> None:
+        if not self._captured:
+            self.had_previous = self.name in project.dynamic_vars
+            self.previous_value = project.dynamic_vars.get(self.name)
+            self._captured = True
+        if self.remove:
+            project.dynamic_vars.pop(self.name, None)
+        else:
+            project.dynamic_vars[self.name] = self.value
+
+    def revert(self, project: Project) -> None:
+        if self.had_previous:
+            project.dynamic_vars[self.name] = self.previous_value
+        else:
+            project.dynamic_vars.pop(self.name, None)
+
+    def describe(self) -> str:
+        action = "remove" if self.remove else "set"
+        return f"{action} dynamic variable {self.name}"
+
+    def to_journal(self) -> dict[str, Any]:
+        return {"op": "set_dynamic_var", "payload": {
+            "name": self.name,
+            "value": self.value,
+            "remove": self.remove,
+            "previous_value": self.previous_value,
+            "had_previous": self.had_previous,
+            "captured": self._captured,
+        }}
 
 
 @dataclass
@@ -709,6 +901,12 @@ class RemoveForLoop:
                 for item in self.for_loop._generated_items:
                     if hasattr(item, "avatar_id"):
                         generated_ids.add(item.avatar_id)
+                    elif hasattr(item, "operation_id"):
+                        generated_ids.add(item.operation_id)
+                    elif hasattr(item, "visibility_id"):
+                        generated_ids.add(item.visibility_id)
+                    elif hasattr(item, "generation_id"):
+                        generated_ids.add(item.generation_id)
                     elif hasattr(item, "name"):
                         generated_ids.add(item.name)
                     elif hasattr(item, "population_id"):
@@ -716,24 +914,27 @@ class RemoveForLoop:
                     elif hasattr(item, "target_value"):
                         generated_ids.add(str(item.target_value))
 
-            def is_generated(item: Any, index: int) -> bool:
+            def is_generated(item: Any) -> bool:
                 if hasattr(item, "avatar_id"):
                     return item.avatar_id in generated_ids
+                if hasattr(item, "operation_id"):
+                    return item.operation_id in generated_ids
+                if hasattr(item, "visibility_id"):
+                    return item.visibility_id in generated_ids
+                if hasattr(item, "generation_id"):
+                    return item.generation_id in generated_ids
                 if hasattr(item, "name"):
                     return item.name in generated_ids
                 if hasattr(item, "population_id"):
                     return item.population_id in generated_ids
                 if hasattr(item, "target_value"):
-                    return (
-                        str(item.target_value) in generated_ids
-                        or str(index) in generated_ids
-                    )
-                return str(index) in generated_ids
+                    return str(item.target_value) in generated_ids
+                return False
 
             self.items = [
                 (collection_name, index, item)
                 for index, item in enumerate(collection)
-                if is_generated(item, index)
+                if is_generated(item)
             ]
             if collection_name == "avatars":
                 generated_ids = {item.avatar_id for _, _, item in self.items}
@@ -1076,12 +1277,50 @@ def command_from_journal(
     if op == "remove_avatar":
         av_data = payload.get("avatar") or payload
         groups = payload.get("groups_touched") or {}
-        return RemoveAvatar(Avatar.from_dict(av_data), groups_touched={k: list(v) for k, v in groups.items()})
+        return RemoveAvatar(
+            avatar=Avatar.from_dict(av_data),
+            groups_touched={k: list(v) for k, v in groups.items()},
+            avatar_index=int(payload.get("avatar_index", -1)),
+            operations_touched=[
+                (int(item["index"]), DOFOperation.from_dict(item["operation"]))
+                for item in payload.get("operations_touched") or []
+            ],
+            _captured=bool(
+                payload.get(
+                    "captured",
+                    "groups_touched" in payload or "avatar_index" in payload,
+                )
+            ),
+        )
     if op == "add_population":
         pop_data = payload.get("population") or payload
         cfg_data = payload.get("config")
         cfg = GranuloConfig.from_dict(cfg_data) if cfg_data else None
         return AddPopulation(population_from_data(pop_data), cfg)
+    if op == "remove_population":
+        pop = population_from_data(payload["population"])
+        return RemovePopulation(
+            population_id=pop.population_id,
+            population=pop,
+            index=int(payload.get("index", -1)),
+            granulo_items=[
+                (int(item["index"]), GranuloConfig.from_dict(item["config"]))
+                for item in payload.get("granulo_items") or []
+            ],
+            avatar_groups_touched={
+                name: list(ids)
+                for name, ids in (
+                    payload.get("avatar_groups_touched") or {}
+                ).items()
+            },
+            population_groups_touched={
+                name: list(ids)
+                for name, ids in (
+                    payload.get("population_groups_touched") or {}
+                ).items()
+            },
+            _captured=bool(payload.get("captured", False)),
+        )
     if op == "add_granulo_config":
         return AddGranuloConfig(
             GranuloConfig.from_dict(payload["config"]),
@@ -1125,6 +1364,20 @@ def command_from_journal(
         )
     if op == "add_postpro":
         return AddPostPro(PostProCommand.from_dict(payload))
+    if op == "remove_postpro":
+        return RemovePostPro(
+            PostProCommand.from_dict(payload["command"]),
+            int(payload.get("index", -1)),
+        )
+    if op == "set_dynamic_var":
+        return SetDynamicVar(
+            name=str(payload["name"]),
+            value=payload.get("value"),
+            remove=bool(payload.get("remove", False)),
+            previous_value=payload.get("previous_value"),
+            had_previous=bool(payload.get("had_previous", False)),
+            _captured=bool(payload.get("captured", False)),
+        )
     if op == "add_loop":
         loop_data = payload.get("loop") or payload
         gens = [Avatar.from_dict(a) for a in (payload.get("generated") or [])]

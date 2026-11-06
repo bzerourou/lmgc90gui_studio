@@ -1,8 +1,11 @@
 """Background DATBOX generation: materialize + writeDatbox + emit scripts."""
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
+
+from lmgc90_engine import EngineSession
 
 if TYPE_CHECKING:
     from ..controller.project_controller import ProjectController
@@ -14,8 +17,16 @@ def create_datbox_worker(
     *,
     try_live_datbox: bool = True,
     chipy_params: Optional[dict[str, Any]] = None,
+    use_loop: bool = False,
 ):
     from PyQt6.QtCore import QObject, QThread, pyqtSignal
+
+    project_snapshot = deepcopy(controller.project)
+    session = EngineSession(project_snapshot)
+    params = dict(controller.prefs.chipy_params())
+    params["nb_steps"] = controller.prefs.nb_steps
+    params.update(chipy_params or {})
+    live_datbox_available = try_live_datbox and controller.pylmgc_available()
 
     class DatboxWorker(QObject):
         finished = pyqtSignal(dict)   # paths written
@@ -24,10 +35,10 @@ def create_datbox_worker(
 
         def __init__(self):
             super().__init__()
-            self.controller = controller
+            self.session = session
             self.output_dir = Path(output_dir)
-            self.try_live = try_live_datbox
-            self.chipy_params = chipy_params or {}
+            self.try_live = live_datbox_available
+            self.chipy_params = params
 
         def run(self) -> None:
             try:
@@ -42,19 +53,19 @@ def create_datbox_worker(
 
                 self.progress.emit("Writing pre.py…")
                 pre_path = out / "pre.py"
-                self.controller.emit_pre_script(pre_path)
+                self.session.emit_pre_script(pre_path, use_loop=use_loop)
                 paths["pre"] = str(pre_path)
 
                 self.progress.emit("Writing command.py…")
                 cmd_path = out / "command.py"
-                self.controller.emit_chipy_script(cmd_path, **self.chipy_params)
+                self.session.emit_chipy_script(cmd_path, **self.chipy_params)
                 paths["command"] = str(cmd_path)
 
-                if self.try_live and self.controller.pylmgc_available():
+                if self.try_live:
                     self.progress.emit("Materializing pylmgc objects…")
-                    self.controller.materialize(force=True)
+                    self.session.materialize(force=True)
                     self.progress.emit("Writing DATBOX…")
-                    db = self.controller.write_datbox(out / "DATBOX")
+                    db = self.session.write_datbox(out / "DATBOX")
                     paths["datbox"] = str(db)
                 else:
                     self.progress.emit(

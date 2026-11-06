@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import keyword
+import warnings
 from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
@@ -24,8 +25,83 @@ from .chipy_rules import (
     stop_criterion_lines,
     takes_no_id,
 )
+from .entities import Avatar
 from .ids import parse_particle_id
+from .lmgc_dicts import CAPABILITY_SNAPSHOT
 from .project import Project
+from .types import AvatarType, RIGID_AVATARS_2D, RIGID_AVATARS_3D
+
+
+_GMSH_2D_ELEMENT_TYPES = {
+    2, 3, 9, 10, 16, *range(20, 26), *range(36, 45),
+}
+
+_CHIPY_REQUIRED_POSITIONAL_ARITY = {
+    # These wrapped Fortran calls have (*args) in the snapshot; their signatures
+    # are documented by the Chipy routines UI but cannot be introspected there.
+    "RBDY2_GetBodyVector": 2,
+    "RBDY3_GetBodyVector": 2,
+}
+
+
+def _rigids_from_mesh2d_count(avatar: Avatar) -> int:
+    """Count 2D surface elements, each of which becomes one rigid body."""
+    import importlib.resources
+
+    mesh_params = avatar.mesh_params or {}
+    filepath = str(mesh_params.get("filepath") or mesh_params.get("file") or "")
+    if not filepath:
+        raise ValueError("mesh filepath is missing")
+
+    if filepath.startswith("pkg://"):
+        package, separator, resource_name = filepath[6:].partition("/")
+        if not separator or not package or any(
+            part in ("", ".", "..") for part in resource_name.split("/")
+        ):
+            raise ValueError(f"invalid package mesh path {filepath!r}")
+        source = importlib.resources.files(package).joinpath(*resource_name.split("/"))
+        text = source.read_text(encoding="utf-8")
+    else:
+        path = Path(filepath).expanduser()
+        if path.suffix.lower() not in (".msh", ".vtk", ".vtu", ".mesh"):
+            path = path.with_suffix(".msh")
+        text = path.read_text(encoding="utf-8")
+
+    lines = text.splitlines()
+    try:
+        format_index = lines.index("$MeshFormat")
+        version, binary = lines[format_index + 1].split()[:2]
+        if binary != "0":
+            raise ValueError("binary Gmsh meshes are not supported for group indexing")
+        elements_index = lines.index("$Elements")
+        header = lines[elements_index + 1].split()
+    except (ValueError, IndexError) as exc:
+        raise ValueError("expected an ASCII Gmsh mesh with an Elements section") from exc
+
+    if version.startswith("2."):
+        count = int(header[0])
+        elements = lines[elements_index + 2:elements_index + 2 + count]
+        return sum(
+            1 for element in elements
+            if len(element.split()) > 1
+            and int(element.split()[1]) in _GMSH_2D_ELEMENT_TYPES
+        )
+    if version.startswith("4."):
+        blocks, total = int(header[0]), int(header[1])
+        cursor = elements_index + 2
+        surface_count = 0
+        parsed = 0
+        for _ in range(blocks):
+            entity_dim, _, _, block_count = map(int, lines[cursor].split()[:4])
+            cursor += 1
+            if entity_dim == 2:
+                surface_count += block_count
+            cursor += block_count
+            parsed += block_count
+        if parsed != total:
+            raise ValueError("Gmsh Elements section has an inconsistent element count")
+        return surface_count
+    raise ValueError(f"unsupported Gmsh mesh version {version!r}")
 
 
 class _JournalLike(Protocol):
@@ -188,7 +264,21 @@ class ComputeScriptGenerator:
                 and not any(inferred_routines.get(f'use_{name}') for name in DETECTORS_2D)
             ):
                 detector_params = {'use_DKDKx': True}
-        all_tacts = select_detectors(dim, detector_params, visibility)
+        all_tacts = select_detectors(
+            dim, detector_params, visibility, inferred=inferred_routines,
+        )
+        use_prox_fallback = (
+            not all_tacts
+            and not p.get('use_SelectProx_macro')
+            and not p.get('advanced_fd_select_prox')
+        )
+        if use_prox_fallback:
+            warnings.warn(
+                f"No contact detector is selected or inferred for this {dim}D project; "
+                "the generated script will fall back to chipy.SelectProxTactors().",
+                UserWarning,
+                stacklevel=2,
+            )
 
         use_multi   = p.get('use_multi_step', False)
         use_restart = p.get('use_restart', False)
@@ -329,8 +419,8 @@ class ComputeScriptGenerator:
 
         def _resolve_group_ids(grp_name: str):
             """
-            Retourne les numéros de corps LMGC90 (1-based, en chaînes) pour
-            les membres du groupe : avatars AoS, puis particules SoA.
+            Resolve group members to 1-based rigid-body indices in PRE order.
+            MAILx avatars do not occupy RBDY2/RBDY3 indices.
             """
             if not grp_name or self.project is None:
                 return []
@@ -345,30 +435,73 @@ class ComputeScriptGenerator:
             if not member_ids:
                 return []
 
-            id_to_idx = {
-                av.avatar_id: i for i, av in enumerate(self.project.avatars)
-            }
-            population_body_indices: dict[str, tuple[int, int]] = {}
-            next_body_index = len(self.project.avatars) + 1
-            for population in self.project.populations:
-                population_body_indices[population.population_id] = (
-                    next_body_index, len(population),
+            rigid_types = (
+                RIGID_AVATARS_2D if self.project.dimension == 2
+                else RIGID_AVATARS_3D
+            )
+            body_ranges: dict[str, tuple[int, int]] = {}
+            next_body_index = 1
+            index_is_known = True
+            non_rigid_members: set[str] = set()
+
+            for avatar in self.project.avatars:
+                mesh_params = avatar.mesh_params or {}
+                is_mesh_rigid_factory = (
+                    str(mesh_params.get("geom", "")).lower()
+                    in ("rigidsfrommesh2d", "rigids_from_mesh2d")
+                    or mesh_params.get("source") == "rigidsFromMesh2D"
                 )
-                next_body_index += len(population)
+                if is_mesh_rigid_factory:
+                    try:
+                        body_count = _rigids_from_mesh2d_count(avatar)
+                    except (OSError, UnicodeError, ValueError) as exc:
+                        index_is_known = False
+                        non_rigid_members.add(avatar.avatar_id)
+                        msg = (
+                            f"Groupe '{grp_name}' : impossible de compter les corps "
+                            f"de l'avatar mesh {avatar.avatar_id[:8]} ({exc}); "
+                            "les indices suivants ne seront pas résolus."
+                        )
+                        if self.journal is not None:
+                            self.journal.warning(msg)
+                        else:
+                            print("WARNING:", msg)
+                        continue
+                elif avatar.avatar_type in rigid_types:
+                    body_count = 1
+                else:
+                    non_rigid_members.add(avatar.avatar_id)
+                    continue
+
+                if index_is_known:
+                    body_ranges[avatar.avatar_id] = (
+                        next_body_index, body_count,
+                    )
+                    next_body_index += body_count
+
+            for population in self.project.populations:
+                if (
+                    population.dimension != self.project.dimension
+                    or population.avatar_type not in rigid_types
+                ):
+                    non_rigid_members.add(population.population_id)
+                    continue
+                if index_is_known:
+                    body_ranges[population.population_id] = (
+                        next_body_index, len(population),
+                    )
+                    next_body_index += len(population)
 
             result = []
             missing = []
             for aid in member_ids:
-                if aid in id_to_idx:
-                    # Position dans state.avatars + 1 (correct pour non-factory)
-                    result.append(str(id_to_idx[aid] + 1))
-                elif aid in population_body_indices:
-                    first, count = population_body_indices[aid]
+                if aid in body_ranges:
+                    first, count = body_ranges[aid]
                     result.extend(str(index) for index in range(first, first + count))
                 else:
                     particle = parse_particle_id(aid)
                     population = (
-                        population_body_indices.get(particle[0])
+                        body_ranges.get(particle[0])
                         if particle is not None else None
                     )
                     if population is not None and particle is not None:
@@ -376,11 +509,22 @@ class ComputeScriptGenerator:
                         if 0 <= particle[1] < count:
                             result.append(str(first + particle[1]))
                             continue
-                    missing.append(aid)
+                    if aid not in non_rigid_members:
+                        missing.append(aid)
+            ignored = [aid for aid in member_ids if aid in non_rigid_members]
+            if ignored:
+                msg = (
+                    f"Groupe '{grp_name}' : {len(ignored)} membre(s) "
+                    "non RBDY ignoré(s) pour cette action."
+                )
+                if self.journal is not None:
+                    self.journal.warning(msg)
+                else:
+                    print("WARNING:", msg)
             if missing:
                 msg = (
                     f"Groupe '{grp_name}' : {len(missing)} identifiant(s) introuvable(s) — "
-                    f"ignoré(s) (résolu={len(member_ids) - len(missing)}/"
+                    f"ignoré(s) (résolu={len(member_ids) - len(missing) - len(ignored)}/"
                     f"{len(member_ids)} membres, {len(result)} corps). "
                     f"IDs: {', '.join(m[:8] + '…' for m in missing[:10])}"
                 )
@@ -432,6 +576,48 @@ class ComputeScriptGenerator:
 
         def _is_no_id_func(entry: dict) -> bool:
             return takes_no_id(entry, self._NO_ID_FUNCS)
+
+        def _inspection_statement(entry: dict) -> str:
+            func = entry.get("func", "")
+            actual_arity = 0 if _is_no_id_func(entry) else 1
+            chipy_api = CAPABILITY_SNAPSHOT.get("apis", {}).get("chipy", {})
+            metadata = chipy_api.get(func, {})
+            expected_arity = _CHIPY_REQUIRED_POSITIONAL_ARITY.get(func)
+            parameters = metadata.get("parameters")
+            if expected_arity is None and isinstance(parameters, list):
+                positional = [
+                    parameter for parameter in parameters
+                    if parameter.get("kind") in (
+                        "POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD",
+                    )
+                ]
+                if not any(
+                    parameter.get("kind") == "VAR_POSITIONAL"
+                    for parameter in parameters
+                ):
+                    required_arity = sum(
+                        bool(parameter.get("required")) for parameter in positional
+                    )
+                    maximum_arity = metadata.get("arity")
+                    if isinstance(maximum_arity, int):
+                        if actual_arity < required_arity or actual_arity > maximum_arity:
+                            raise ValueError(
+                                f"inspection routine {func} requires "
+                                f"{required_arity} to {maximum_arity} positional "
+                                f"arguments, but the generated call supplies "
+                                f"{actual_arity}"
+                            )
+                    return inspection_statement(entry, self._NO_ID_FUNCS)
+
+            if expected_arity is None:
+                expected_arity = metadata.get("arity")
+            if isinstance(expected_arity, int) and actual_arity != expected_arity:
+                raise ValueError(
+                    f"inspection routine {func} requires {expected_arity} "
+                    f"positional arguments, but the generated call supplies "
+                    f"{actual_arity}"
+                )
+            return inspection_statement(entry, self._NO_ID_FUNCS)
 
         def _write_vis_before(entry: dict) -> None:
             action   = entry.get('action', 'visible')
@@ -503,7 +689,7 @@ class ComputeScriptGenerator:
             no_id = _is_no_id_func(entry)
             guard, extra_ind = _timing_guard(entry)
             if no_id:
-                line = inspection_statement(entry, self._NO_ID_FUNCS)
+                line = _inspection_statement(entry)
                 if guard:
                     w(guard)
                     w(extra_ind + line + '\n')
@@ -520,14 +706,10 @@ class ComputeScriptGenerator:
                 if guard:
                     w(guard)
                     w(extra_ind + 'for _id in {}:\n'.format(ids_repr))
-                    w(extra_ind + '    ' + inspection_statement(
-                        entry, self._NO_ID_FUNCS
-                    ) + '\n')
+                    w(extra_ind + '    ' + _inspection_statement(entry) + '\n')
                 else:
                     w(ind + 'for _id in {}:\n'.format(ids_repr))
-                    w(ind + '    ' + inspection_statement(
-                        entry, self._NO_ID_FUNCS
-                    ) + '\n')
+                    w(ind + '    ' + _inspection_statement(entry) + '\n')
             w('\n')
 
         def _is_in_loop(e: dict) -> bool:
@@ -675,7 +857,7 @@ class ComputeScriptGenerator:
             if not func:
                 return
             if _is_no_id_func(entry):
-                w(inspection_statement(entry, self._NO_ID_FUNCS) + '\n')
+                w(_inspection_statement(entry) + '\n')
             else:
                 id_list = (
                     [t.strip() for t in ids_str.split(',') if t.strip().isdigit()]
@@ -683,9 +865,7 @@ class ComputeScriptGenerator:
                 )
                 if id_list:
                     w('for _id in [{}]:\n'.format(', '.join(id_list)))
-                    w('    ' + inspection_statement(
-                        entry, self._NO_ID_FUNCS
-                    ) + '\n')
+                    w('    ' + _inspection_statement(entry) + '\n')
             w('\n')
 
         for _gbv_key_b, _gbv_func_b, _gbv_flag_b in [
@@ -823,8 +1003,10 @@ class ComputeScriptGenerator:
         # c. Detection de contact
         # si use_SelectProx_macro est activé autres sont désactivés
         L("chipy.utilities_logMes('SELECT PROX TACTORS')")
-        if p.get('use_SelectProx_macro'):
+        if p.get('use_SelectProx_macro') or use_prox_fallback:
             L('chipy.SelectProxTactors()')
+            if use_prox_fallback:
+                L('# WARNING: no individual contact detector selected or inferred; using the global macro')
         elif p.get('advanced_fd_select_prox'):
             L('chipy.FdSelectProxTactors()')
         elif all_tacts:

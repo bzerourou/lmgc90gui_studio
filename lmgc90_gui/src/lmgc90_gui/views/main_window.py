@@ -51,6 +51,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
             apply_app_style(self)
             self._build_ui()
             self._connect()
+            self._setup_autosave_timer()
+            self._rebuild_recent_menu()
             self.controller.state_changed.emit()  # initial refresh
 
         def _build_ui(self) -> None:
@@ -144,6 +146,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
             act_open.setShortcut(QKeySequence.StandardKey.Open)
             act_open.triggered.connect(self._on_open)
             file_m.addAction(act_open)
+
+            self.recent_menu = file_m.addMenu("Recent projects")
 
             act_save = QAction(f"{MENU_ICONS['save']} &Save", self)
             act_save.setShortcut(QKeySequence.StandardKey.Save)
@@ -316,13 +320,29 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 f"{source}  ·  "
                 f"pylmgc={'✅' if self.controller.pylmgc_available() else '—'}"
             )
-            self.setWindowTitle(f"LMGC90_GUI Studio v{APP_VERSION} — {p.name}")
+            self.setWindowTitle(
+                f"LMGC90_GUI Studio v{APP_VERSION} — {p.name}[*]"
+            )
+            self.setWindowModified(self.controller.modified)
 
         def _on_error(self, msg: str) -> None:
             QMessageBox.warning(self, f"LMGC90_GUI Studio v{APP_VERSION}", msg)
 
         def _on_loaded(self) -> None:
             self._update_status()
+            warnings = list(getattr(self.controller.project, "load_warnings", []) or [])
+            if not warnings:
+                return
+            message = "\n".join(f"• {warning}" for warning in warnings)
+            self.controller.journal.warning(
+                f"Project loaded with {len(warnings)} warning(s): "
+                + "; ".join(warnings)
+            )
+            QMessageBox.warning(
+                self,
+                "Project loaded with warnings",
+                "Some project data could not be restored:\n\n" + message,
+            )
 
         def _on_new(self) -> None:
             from PyQt6.QtWidgets import QInputDialog
@@ -335,6 +355,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
             name, ok2 = QInputDialog.getText(self, "New project", "Name:", text="untitled")
             if not ok2:
                 return
+            if not self._confirm_unsaved_changes():
+                return
             self.controller.new_project((name or "untitled").strip(), dimension=int(dim))
             self.controller.journal.info(f"New project dimension={dim}")
 
@@ -343,10 +365,50 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 self, "Open project", "", "LMGC90 project (*.lmgc90);;All (*)"
             )
             if path:
+                if not self._confirm_unsaved_changes():
+                    return
                 try:
                     self.controller.load_project(path)
+                    self._remember_recent(path)
                 except Exception as exc:
                     QMessageBox.critical(self, "Open", str(exc))
+
+        def _save_for_confirmation(self) -> bool:
+            path = self.controller.filepath
+            if path is None:
+                selected, _ = QFileDialog.getSaveFileName(
+                    self, "Save project", "", "LMGC90 project (*.lmgc90)"
+                )
+                if not selected:
+                    return False
+                if not selected.endswith(".lmgc90"):
+                    selected += ".lmgc90"
+                path = selected
+            try:
+                self.controller.save_project(path)
+                self._remember_recent(path)
+                return True
+            except Exception as exc:
+                QMessageBox.critical(self, "Save", str(exc))
+                return False
+
+        def _confirm_unsaved_changes(self) -> bool:
+            if not self.controller.modified:
+                return True
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("Unsaved changes")
+            box.setText("The current project has unsaved changes.")
+            box.setInformativeText("Save your changes before continuing?")
+            save_button = box.addButton(QMessageBox.StandardButton.Save)
+            discard_button = box.addButton(QMessageBox.StandardButton.Discard)
+            box.addButton(QMessageBox.StandardButton.Cancel)
+            box.setDefaultButton(save_button)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is save_button:
+                return self._save_for_confirmation()
+            return clicked is discard_button
 
         def _on_save(self) -> None:
             if self.controller.filepath is None:
@@ -354,6 +416,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 return
             try:
                 self.controller.save_project()
+                self._remember_recent(self.controller.filepath)
                 self.statusBar().showMessage(f"Saved {self.controller.filepath}", 3000)
             except Exception as exc:
                 QMessageBox.critical(self, "Save", str(exc))
@@ -367,6 +430,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
                     path += ".lmgc90"
                 try:
                     self.controller.save_project(path)
+                    self._remember_recent(path)
                     self.statusBar().showMessage(f"Saved {path}", 3000)
                 except Exception as exc:
                     QMessageBox.critical(self, "Save", str(exc))
@@ -374,19 +438,34 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def _on_export_pre(self) -> None:
             path, _ = QFileDialog.getSaveFileName(self, "pre.py", "pre.py", "Python (*.py)")
             if path:
-                self.controller.emit_pre_script(path)
+                try:
+                    self.controller.emit_pre_script(path)
+                except Exception as exc:
+                    self.controller.journal.exception("Export pre.py failed", exc)
+                    QMessageBox.critical(self, "Export pre.py", str(exc))
+                    return
                 self.statusBar().showMessage(f"Wrote {path}", 3000)
 
         def _on_export_chipy(self) -> None:
             path, _ = QFileDialog.getSaveFileName(self, "command.py", "command.py", "Python (*.py)")
             if path:
-                self.controller.emit_chipy_script(path)
+                try:
+                    self.controller.emit_chipy_script(path)
+                except Exception as exc:
+                    self.controller.journal.exception("Export command.py failed", exc)
+                    QMessageBox.critical(self, "Export command.py", str(exc))
+                    return
                 self.statusBar().showMessage(f"Wrote {path}", 3000)
 
         def _on_export_all(self) -> None:
             path = QFileDialog.getExistingDirectory(self, "Export directory")
             if path:
-                written = self.controller.export_all(path)
+                try:
+                    written = self.controller.export_all(path)
+                except Exception as exc:
+                    self.controller.journal.exception("Export all failed", exc)
+                    QMessageBox.critical(self, "Export all", str(exc))
+                    return
                 keys = ", ".join(written.keys())
                 self.statusBar().showMessage(f"Exported: {keys}", 4000)
 
@@ -427,11 +506,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 )
                 if r != QMessageBox.StandardButton.Yes:
                     return
-            p.dimension = new_dim
-            self.controller.session.mark_dirty()
+            self.controller.set_dimension(new_dim)
             self.controller.journal.info(f"Project dimension set to {new_dim}D")
-            self.controller.state_changed.emit()
-            self._update_status()
 
         def _on_mesh_wizard(self) -> None:
             from ..dialogs.mesh_wizard import create_mesh_wizard
@@ -558,6 +634,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
             try:
                 dim = int(example.dimension)
                 if clicked is btn_replace:
+                    if not self._confirm_unsaved_changes():
+                        return
                     self.controller.new_project(example.id, dimension=dim)
                     self.controller.apply_scene(example.scene)
                     self.controller.journal.info(f"Example replaced: {example.id}")
@@ -598,6 +676,25 @@ def create_main_window(controller: Optional[ProjectController] = None):
                     self.controller.journal.exception("example load failed", exc)
                 except Exception:
                     pass
+
+        def closeEvent(self, event) -> None:
+            if (
+                self.controller.modified
+                and self.controller.filepath is not None
+                and self.controller.prefs.auto_save_on_quit
+            ):
+                try:
+                    self.controller.save_project()
+                    self._remember_recent(self.controller.filepath)
+                except Exception as exc:
+                    self.controller.journal.exception("Save on quit failed", exc)
+                    QMessageBox.critical(self, "Save on quit", str(exc))
+                    event.ignore()
+                    return
+            if self._confirm_unsaved_changes():
+                event.accept()
+            else:
+                event.ignore()
 
         def _on_command_palette(self) -> None:
             """Ctrl+K — filterable command palette over menus + tabs."""
@@ -649,7 +746,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 empty.setEnabled(False)
                 self.recent_menu.addAction(empty)
                 return
-            for path in paths[: int(getattr(prefs, "recent_max", 10) or 10)]:
+            recent_max = max(0, int(getattr(prefs, "recent_max", 10)))
+            for path in paths[:recent_max]:
                 act = QAction(path, self)
                 act.triggered.connect(lambda checked=False, p=path: self._open_recent(p))
                 self.recent_menu.addAction(act)
@@ -666,6 +764,8 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 QMessageBox.warning(self, "Recent", f"File not found:\n{path}")
                 return
             try:
+                if not self._confirm_unsaved_changes():
+                    return
                 self.controller.load_project(p)
                 self._remember_recent(p)
             except Exception as exc:
@@ -682,8 +782,12 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 self.controller.prefs.remember_project(path)
                 self.controller.save_preferences()
                 self._rebuild_recent_menu()
-            except Exception:
-                pass
+            except Exception as exc:
+                self.controller.journal.exception("Could not update recent projects", exc)
+                self.statusBar().showMessage(
+                    f"Project saved, but recent-projects list could not be updated: {exc}",
+                    7000,
+                )
 
         def _setup_autosave_timer(self) -> None:
             from PyQt6.QtCore import QTimer
@@ -698,14 +802,16 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 self._autosave_timer.stop()
 
         def _on_autosave_tick(self) -> None:
-            path = getattr(self.controller, "project_path", None)
-            if path is None:
+            path = self.controller.filepath
+            if path is None or not self.controller.modified:
                 return
             try:
                 self.controller.save_project(path)
+                self._remember_recent(path)
                 self.statusBar().showMessage(f"Auto-save → {path}", 3000)
-            except Exception:
-                pass
+            except Exception as exc:
+                self.controller.journal.exception("Auto-save failed", exc)
+                self.statusBar().showMessage(f"Auto-save failed: {exc}", 7000)
 
         def _on_preferences(self) -> None:
             from ..dialogs.preferences_dialog import create_preferences_dialog
@@ -733,12 +839,19 @@ def create_main_window(controller: Optional[ProjectController] = None):
                 return
             self.controller.journal.info(f"DATBOX generation requested → {path}")
             self.statusBar().showMessage("Generating scripts / DATBOX…")
-            runner = create_datbox_worker(
-                self.controller,
-                _P(path),
-                try_live_datbox=self.controller.prefs.auto_write_datbox,
-                chipy_params=self.controller.prefs.chipy_params(),
-            )
+            try:
+                runner = create_datbox_worker(
+                    self.controller,
+                    _P(path),
+                    try_live_datbox=self.controller.prefs.auto_write_datbox,
+                    chipy_params=self.controller.prefs.chipy_params(),
+                    use_loop=self.controller.prefs.script_use_loop,
+                )
+            except Exception as exc:
+                self.controller.journal.exception("DATBOX snapshot failed", exc)
+                self.statusBar().showMessage("DATBOX failed", 4000)
+                QMessageBox.critical(self, "DATBOX", str(exc))
+                return
             self._datbox_runner = runner
 
             def on_progress(msg: str):

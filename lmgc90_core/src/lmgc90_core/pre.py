@@ -55,10 +55,10 @@ def rigidDisk(*, r, center, model, material, color="BLUEx", is_Hollow=False) -> 
     )
 
 
-def rigidSphere(*, r, center, model, material, color="BLUEx", is_Hollow=False) -> Avatar:
+def rigidSphere(*, r, center, model, material, color="BLUEx") -> Avatar:
     return _avatar(
         AvatarType.RIGID_SPHERE, center, material, model, color,
-        radius=float(r), is_hollow=bool(is_Hollow),
+        radius=float(r),
     )
 
 

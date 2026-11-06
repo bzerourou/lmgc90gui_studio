@@ -1,8 +1,134 @@
 """Wall avatar factory calls must match the supported pre constructors."""
 from __future__ import annotations
 
+import pytest
+
 from lmgc90_core import pre
-from lmgc90_engine.avatar_factory import build_avatar
+from lmgc90_engine.avatar_factory import (
+    _call_supported_signature,
+    _apply_contactors,
+    build_avatar,
+)
+from lmgc90_engine.errors import MaterializationError
+
+
+def test_compatible_call_selects_signature_before_invoking():
+    calls = []
+
+    def factory(mesh, model, material, color):
+        calls.append((mesh, model, material, color))
+        return "body"
+
+    result = _call_supported_signature(factory, [
+        ((), {
+            "surfacic_mesh": "mesh",
+            "model": "model",
+            "material": "material",
+            "color": "color",
+        }),
+        (("mesh", "model", "material", "color"), {}),
+    ])
+
+    assert result == "body"
+    assert calls == [("mesh", "model", "material", "color")]
+
+
+def test_typeerror_inside_factory_is_not_retried_with_another_signature():
+    calls = []
+
+    def factory(*, surfacic_mesh, model, material, color):
+        calls.append(surfacic_mesh)
+        raise TypeError("factory implementation failed")
+
+    with pytest.raises(TypeError, match="factory implementation failed"):
+        _call_supported_signature(factory, [
+            ((), {
+                "surfacic_mesh": "mesh",
+                "model": "model",
+                "material": "material",
+                "color": "color",
+            }),
+            (("mesh", "model", "material", "color"), {}),
+        ])
+
+    assert calls == ["mesh"]
+
+
+@pytest.mark.parametrize("group", [None, ""])
+def test_mesh_contactor_requires_explicit_group(group):
+    avatar = pre.meshed_rectangle(
+        lx=1.0, ly=1.0, nx=1, ny=1, center=[0, 0],
+        model="mesh", material="MAT",
+        contactors=[{"shape": "CLxxx", "color": "CYANx", **(
+            {"group": group} if group is not None else {}
+        )}],
+    )
+
+    class Body:
+        def __init__(self):
+            self.added = []
+
+        def addContactors(self, **kwargs):
+            self.added.append(kwargs)
+
+    body = Body()
+    with pytest.raises(MaterializationError, match="requires an explicit non-empty group"):
+        _apply_contactors(body, avatar)
+
+    assert body.added == []
+
+
+def test_mesh_contactor_uses_only_the_explicit_group():
+    avatar = pre.meshed_rectangle(
+        lx=1.0, ly=1.0, nx=1, ny=1, center=[0, 0],
+        model="mesh", material="MAT",
+        contactors=[{"shape": "CLxxx", "color": "CYANx", "group": "right"}],
+    )
+
+    class Body:
+        def __init__(self):
+            self.added = []
+
+        def addContactors(self, **kwargs):
+            self.added.append(kwargs)
+
+    body = Body()
+    _apply_contactors(body, avatar)
+
+    assert body.added == [{
+        "shape": "CLxxx", "group": "right", "color": "CYANx",
+    }]
+
+
+@pytest.mark.parametrize(
+    "shape, options",
+    [
+        ("DISKx", {"byrd": 0.1, "shfit": [0.0, 0.0]}),
+        ("CLxxx", {"group": "down", "colro": "CYANx"}),
+    ],
+)
+def test_unknown_contactor_options_raise_instead_of_being_dropped(shape, options):
+    avatar = pre.meshed_rectangle(
+        lx=1.0, ly=1.0, nx=1, ny=1, center=[0, 0],
+        model="mesh", material="MAT",
+        contactors=[{"shape": shape, **options}],
+    )
+
+    class Body:
+        def __init__(self):
+            self.added = []
+
+        def addContactors(self, **kwargs):
+            self.added.append(kwargs)
+
+    body = Body()
+    with pytest.raises(
+        MaterializationError,
+        match=f"{shape} contactor has unsupported option",
+    ):
+        _apply_contactors(body, avatar)
+
+    assert body.added == []
 
 
 class _WallPre:

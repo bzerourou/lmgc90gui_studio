@@ -1,3 +1,5 @@
+import pytest
+
 from lmgc90_core import Project
 from lmgc90_core.compute_script import ComputeScriptGenerator
 
@@ -194,3 +196,40 @@ def test_fd_select_prox_overrides_individual_detectors():
 
     assert script.count("chipy.FdSelectProxTactors()") == 1
     assert "chipy.SPSPx_SelectProxTactors()" not in script
+
+
+def test_inspection_rejects_argument_count_mismatch_from_snapshot():
+    project = Project(name="inspection_arity", dimension=2)
+
+    with pytest.raises(
+        ValueError,
+        match=r"CircularSelection requires 3 to 3 positional arguments.*supplies 1",
+    ):
+        ComputeScriptGenerator(project).generate_string({
+            "insp2d_entries": [{
+                "func": "CircularSelection",
+                "ids": "1",
+                "group": "",
+                "step_mode": "all",
+            }],
+        })
+
+
+@pytest.mark.parametrize("step_mode", ["all", "before", "after"])
+def test_get_body_vector_inspection_rejected_when_generator_omits_vector_arg(
+    step_mode,
+):
+    project = Project(name="get_body_vector_arity", dimension=2)
+
+    with pytest.raises(
+        ValueError,
+        match=r"RBDY2_GetBodyVector requires 2 positional arguments.*supplies 1",
+    ):
+        ComputeScriptGenerator(project).generate_string({
+            "insp2d_entries": [{
+                "func": "RBDY2_GetBodyVector",
+                "ids": "1",
+                "group": "",
+                "step_mode": step_mode,
+            }],
+        })

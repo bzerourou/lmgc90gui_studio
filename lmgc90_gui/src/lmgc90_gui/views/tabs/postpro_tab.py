@@ -38,7 +38,7 @@ def create_postpro_tab(parent=None):
             self.target_type = QComboBox()
             self.target_type.addItems(["global", "avatar", "group"])
             self.target_value = QComboBox()
-            self.target_value.setEditable(True)
+            self.target_value.setEditable(False)
             form.addRow("Command", self.name_combo)
             form.addRow("Step", self.step_spin)
             form.addRow("Target type", self.target_type)
@@ -64,9 +64,11 @@ def create_postpro_tab(parent=None):
             tt = self.target_type.currentText()
             if tt == "avatar":
                 for a in p.avatars:
-                    self.target_value.addItem(f"{a.avatar_id[:12]}… | {a.avatar_type.value}")
+                    label = f"{a.avatar_id[:12]}… | {a.avatar_type.value}"
+                    self.target_value.addItem(label, a.avatar_id)
             elif tt == "group":
-                self.target_value.addItems(list(p.avatar_groups.keys()))
+                for group_name in p.avatar_groups:
+                    self.target_value.addItem(group_name, group_name)
 
         def on_state_changed(self) -> None:
             if self.controller is None:

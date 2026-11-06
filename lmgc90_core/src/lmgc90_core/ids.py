@@ -12,6 +12,18 @@ def new_population_id() -> str:
     return "pop_" + uuid.uuid4().hex
 
 
+def new_operation_id() -> str:
+    return "op_" + uuid.uuid4().hex
+
+
+def new_visibility_id() -> str:
+    return "see_" + uuid.uuid4().hex
+
+
+def new_generation_id() -> str:
+    return "gen_" + uuid.uuid4().hex
+
+
 def particle_id(population_id: str, index: int) -> str:
     return f"{population_id}:{index}"
 

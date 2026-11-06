@@ -403,6 +403,18 @@ def create_compute_tab(parent=None):
                 if not (work / "command.py").is_file():
                     return
 
+            datbox = work / "DATBOX"
+            if not datbox.is_dir():
+                message = (
+                    f"No DATBOX directory found in\n{work}\n\n"
+                    "Prepare the DATBOX before running the calculation."
+                )
+                self.controller.journal.warning(message.replace("\n", " "))
+                self.log_view.append(f"WARNING: {message}")
+                self.status_lbl.setText("DATBOX missing.")
+                QMessageBox.warning(self, "Compute", message)
+                return
+
             if self.controller.prefs.confirm_run:
                 r = QMessageBox.question(
                     self, "Run Calculation",

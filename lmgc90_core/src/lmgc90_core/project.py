@@ -13,9 +13,10 @@ from .commands import (
     AddAvatar, AddAvatarBatch, AddDOF, AddForLoop, AddGranuloConfig, AddLaw,
     AddLoop, AddMaterial, AddModel, AddPopulation, AddPostPro, AddSeeTable,
     CommandHistory, CompositeCommand, RemoveAvatar, RemoveDOF, RemoveForLoop,
-    RemoveLaw, RemoveLoop, RemoveMaterial, RemoveModel, RemoveSeeTable,
-    RemoveGroup, SetGroup, UpdateAvatar, UpdateDOF, UpdateLaw, UpdateMaterial,
-    UpdateModel, UpdateSeeTable,
+    RemoveLaw, RemoveLoop, RemoveMaterial, RemoveModel, RemovePopulation,
+    RemovePostPro, RemoveSeeTable, RemoveGroup, SetDynamicVar, SetGroup,
+    UpdateAvatar, UpdateDOF, UpdateLaw, UpdateMaterial, UpdateModel,
+    UpdateSeeTable,
 )
 from .entities import (
     Avatar, ContactLaw, DOFOperation, ForLoop, GranuloConfig, Loop, Material, Model,
@@ -135,6 +136,21 @@ class Project:
             and (item.target_kind or "").lower().strip() in (
                 "law", "laws", "contact", "contact_law", "contact_laws",
             )
+        )
+        return references
+
+    def _avatar_references(self, avatar_id: str) -> list[str]:
+        references = [
+            f"loop {item.loop_id[:8]}"
+            for item in self.loops
+            if item.model_avatar_id == avatar_id
+        ]
+        references.extend(
+            f"ForLoop {item.loop_id[:8]}"
+            for item in self.for_loops
+            if item.model_avatar_id == avatar_id
+            and (item.target_kind or "avatar").lower().strip()
+            in ("avatar", "avatars")
         )
         return references
 
@@ -266,6 +282,9 @@ class Project:
 
     def remove_avatar(self, avatar_id: str) -> Avatar:
         av = self.avatar(avatar_id)
+        self._ensure_unreferenced(
+            "avatar", avatar_id, self._avatar_references(avatar_id),
+        )
         self._run(RemoveAvatar(av))
         return av
 
@@ -282,6 +301,11 @@ class Project:
     ) -> ParticlePopulation:
         self._check_population(population)
         return self._run(AddPopulation(population, config), population)
+
+    def remove_population(self, population_id: str) -> ParticlePopulation:
+        population = self.population(population_id)
+        self._run(RemovePopulation(population_id, population=population))
+        return population
 
     def update_material(self, name: str, new: Material) -> Material:
         old = self._find_material(name)
@@ -357,6 +381,25 @@ class Project:
         operation = self.operations[index]
         self._run(RemoveDOF(operation, index))
         return operation
+
+    def remove_postpro(self, index: int) -> PostProCommand:
+        if not 0 <= index < len(self.postpro):
+            raise ValidationError(f"post-processing command index {index} out of range")
+        command = self.postpro[index]
+        self._run(RemovePostPro(command, index))
+        return command
+
+    def set_dynamic_var(self, name: str, value: Any) -> None:
+        if not name:
+            raise ValidationError("dynamic variable name cannot be empty")
+        self._run(SetDynamicVar(name, value))
+
+    def remove_dynamic_var(self, name: str) -> Any:
+        if name not in self.dynamic_vars:
+            raise UnknownReferenceError(f"dynamic variable {name!r}")
+        value = self.dynamic_vars[name]
+        self._run(SetDynamicVar(name, remove=True))
+        return value
 
     def remove_law(self, name: str) -> ContactLaw:
         law = self._find_law(name)
@@ -606,7 +649,7 @@ class Project:
                     parameters=params,
                 )
                 self.add(op)
-                generated_ids.append(str(len(generated_ids)))
+                generated_ids.append(op.operation_id)
                 out.append(op)
 
         elif kind in ("visibility", "see", "see_table"):
@@ -636,7 +679,7 @@ class Project:
                     alert=float(alert),
                 )
                 self.add(rule)
-                generated_ids.append(str(len(generated_ids)))
+                generated_ids.append(rule.visibility_id)
                 out.append(rule)
 
         elif kind in ("granulo", "granulo_dist", "distribution"):
@@ -689,7 +732,7 @@ class Project:
                     generated_ids.append(pop.population_id)
                     out.append(pop)
                 else:
-                    generated_ids.append(f"dist{len(generated_ids)}")
+                    generated_ids.append(cfg.generation_id)
                     out.append(cfg)
         else:
             raise ValidationError(f"ForLoop target_kind inconnu: {kind!r}")
@@ -838,7 +881,21 @@ class Project:
 
     def _check_dof(self, op: DOFOperation) -> None:
         if op.target_type == "avatar":
-            self.avatar(str(op.target_value))
+            target = str(op.target_value)
+            from .ids import parse_particle_id
+            particle = parse_particle_id(target)
+            if particle is not None:
+                population = next(
+                    (
+                        item for item in self.populations
+                        if item.population_id == particle[0]
+                    ),
+                    None,
+                )
+                if population is None or not 0 <= particle[1] < len(population):
+                    raise UnknownReferenceError(f"avatar {target!r}")
+            else:
+                self.avatar(target)
         elif op.target_type == "group":
             if (
                 op.target_value not in self.avatar_groups

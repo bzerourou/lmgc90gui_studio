@@ -1,7 +1,12 @@
 from pathlib import Path
 import ast
 
-from lmgc90_core import DOFOperation, GranuloConfig, PostProCommand, Project, pre
+import pytest
+
+from lmgc90_core import (
+    DOFOperation, GranuloConfig, ParticlePopulation, PostProCommand, Project, pre,
+    render_sbatch,
+)
 from lmgc90_core.scenes.demos import falling_disks, sphere_stack
 
 
@@ -64,6 +69,136 @@ def test_population_sidecar(tmp_path: Path):
     assert (q.populations[0].centers == p.populations[0].centers).all()
 
 
+def test_removed_population_history_roundtrip_keeps_arrays(tmp_path: Path):
+    p = Project(name="g", dimension=2)
+    p.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    p.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    population = p.deposit(GranuloConfig(
+        nb_particles=4, radius_min=0.02, radius_max=0.03,
+        container_type="Box2D", container_params={"lx": 0.4, "ly": 0.4},
+        material_name="STEEL", model_name="rigid", seed=1,
+    ))
+    population_id = population.population_id
+
+    p.remove_population(population_id)
+    path = tmp_path / "removed.lmgc90"
+    p.save(path)
+    loaded = Project.load(path)
+    assert loaded.populations == []
+
+    loaded.undo()
+    restored = loaded.population(population_id)
+    assert len(restored) == len(population)
+    assert (restored.centers == population.centers).all()
+
+
+def test_v1_migration_restores_loop_avatars_and_resolves_dof_indices(tmp_path: Path):
+    import json
+
+    template = pre.rigidDisk(
+        r=0.1, center=[0, 0], model="rigid", material="STEEL",
+    )
+    data = {
+        "schema_version": 1,
+        "project_name": "legacy-loop",
+        "dimension": 2,
+        "materials": [
+            pre.material(name="STEEL", materialType="RIGID", density=7800).to_dict()
+        ],
+        "models": [
+            pre.model(
+                name="rigid", physics="MECAx", element="Rxx2D", dimension=2,
+            ).to_dict()
+        ],
+        "avatars": [template.to_dict()],
+        "loops": [{
+            "type": "line",
+            "model_avatar_index": 0,
+            "count": 2,
+            "step": 0.2,
+            "generated_indices": [1, 2],
+        }],
+        "operations": [{
+            "type": "imposeDrivenDof",
+            "body_index": 2,
+            "params": {"ct": 0.0},
+        }],
+        "avatar_groups": {"legacy": [1, 2]},
+    }
+    path = tmp_path / "legacy-loop.lmgc90"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    project = Project.load(path)
+
+    assert len(project.avatars) == 3
+    loop = project.loops[0]
+    assert loop.model_avatar_id == project.avatars[0].avatar_id
+    assert loop.generated_ids == [
+        project.avatars[1].avatar_id, project.avatars[2].avatar_id,
+    ]
+    assert project.operations[0].target_value == project.avatars[2].avatar_id
+    assert project.avatar_groups["legacy"] == loop.generated_ids
+    assert not project.load_warnings
+
+
+def test_v1_migration_regenerates_missing_population_from_granulo_config(tmp_path: Path):
+    import json
+
+    config = GranuloConfig(
+        nb_particles=3,
+        radius_min=0.02,
+        radius_max=0.03,
+        container_type="Box2D",
+        container_params={"lx": 1.0, "ly": 1.0},
+        material_name="STEEL",
+        model_name="rigid",
+        seed=7,
+        population_id="pop_legacy",
+    ).to_dict()
+    config["generated_indices"] = [1, 2, 3]
+    data = {
+        "schema_version": 1,
+        "project_name": "legacy-granulo",
+        "dimension": 2,
+        "materials": [
+            pre.material(name="STEEL", materialType="RIGID", density=7800).to_dict()
+        ],
+        "models": [
+            pre.model(
+                name="rigid", physics="MECAx", element="Rxx2D", dimension=2,
+            ).to_dict()
+        ],
+        "avatars": [],
+        "granulo_generations": [config],
+        "operations": [{
+            "type": "imposeDrivenDof",
+            "body_index": 2,
+            "params": {"ct": 0.0},
+        }],
+        "avatar_groups": {"legacy": [1, 2, 3]},
+    }
+    path = tmp_path / "legacy-granulo.lmgc90"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    project = Project.load(path)
+
+    assert len(project.populations) == 1
+    population = project.populations[0]
+    assert population.population_id == "pop_legacy"
+    assert len(population) == 3
+    assert project.granulo[0].population_id == population.population_id
+    assert project.operations[0].target_value == f"{population.population_id}:1"
+    assert project.avatar_groups["legacy"] == [
+        f"{population.population_id}:{index}" for index in range(3)
+    ]
+    from lmgc90_core.pre_script import emit_pre
+    script = emit_pre(project)
+    assert f"_population_bodies_pop_legacy[1].imposeDrivenDof" in script
+    assert len(project.load_warnings) == 1
+    assert any("regenerated from stored granulo configuration" in warning
+               for warning in project.load_warnings)
+
+
 def test_pre_script_contains_pylmgc90_calls(tmp_path: Path):
     p = _compression(tmp_path)
     src = p.to_pre_script()
@@ -111,16 +246,59 @@ def test_empty_avatar_contactors_are_emitted_before_rigid_properties():
     })
 
     script = p.to_pre_script()
-    call = "av_{}.addContactors(shape='DISKx', color='BLUEx', byrd=0.15)".format(
-        avatar.avatar_id[:8]
+    call = (
+        f"av_{avatar.avatar_id}.addContactors("
+        "shape='DISKx', color='BLUEx', byrd=0.15)"
     )
-    properties = "av_{}.computeRigidProperties()".format(avatar.avatar_id[:8])
-    add_avatar = "bodies.addAvatar(av_{})".format(avatar.avatar_id[:8])
+    properties = f"av_{avatar.avatar_id}.computeRigidProperties()"
+    add_avatar = f"bodies.addAvatar(av_{avatar.avatar_id})"
 
     assert "pre.avatar(2)" in script
     assert call in script
     assert properties in script
     assert script.index(call) < script.index(properties) < script.index(add_avatar)
+    ast.parse(script)
+
+
+def test_pre_script_emits_rigid_brick_geometry_for_empty_avatar():
+    project = Project(name="rigid_brick", dimension=2)
+    project.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    project.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    avatar = project.add(pre.emptyAvatar(
+        center=[0.5, 0.25], model="rigid", material="STEEL",
+    ))
+    avatar.wall_params = {"brick_name": "std", "l": 0.2, "h": 0.1}
+
+    script = project.to_pre_script()
+
+    assert "pre.brick2D('std', 0.2, 0.1)" in script
+    assert ".rigidBrick(center=[0.5, 0.25]" in script
+    assert "pre.avatar(2)" not in script
+    ast.parse(script)
+
+
+def test_pre_script_expands_rigids_from_mesh2d_to_bodies():
+    project = Project(name="mesh_rigids", dimension=2)
+    project.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    project.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    avatar = project.add(pre.emptyAvatar(
+        center=[0.05, 0.05], model="rigid", material="STEEL", color="BLEUx",
+    ))
+    avatar.mesh_params = {
+        "geom": "rigidsFromMesh2D",
+        "source": "rigidsFromMesh2D",
+        "filepath": "pkg://lmgc90_core/data/meshes/Carre.msh",
+        "dim": 2,
+    }
+
+    script = project.to_pre_script()
+    bodies_ref = f"_mesh_rigids_{avatar.avatar_id}"
+
+    assert "pre.readMesh(str(_mesh_file_" in script
+    assert "pre.rigidsFromMesh2D(" in script
+    assert f"for _body in {bodies_ref}:" in script
+    assert "bodies.addAvatar(_body)" in script
+    assert "pre.avatar(2)" not in script
     ast.parse(script)
 
 
@@ -172,14 +350,110 @@ def test_pre_script_dof_fields_and_color_target():
     ))
 
     script = p.to_pre_script()
-    red_target = f"av_{red.avatar_id[:8]}"
-    blue_target = f"av_{blue.avatar_id[:8]}"
+    red_target = f"av_{red.avatar_id}"
+    blue_target = f"av_{blue.avatar_id}"
     assert f"{red_target}.imposeInitValue(group='all', component=1, value=0.25)" in script
     assert f"{blue_target}.imposeInitValue(" not in script
     assert (
         f"{blue_target}.rotate(description='Euler', phi=0.1, theta=0.2, psi=0.3)"
         in script
     )
+    ast.parse(script)
+
+
+def test_pre_script_applies_group_dof_to_population_particles():
+    project = Project(name="population_dof", dimension=2)
+    project.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    project.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    population = project.add(ParticlePopulation.create(
+        avatar_type="rigidDisk",
+        material_name="STEEL",
+        model_name="rigid",
+        centers=[[0.0, 0.0], [1.0, 0.0]],
+        radii=[0.1, 0.2],
+        group_name="particles",
+    ))
+    project.add(DOFOperation(
+        "imposeDrivenDof", "group", "particles",
+        {"component": 1, "dofty": "vlocy", "ct": 0.0},
+    ))
+
+    script = project.to_pre_script()
+    bodies_ref = f"_population_bodies_{population.population_id[:12]}"
+
+    assert f"{bodies_ref} = []" in script
+    assert f"{bodies_ref}.append(_body)" in script
+    assert f"{bodies_ref}[0].imposeDrivenDof(" in script
+    assert f"{bodies_ref}[1].imposeDrivenDof(" in script
+    assert "av_pop_" not in script
+    ast.parse(script)
+
+
+def test_pre_script_resolves_postpro_avatar_and_group_targets():
+    project = Project(name="postpro_targets", dimension=2)
+    project.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    project.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    avatar = project.add(pre.rigidDisk(
+        r=0.1, center=[0.0, 0.0], model="rigid", material="STEEL",
+    ))
+    population = project.add(ParticlePopulation.create(
+        avatar_type="rigidDisk",
+        material_name="STEEL",
+        model_name="rigid",
+        centers=[[1.0, 0.0], [2.0, 0.0]],
+        radii=[0.1, 0.2],
+        group_name="particles",
+    ))
+    project.add(PostProCommand(
+        name="BODY TRACKING", target_type="avatar", target_value=avatar.avatar_id,
+    ))
+    project.add(PostProCommand(
+        name="TORQUE EVOLUTION", target_type="group", target_value="particles",
+    ))
+    project.add(PostProCommand(
+        name="NEW RIGID SETS", target_type="groups",
+        target_value=["particles"],
+    ))
+
+    script = project.to_pre_script()
+    avatar_ref = f"av_{avatar.avatar_id}"
+    population_ref = f"_population_bodies_{population.population_id[:12]}"
+
+    assert f"rigid_set=[{avatar_ref}]" in script
+    assert f"rigid_set=[{population_ref}[0], {population_ref}[1]]" in script
+    assert f"rigid_sets=[[{population_ref}[0], {population_ref}[1]]]" in script
+    assert "avatar=" not in script
+    assert "group=" not in script
+    ast.parse(script)
+
+
+def test_pre_script_avatar_variable_names_use_full_ids():
+    project = Project(name="full_avatar_ids", dimension=2)
+    project.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    project.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    first = pre.rigidDisk(
+        r=0.1, center=[0.0, 0.0], model="rigid", material="STEEL",
+    )
+    second = pre.rigidDisk(
+        r=0.1, center=[1.0, 0.0], model="rigid", material="STEEL",
+    )
+    first.avatar_id = "deadbeef" + "1" * 24
+    second.avatar_id = "deadbeef" + "2" * 24
+    project.add(first)
+    project.add(second)
+    project.add(DOFOperation(
+        "imposeDrivenDof", "avatar", second.avatar_id,
+        {"component": 1, "dofty": "vlocy", "ct": 0.0},
+    ))
+
+    script = project.to_pre_script()
+
+    first_ref = f"av_{first.avatar_id}"
+    second_ref = f"av_{second.avatar_id}"
+    assert f"{first_ref} = pre.rigidDisk(" in script
+    assert f"{second_ref} = pre.rigidDisk(" in script
+    assert f"{second_ref}.imposeDrivenDof(" in script
+    assert f"{first_ref}.imposeDrivenDof(" not in script
     ast.parse(script)
 
 
@@ -224,3 +498,38 @@ def test_chipy_and_sbatch():
     assert "#SBATCH --partition=cpu" in bat
     assert "python pre.py" in bat
     assert "python command.py" in bat
+
+
+def test_render_sbatch_quotes_shell_values_and_exports_openmp_threads():
+    project = Project(name="safe job", dimension=2)
+    script = render_sbatch(
+        project,
+        job_name="safe-job",
+        partition="cpu",
+        cpus_per_task=4,
+        workdir="/scratch/my runs",
+        module_load=("python/3.11; touch bad",),
+        python="/opt/Python Env/python",
+    )
+
+    assert "export OMP_NUM_THREADS=4" in script
+    assert "cd -- '/scratch/my runs'" in script
+    assert "module load 'python/3.11; touch bad'" in script
+    assert "'/opt/Python Env/python' pre.py" in script
+    assert "'/opt/Python Env/python' command.py" in script
+
+
+def test_render_sbatch_rejects_newlines_in_directives():
+    with pytest.raises(ValueError, match="job_name"):
+        render_sbatch(Project(), job_name="job\n#SBATCH --account=other")
+
+
+def test_render_sbatch_preserves_submit_directory_expansion():
+    script = render_sbatch(Project())
+
+    assert 'cd -- "${SLURM_SUBMIT_DIR}"' in script
+
+
+def test_render_sbatch_requires_positive_integer_cpu_counts():
+    with pytest.raises(ValueError, match="positive integers"):
+        render_sbatch(Project(), cpus_per_task=0)

@@ -53,6 +53,15 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
     batch_number = 0
     while i < len(project.avatars):
         av = project.avatars[i]
+        if _is_rigids_from_mesh2d(av):
+            L(_emit_rigids_from_mesh2d(av))
+            bodies_ref = _mesh_rigids_ref(av)
+            L(f"for _body in {bodies_ref}:")
+            L("    bodies.addAvatar(_body)")
+            avatar_refs[av.avatar_id] = f"{bodies_ref}[0]"
+            L()
+            i += 1
+            continue
         signature = _loop_avatar_signature(av) if use_loop else None
         run_end = i + 1
         if signature is not None:
@@ -149,10 +158,7 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
     if project.postpro:
         L("# --- post-processing ---")
         for cmd in project.postpro:
-            tgt = ""
-            if cmd.target_type != "global" and cmd.target_value is not None:
-                tgt = f", {cmd.target_type}={cmd.target_value!r}"
-            L(f"posts.addCommand(pre.postpro_command(name={cmd.name!r}, step={cmd.step}{tgt}))")
+            L(_emit_postpro(project, cmd, avatar_refs))
         L()
 
     L("pre.writeDatbox(")
@@ -184,7 +190,25 @@ def emit_equivalent(project: Project, obj) -> str:
 
 
 def _ident(avatar_id: str) -> str:
-    return avatar_id[:8]
+    return avatar_id.replace("-", "_")
+
+
+def _is_rigids_from_mesh2d(av: Avatar) -> bool:
+    mesh_params = av.mesh_params or {}
+    geom = str(mesh_params.get("geom") or "").lower()
+    return (
+        geom in ("rigidsfrommesh2d", "rigids_from_mesh2d")
+        or mesh_params.get("source") == "rigidsFromMesh2D"
+    )
+
+
+def _mesh_rigids_ref(av: Avatar) -> str:
+    return f"_mesh_rigids_{_ident(av.avatar_id)}"
+
+
+def _population_bodies_ref(population: ParticlePopulation) -> str:
+    ident = population.population_id[:12].replace("-", "_")
+    return f"_population_bodies_{ident}"
 
 
 def _kw(d: dict[str, Any]) -> str:
@@ -244,10 +268,9 @@ def _emit_avatar(
             f"model={mod}, material={mat}, color={color!r}{hollow})"
         )
     if t == AvatarType.RIGID_SPHERE:
-        hollow = ", is_Hollow=True" if av.is_hollow else ""
         return (
             f"{target} = pre.rigidSphere(r={radius}, center={c}, "
-            f"model={mod}, material={mat}, color={color!r}{hollow})"
+            f"model={mod}, material={mat}, color={color!r})"
         )
     if t == AvatarType.RIGID_DISCRETE:
         return (
@@ -360,6 +383,35 @@ def _emit_avatar(
     if t == AvatarType.MESH_DEFORMABLE:
         mp = av.mesh_params or {}
         geom = mp.get("geom")
+        if (
+            str(geom or "").lower()
+            in ("deformablebrick", "deformable_brick", "brick")
+            or mp.get("source") == "deformableBrick"
+            or "brick_lx" in mp
+        ):
+            brick_lx = float(mp.get("brick_lx") or mp.get("lx") or 0.1)
+            brick_ly = float(mp.get("brick_ly") or mp.get("ly") or 0.05)
+            brick_name = str(mp.get("brick_name", "brique"))
+            apabh = mp.get("apabh") or mp.get("apab_brick") or [0.25, 0.75]
+            apabv = mp.get("apabv") or mp.get("apab_brick") or [0.25, 0.75]
+            kwargs = [
+                f"center={c}",
+                f"material={mat}",
+                f"model={mod}",
+                f"mesh_type={mp.get('mesh_type', 'Q4')!r}",
+                f"nb_elem_x={int(mp.get('nb_elem_x', mp.get('nx', 2)))!r}",
+                f"nb_elem_y={int(mp.get('nb_elem_y', mp.get('ny', 2)))!r}",
+                f"apabh={apabh!r}",
+                f"apabv={apabv!r}",
+            ]
+            if mp.get("colors") is not None:
+                kwargs.append(f"colors={mp['colors']!r}")
+            return (
+                f"_brick_{ident} = pre.brick2D({brick_name!r}, "
+                f"{brick_lx!r}, {brick_ly!r})\n"
+                f"{target} = _brick_{ident}.deformableBrick("
+                f"{', '.join(kwargs)})"
+            )
         if geom == "Rectangle":
             x0 = mp["cx"] - mp["lx"] / 2.0
             y0 = mp["cy"] - mp["ly"] / 2.0
@@ -402,6 +454,24 @@ def _emit_avatar(
             f"(avatar_id={av.avatar_id})"
         )
     if t == AvatarType.EMPTY_AVATAR:
+        wp = av.wall_params or {}
+        if wp.get("brick_name") and any(
+            wp.get(key) is not None for key in ("l", "lx", "h", "ly")
+        ):
+            lx = wp.get("l") if wp.get("l") is not None else wp.get("lx")
+            ly = wp.get("h") if wp.get("h") is not None else wp.get("ly")
+            if lx is None or ly is None:
+                raise ValueError(
+                    f"brick wall_params need l/h or lx/ly "
+                    f"(avatar_id={av.avatar_id})"
+                )
+            brick = f"_brick_{ident}"
+            return (
+                f"{brick} = pre.brick2D({str(wp['brick_name'])!r}, "
+                f"{float(lx)!r}, {float(ly)!r})\n"
+                f"{target} = {brick}.rigidBrick("
+                f"center={c}, model={mod}, material={mat}, color={color!r})"
+            )
         dimension = 3 if len(av.center) >= 3 else 2
         return "\n".join((
             f"{target} = pre.avatar({dimension})",
@@ -415,6 +485,47 @@ def _emit_avatar(
         f"pre.py emission is not implemented for avatar type {t.value!r} "
         f"(avatar_id={av.avatar_id})"
     )
+
+
+def _emit_rigids_from_mesh2d(av: Avatar) -> str:
+    mesh_params = av.mesh_params or {}
+    filepath = str(mesh_params.get("filepath") or mesh_params.get("file") or "")
+    if not filepath:
+        raise ValueError(
+            f"rigidsFromMesh2D requires a mesh filepath (avatar_id={av.avatar_id})"
+        )
+    dim = int(mesh_params.get("dim", 2))
+    ident = _ident(av.avatar_id)
+    mesh_ref = f"_mesh_{ident}"
+    bodies_ref = _mesh_rigids_ref(av)
+    mod = f"mod_{av.model_name}"
+    mat = f"mat_{av.material_name}"
+
+    if filepath.startswith("pkg://"):
+        package, separator, resource_name = filepath[6:].partition("/")
+        parts = resource_name.split("/")
+        if not separator or not package or any(
+            part in ("", ".", "..") for part in parts
+        ):
+            raise ValueError(f"invalid package mesh reference: {filepath!r}")
+        resource_parts = ", ".join(repr(part) for part in parts)
+        mesh_file = f"_mesh_file_{ident}"
+        read_mesh = (
+            f"with importlib.resources.as_file("
+            f"importlib.resources.files({package!r}).joinpath({resource_parts})"
+            f") as {mesh_file}:\n"
+            f"    {mesh_ref} = pre.readMesh(str({mesh_file}), {dim})"
+        )
+    else:
+        read_mesh = f"{mesh_ref} = pre.readMesh({filepath!r}, {dim})"
+
+    return "\n".join((
+        f"# rigid polygons from surface mesh {filepath!r}",
+        read_mesh,
+        f"{bodies_ref} = list(pre.rigidsFromMesh2D("
+        f"surfacic_mesh={mesh_ref}, model={mod}, material={mat}, "
+        f"color={av.color or 'BLEUx'!r}))",
+    ))
 
 
 def _emit_contactors(av: Avatar) -> list[str]:
@@ -523,14 +634,17 @@ def _emit_population(pop: ParticlePopulation) -> str:
     if pop.avatar_type == AvatarType.RIGID_CYLINDER:
         extra = f", h={pop.extra_params.get('h', 1.0)}"
     ident = pop.population_id[:12].replace("-", "_")
+    bodies_ref = _population_bodies_ref(pop)
     return "\n".join([
         f"# population {pop.population_id}  n={len(pop)}  {pop.avatar_type.value}",
+        f"{bodies_ref} = []",
         f"centers_{ident} = np.array({pop.centers.tolist()})",
         f"radii_{ident}   = np.array({pop.radii.tolist()})",
         f"for _i, (_c, _r) in enumerate(zip(centers_{ident}, radii_{ident})):",
         f"    _body = pre.{fn}(r=float(_r), center=_c, model=mod_{pop.model_name}, "
         f"material=mat_{pop.material_name}, color={pop.color!r}{extra})",
         f"    bodies.addAvatar(_body)",
+        f"    {bodies_ref}.append(_body)",
     ])
 
 
@@ -554,6 +668,118 @@ def _emit_see(rule: VisibilityRule, i: int) -> str:
     )
 
 
+def _pre_body_refs(
+    project: Project,
+    member_ids: list[str],
+    avatar_refs: dict[str, str],
+) -> list[str]:
+    from .ids import parse_particle_id
+
+    populations = {pop.population_id: pop for pop in project.populations}
+    refs = []
+    for member_id in member_ids:
+        population = populations.get(member_id)
+        if population is not None:
+            bodies_ref = _population_bodies_ref(population)
+            refs.extend(
+                f"{bodies_ref}[{index}]" for index in range(len(population))
+            )
+        else:
+            particle = parse_particle_id(member_id)
+            if particle is not None and particle[0] in populations:
+                population = populations[particle[0]]
+                if not 0 <= particle[1] < len(population):
+                    raise ValueError(
+                        f"Particle target {member_id!r} is outside its population."
+                    )
+                refs.append(
+                    f"{_population_bodies_ref(population)}[{particle[1]}]"
+                )
+                continue
+            avatar = next(
+                (item for item in project.avatars if item.avatar_id == member_id),
+                None,
+            )
+            if avatar is None:
+                raise ValueError(
+                    f"Post-processing target {member_id!r} is not in the project."
+                )
+            refs.append(
+                avatar_refs.get(member_id, f"av_{_ident(member_id)}")
+            )
+    return refs
+
+
+def _pre_group_refs(
+    project: Project,
+    group_name: str,
+    avatar_refs: dict[str, str],
+) -> list[str]:
+    member_ids = list(project.avatar_groups.get(group_name, []))
+    member_ids.extend(
+        population_id
+        for population_id in project.population_groups.get(group_name, [])
+        if population_id not in member_ids
+    )
+    refs = _pre_body_refs(project, member_ids, avatar_refs)
+    if not refs:
+        raise ValueError(f"Post-processing target group {group_name!r} is empty.")
+    return refs
+
+
+def _emit_postpro(
+    project: Project,
+    cmd,
+    avatar_refs: dict[str, str],
+) -> str:
+    kwargs = [f"name={cmd.name!r}", f"step={cmd.step}"]
+    target_type = (cmd.target_type or "global").lower()
+    target_value = cmd.target_value
+    if target_type == "global" or target_value is None:
+        pass
+    elif cmd.name.upper() == "NEW RIGID SETS" or target_type in (
+        "groups", "rigid_sets",
+    ):
+        group_names = (
+            target_value if isinstance(target_value, (list, tuple))
+            else [target_value]
+        )
+        rigid_sets = [
+            _pre_group_refs(project, str(group_name), avatar_refs)
+            for group_name in group_names
+        ]
+        rigid_sets_expr = "[" + ", ".join(
+            f"[{', '.join(refs)}]" for refs in rigid_sets
+        ) + "]"
+        kwargs.append(f"rigid_sets={rigid_sets_expr}")
+    elif target_type in ("avatar", "group", "rigid_set"):
+        if target_type == "group" or (
+            target_type == "rigid_set" and isinstance(target_value, str)
+            and (
+                target_value in project.avatar_groups
+                or target_value in project.population_groups
+            )
+        ):
+            refs = _pre_group_refs(project, str(target_value), avatar_refs)
+        elif isinstance(target_value, (list, tuple)):
+            refs = _pre_body_refs(
+                project, [str(member_id) for member_id in target_value],
+                avatar_refs,
+            )
+        else:
+            refs = _pre_body_refs(project, [str(target_value)], avatar_refs)
+        if not refs:
+            raise ValueError(
+                f"Post-processing target {target_value!r} has no bodies."
+            )
+        kwargs.append(f"rigid_set=[{', '.join(refs)}]")
+    else:
+        raise ValueError(
+            f"Unsupported post-processing target type {cmd.target_type!r}."
+        )
+    return f"posts.addCommand(pre.postpro_command({', '.join(kwargs)}))"
+
+
 def _emit_dof(
     project: Project,
     op,
@@ -561,17 +787,24 @@ def _emit_dof(
 ) -> str:
     avatar_refs = avatar_refs or {}
     if op.target_type == "avatar":
-        target_refs = [avatar_refs.get(
-            str(op.target_value), f"av_{_ident(str(op.target_value))}"
-        )]
+        target_refs = _pre_body_refs(
+            project, [str(op.target_value)], avatar_refs,
+        )
     elif op.target_type == "group":
-        ids = project.avatar_groups.get(str(op.target_value), [])
+        group_name = str(op.target_value)
+        ids = list(project.avatar_groups.get(group_name, []))
+        ids.extend(
+            population_id
+            for population_id in project.population_groups.get(group_name, [])
+            if population_id not in ids
+        )
         if not ids:
             raise ValueError(f"DOF target group {op.target_value!r} is empty.")
-        target_refs = [
-            avatar_refs.get(aid, f"av_{_ident(aid)}")
-            for aid in ids
-        ]
+        target_refs = _pre_body_refs(project, ids, avatar_refs)
+        if not target_refs:
+            raise ValueError(
+                f"DOF target group {op.target_value!r} has no bodies."
+            )
     elif op.target_type == "color":
         color = str(op.target_value)
         target_refs = [

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ast
 
-from lmgc90_core import ValidationError
+from lmgc90_core import LMGC90Error, ValidationError
 from lmgc90_core.types import AvatarType
 from lmgc90_core.validate import compatible_contactors
 
@@ -373,13 +373,15 @@ def create_contactors_tab(parent=None):
                 group = self.bygroup_edit.text().strip()
                 if shape in _MESH_CONTACTORS and group:
                     entry["group"] = group
-                av.contactors.append(entry)
-                self.controller.session.mark_dirty()
-                self.controller.state_changed.emit()
+                updated = av.copy()
+                updated.contactors.append(entry)
+                self.controller.update_avatar(av.avatar_id, updated)
                 self.controller.journal.info(
                     f"Contactor {shape} added on {av.avatar_id[:8]}…"
                 )
-            except (ValidationError, ValueError, SyntaxError, TypeError, KeyError) as exc:
+            except (
+                LMGC90Error, ValueError, SyntaxError, TypeError, KeyError,
+            ) as exc:
                 QMessageBox.warning(self, "Contactors", str(exc))
 
         def _on_remove(self) -> None:
@@ -389,9 +391,14 @@ def create_contactors_tab(parent=None):
             row = self.list.currentRow()
             if row < 0 or row >= len(av.contactors):
                 return
-            removed = av.contactors.pop(row)
-            self.controller.session.mark_dirty()
-            self.controller.state_changed.emit()
-            self.controller.journal.info(f"Removed contactor {removed.get('shape')}")
+            updated = av.copy()
+            removed = updated.contactors.pop(row)
+            try:
+                self.controller.update_avatar(av.avatar_id, updated)
+                self.controller.journal.info(
+                    f"Removed contactor {removed.get('shape')}"
+                )
+            except (LMGC90Error, ValueError, TypeError) as exc:
+                QMessageBox.warning(self, "Contactors", str(exc))
 
     return ContactorsTab(parent)

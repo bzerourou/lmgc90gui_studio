@@ -1,6 +1,6 @@
 from lmgc90_core import (
-    DOFOperation, ForLoop, GranuloConfig, HistoryError, Loop, Project,
-    ValidationError, pre,
+    DOFOperation, ForLoop, GranuloConfig, HistoryError, Loop, PostProCommand,
+    Project, ValidationError, pre,
 )
 
 
@@ -19,6 +19,115 @@ def test_add_and_undo_avatar():
     assert p.n_bodies == 0
     p.redo()
     assert p.avatar(av.avatar_id).radius == 0.1
+
+
+def test_postpro_removal_and_addition_remain_undoable_in_order():
+    p = _empty()
+    first = PostProCommand("SOLVER INFORMATIONS", step=10)
+    second = PostProCommand("BODY TRACKING", step=20)
+    p.add(first)
+    p.add(second)
+
+    p.remove_postpro(0)
+    assert p.postpro == [second]
+    p.undo()
+    assert p.postpro == [first, second]
+    p.undo()
+    assert p.postpro == [first]
+    p.redo()
+    assert p.postpro == [first, second]
+
+
+def test_dynamic_variable_set_and_remove_are_undoable():
+    p = _empty()
+    p.set_dynamic_var("speed", "1.0")
+    p.set_dynamic_var("speed", "2.0")
+    p.undo()
+    assert p.dynamic_vars == {"speed": "1.0"}
+    p.remove_dynamic_var("speed")
+    assert p.dynamic_vars == {}
+    p.undo()
+    assert p.dynamic_vars == {"speed": "1.0"}
+
+
+def test_remove_avatar_restores_dofs_and_avatar_position_after_reload(tmp_path):
+    p = _empty()
+    avatars = [
+        p.add(pre.rigidDisk(
+            r=0.1, center=[float(index), 0], model="rigid", material="STEEL",
+        ))
+        for index in range(3)
+    ]
+    operations = [
+        DOFOperation("imposeDrivenDof", "avatar", avatar.avatar_id, {"ct": value})
+        for avatar, value in (
+            (avatars[0], 0.0),
+            (avatars[1], 1.0),
+            (avatars[2], 2.0),
+            (avatars[1], 3.0),
+        )
+    ]
+    for operation in operations:
+        p.add(operation)
+
+    p.remove_avatar(avatars[1].avatar_id)
+    assert [avatar.avatar_id for avatar in p.avatars] == [
+        avatars[0].avatar_id, avatars[2].avatar_id,
+    ]
+    assert p.operations == [operations[0], operations[2]]
+
+    path = tmp_path / "removed-avatar.lmgc90"
+    p.save(path)
+    loaded = Project.load(path)
+    loaded.undo()
+    assert [avatar.avatar_id for avatar in loaded.avatars] == [
+        avatar.avatar_id for avatar in avatars
+    ]
+    assert [operation.operation_id for operation in loaded.operations] == [
+        operation.operation_id for operation in operations
+    ]
+
+    loaded.redo()
+    assert [avatar.avatar_id for avatar in loaded.avatars] == [
+        avatars[0].avatar_id, avatars[2].avatar_id,
+    ]
+    assert loaded.operations == [operations[0], operations[2]]
+
+
+def test_cannot_remove_avatar_used_as_geometric_loop_template():
+    p = _empty()
+    template = p.add(pre.rigidDisk(
+        r=0.1, center=[0, 0], model="rigid", material="STEEL",
+    ))
+    p.apply_loop(Loop("line", template.avatar_id, count=2, step=0.2))
+    avatar_ids = [avatar.avatar_id for avatar in p.avatars]
+    history_size = len(p.history._undo)
+
+    try:
+        p.remove_avatar(template.avatar_id)
+        assert False, "removing a loop template should fail"
+    except ValidationError as exc:
+        assert "loop" in str(exc)
+
+    assert [avatar.avatar_id for avatar in p.avatars] == avatar_ids
+    assert len(p.history._undo) == history_size
+
+
+def test_cannot_remove_avatar_used_as_avatar_forloop_template():
+    p = _empty()
+    template = p.add(pre.rigidDisk(
+        r=0.1, center=[0, 0], model="rigid", material="STEEL",
+    ))
+    p.apply_for_loop(ForLoop(
+        target_kind="avatar", model_avatar_id=template.avatar_id,
+        start=0, stop=2, expr_x="i",
+    ))
+
+    try:
+        p.remove_avatar(template.avatar_id)
+        assert False, "removing a ForLoop template should fail"
+    except ValidationError as exc:
+        assert "ForLoop" in str(exc)
 
 
 def test_duplicate_material_rejected():
@@ -154,6 +263,146 @@ def test_remove_for_loop_removes_generated_materials():
     p.undo()
     assert len(p.materials) == 4
     assert p.for_loops == [loop]
+
+
+def test_remove_for_loop_uses_dof_operation_ids_not_local_counters():
+    p = _empty()
+    wall = p.add(pre.rigidDisk(
+        r=0.1, center=[0, 0], model="rigid", material="STEEL",
+    ))
+    p.group("wall", [wall.avatar_id])
+    template = p.add(DOFOperation(
+        "imposeDrivenDof", "group", "wall",
+        {"component": 1, "dofty": "vlocy", "ct": 0.0},
+    ))
+    loop = ForLoop(
+        start=0, stop=2, target_kind="dof", template_index=0,
+    )
+
+    generated = p.apply_for_loop(loop)
+
+    assert len(generated) == 2
+    assert loop.generated_ids == [op.operation_id for op in generated]
+    assert all(not generated_id.isdigit() for generated_id in loop.generated_ids)
+    assert len(set(loop.generated_ids)) == 2
+
+    p.remove_for_loop(loop.loop_id)
+
+    assert p.operations == [template]
+
+
+def test_remove_for_loop_does_not_treat_legacy_dof_counters_as_indices():
+    p = _empty()
+    wall = p.add(pre.rigidDisk(
+        r=0.1, center=[0, 0], model="rigid", material="STEEL",
+    ))
+    p.group("wall", [wall.avatar_id])
+    template = p.add(DOFOperation(
+        "imposeDrivenDof", "group", "wall",
+        {"component": 1, "dofty": "vlocy", "ct": 0.0},
+    ))
+    loop = ForLoop(
+        start=0, stop=2, target_kind="dof", template_index=0,
+    )
+    generated = p.apply_for_loop(loop)
+    loop.generated_ids = ["0", "1"]
+
+    p.remove_for_loop(loop.loop_id)
+
+    assert p.operations == [template, *generated]
+
+
+def test_remove_for_loop_uses_visibility_rule_ids_not_local_counters():
+    from lmgc90_core import VisibilityRule
+
+    p = _empty()
+    p.add(pre.tact_behav(name="law01", law="GAP_SGR_CLB", fric=0.3))
+    template = p.add(VisibilityRule(
+        candidate_body="RBDY2", candidate_contactor="DISKx",
+        candidate_color="BLUEx", antagonist_body="RBDY2",
+        antagonist_contactor="JONCx", antagonist_color="WALLx",
+        behavior_name="law01",
+    ))
+    loop = ForLoop(
+        start=0, stop=2, target_kind="visibility", template_index=0,
+    )
+
+    generated = p.apply_for_loop(loop)
+
+    assert len(generated) == 2
+    assert loop.generated_ids == [rule.visibility_id for rule in generated]
+    assert all(not generated_id.isdigit() for generated_id in loop.generated_ids)
+    assert len(set(loop.generated_ids)) == 2
+
+    p.remove_for_loop(loop.loop_id)
+
+    assert p.visibility == [template]
+
+
+def test_remove_for_loop_does_not_treat_legacy_visibility_counters_as_indices():
+    from lmgc90_core import VisibilityRule
+
+    p = _empty()
+    p.add(pre.tact_behav(name="law01", law="GAP_SGR_CLB", fric=0.3))
+    template = p.add(VisibilityRule(
+        candidate_body="RBDY2", candidate_contactor="DISKx",
+        candidate_color="BLUEx", antagonist_body="RBDY2",
+        antagonist_contactor="JONCx", antagonist_color="WALLx",
+        behavior_name="law01",
+    ))
+    loop = ForLoop(
+        start=0, stop=2, target_kind="visibility", template_index=0,
+    )
+    generated = p.apply_for_loop(loop)
+    loop.generated_ids = ["0", "1"]
+
+    p.remove_for_loop(loop.loop_id)
+
+    assert p.visibility == [template, *generated]
+
+
+def test_granulo_distribution_for_loop_uses_persistent_generation_ids():
+    p = _empty()
+    loop = ForLoop(
+        start=0, stop=2, target_kind="granulo_dist",
+        expressions={"nb_particles": "10 + i"},
+    )
+
+    generated = p.apply_for_loop(loop)
+
+    assert len(generated) == 2
+    assert loop.generated_ids == [config.generation_id for config in generated]
+    assert all(generated_id.startswith("gen_") for generated_id in loop.generated_ids)
+    assert len(set(loop.generated_ids)) == 2
+
+    p.remove_for_loop(loop.loop_id)
+
+    assert p.granulo == []
+
+
+def test_generated_entity_ids_survive_serialization():
+    from lmgc90_core import VisibilityRule
+
+    operation = DOFOperation("translate", "group", "walls", {"dx": 0.1})
+    restored_operation = DOFOperation.from_dict(operation.to_dict())
+    assert restored_operation.operation_id == operation.operation_id
+
+    rule = VisibilityRule(
+        candidate_body="RBDY2", candidate_contactor="DISKx",
+        candidate_color="BLUEx", antagonist_body="RBDY2",
+        antagonist_contactor="JONCx", antagonist_color="WALLx",
+        behavior_name="law01",
+    )
+    restored_rule = VisibilityRule.from_dict(rule.to_dict())
+    assert restored_rule.visibility_id == rule.visibility_id
+
+    config = GranuloConfig(
+        nb_particles=10, radius_min=0.01, radius_max=0.02,
+        container_type="Box2D", container_params={"lx": 1.0, "ly": 1.0},
+        material_name="STEEL", model_name="rigid", create_avatars=False,
+    )
+    restored_config = GranuloConfig.from_dict(config.to_dict())
+    assert restored_config.generation_id == config.generation_id
 
 
 def test_deposit_is_soa_and_one_undo():

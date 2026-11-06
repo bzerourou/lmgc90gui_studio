@@ -17,7 +17,7 @@ from .entities import (
     Model, PostProCommand, VisibilityRule, jsonable,
 )
 from .errors import ValidationError
-from .commands import AddPopulation, RemoveForLoop
+from .commands import AddPopulation, RemoveForLoop, RemovePopulation
 from .population import ParticlePopulation
 from .project import Project
 from .types import UnitSystem
@@ -111,6 +111,11 @@ def save_project(project: Project, filepath: Path) -> Path:
     for command in (*project.history._undo, *project.history._redo):
         if isinstance(command, AddPopulation):
             populations.setdefault(command.population.population_id, command.population)
+        elif isinstance(command, RemovePopulation):
+            if command.population is not None:
+                populations.setdefault(
+                    command.population.population_id, command.population,
+                )
         elif isinstance(command, RemoveForLoop):
             for _, _, item in command.items:
                 if isinstance(item, ParticlePopulation):
@@ -148,6 +153,22 @@ def check_references(project: Project) -> list[str]:
     warnings: list[str] = []
     avatar_ids = {a.avatar_id for a in project.avatars}
     population_ids = {p.population_id for p in project.populations}
+    populations = {p.population_id: p for p in project.populations}
+
+    def is_known_body(body_id: str) -> bool:
+        if body_id in avatar_ids or body_id in population_ids:
+            return True
+        from .ids import parse_particle_id
+        particle = parse_particle_id(body_id)
+        return (
+            particle is not None
+            and particle[0] in populations
+            and 0 <= particle[1] < len(populations[particle[0]])
+        )
+
+    operation_ids = {op.operation_id for op in project.operations}
+    visibility_ids = {rule.visibility_id for rule in project.visibility}
+    generation_ids = {config.generation_id for config in project.granulo}
     material_names = {m.name for m in project.materials}
     model_names = {m.name for m in project.models}
 
@@ -169,11 +190,29 @@ def check_references(project: Project) -> list[str]:
         "material": material_names, "materials": material_names,
         "model": model_names, "models": model_names,
         "granulo": population_ids,
+        "granulo_dist": generation_ids, "distribution": generation_ids,
+        "dof": operation_ids, "dofs": operation_ids,
+        "visibility": visibility_ids, "see": visibility_ids,
+        "see_table": visibility_ids,
     }
     for for_loop in project.for_loops:
         kind = (for_loop.target_kind or "avatar").lower().strip()
         pool = pools.get(kind)
         if pool is None:
+            continue
+        legacy_ids = (
+            kind in ("dof", "dofs", "visibility", "see", "see_table")
+            and bool(for_loop.generated_ids)
+            and all(str(generated_id).isdigit() for generated_id in for_loop.generated_ids)
+        ) or (
+            kind in ("granulo_dist", "distribution")
+            and bool(for_loop.generated_ids)
+            and all(
+                str(generated_id).startswith("dist")
+                for generated_id in for_loop.generated_ids
+            )
+        )
+        if legacy_ids:
             continue
         missing = [i for i in for_loop.generated_ids if i not in pool]
         if missing:
@@ -182,16 +221,18 @@ def check_references(project: Project) -> list[str]:
                 "generated item(s) missing from the file"
             )
 
-    known = avatar_ids | population_ids
     for name, ids in project.avatar_groups.items():
-        missing = [i for i in ids if i not in known]
+        missing = [i for i in ids if not is_known_body(i)]
         if missing:
             warnings.append(
                 f"group {name!r}: {len(missing)} member(s) missing from the file"
             )
 
     for op in project.operations:
-        if op.target_type == "avatar" and str(op.target_value) not in avatar_ids:
+        if (
+            op.target_type == "avatar"
+            and not is_known_body(str(op.target_value))
+        ):
             warnings.append(
                 f"{op.operation_type}: target avatar "
                 f"{str(op.target_value)[:8]} is missing"
@@ -293,7 +334,7 @@ def load_project(filepath: Path) -> Project:
     if int(data.get("schema_version", 1)) < 2:
         data = _migrate_v1_to_v2(data)
 
-    warnings: list[str] = []
+    warnings: list[str] = list(data.pop("_migration_warnings", []) or [])
     arrays = _read_sidecar(filepath, data, warnings)
     populations = _load_populations(
         list(data.get("particle_populations") or []), arrays, warnings,
@@ -333,6 +374,7 @@ def load_project(filepath: Path) -> Project:
         record_off.for_loops.append(ForLoop.from_dict(raw))
     for raw in data.get("granulo_generations") or []:
         record_off.granulo.append(GranuloConfig.from_dict(raw))
+    _restore_legacy_granulo(record_off, data, warnings)
     record_off.dynamic_vars = dict(data.get("dynamic_vars") or {})
     # Restore undo/redo stacks (commands already reflected in loaded state)
     hist = data.get("history")
@@ -365,31 +407,223 @@ def _validate_schema(data: Any, filepath: Path) -> None:
 
 
 def _migrate_v1_to_v2(data: dict) -> dict:
-    from .ids import new_avatar_id
+    from .entities import Avatar, Loop
+    from .generate import expand_loop
+    from .ids import new_avatar_id, new_population_id, particle_id
 
     avatars = data.get("avatars") or []
-    idx_to_id: dict[int, str] = {}
+    warnings: list[str] = []
     for i, av in enumerate(avatars):
         av.setdefault("avatar_id", new_avatar_id())
-        idx_to_id[i] = av["avatar_id"]
-    for loop in data.get("loops") or []:
-        if "model_avatar_index" in loop:
-            loop["model_avatar_id"] = idx_to_id.get(loop.pop("model_avatar_index"), "")
-        loop.pop("generated_indices", None)
-        loop.setdefault("generated_ids", [])
-    for gen in data.get("granulo_generations") or []:
-        gen.pop("generated_indices", None)
-        gen.setdefault("generated_ids", [])
+
+    loops = data.get("loops") or []
+    generated_slots: set[int] = set()
+    for loop in loops:
+        indices = loop.get("generated_indices") or []
+        loop["_legacy_generated_indices"] = [
+            int(index) for index in indices
+            if isinstance(index, int) and not isinstance(index, bool) and index >= 0
+        ]
+        generated_slots.update(loop["_legacy_generated_indices"])
+    for generation in data.get("granulo_generations") or []:
+        if generation.get(
+            "create_avatars", generation.get("use_particle_population", True),
+        ):
+            generated_slots.update(
+                int(index) for index in generation.get("generated_indices") or []
+                if isinstance(index, int)
+                and not isinstance(index, bool)
+                and index >= 0
+            )
+
+    # V1 omitted generated loop avatars. Reconstruct the old body-index layout
+    # by placing serialized manual avatars in the slots not owned by a loop.
+    slot_count = max(len(avatars) + len(generated_slots), max(generated_slots, default=-1) + 1)
+    manual_slots = (
+        index for index in range(slot_count) if index not in generated_slots
+    )
+    index_to_id: dict[int, str] = {}
+    for avatar, index in zip(avatars, manual_slots):
+        index_to_id[index] = avatar["avatar_id"]
+
+    legacy_dimension = int(data.get("dimension", 2))
+    next_generated_slot = slot_count
+    claimed_generated_slots: set[int] = set()
+    for loop_data in loops:
+        loop = Loop.from_dict({
+            **loop_data,
+            "model_avatar_id": "",
+            "generated_ids": [],
+        })
+        model_index = loop_data.get(
+            "model_avatar_index", loop_data.get("model_avatar_id"),
+        )
+        if isinstance(model_index, int):
+            template_id = index_to_id.get(model_index)
+        else:
+            template_id = str(model_index) if model_index else None
+        template_data = next(
+            (item for item in avatars if item.get("avatar_id") == template_id),
+            None,
+        )
+        if template_data is None:
+            warnings.append(
+                f"loop {loop_data.get('loop_id', '?')}: template avatar index "
+                f"{model_index!r} could not be resolved; generated avatars were not restored"
+            )
+            loop_data["model_avatar_id"] = template_id or ""
+            loop_data["generated_ids"] = []
+            loop_data.pop("model_avatar_index", None)
+            loop_data.pop("generated_indices", None)
+            loop_data.pop("_legacy_generated_indices", None)
+            continue
+
+        loop.model_avatar_id = template_id
+        generated = expand_loop(
+            loop, Avatar.from_dict(template_data), dimension=legacy_dimension,
+        )
+        old_indices = loop_data["_legacy_generated_indices"]
+        if len(old_indices) != len(generated):
+            warnings.append(
+                f"loop {loop.loop_id[:8]}: regenerated {len(generated)} avatars; "
+                f"legacy file listed {len(old_indices)} generated indices"
+            )
+        for offset, avatar in enumerate(generated):
+            if offset < len(old_indices):
+                old_index = old_indices[offset]
+            else:
+                while next_generated_slot in index_to_id:
+                    next_generated_slot += 1
+                old_index = next_generated_slot
+                next_generated_slot += 1
+            if old_index in index_to_id or old_index in claimed_generated_slots:
+                warnings.append(
+                    f"loop {loop.loop_id[:8]}: legacy body index {old_index} "
+                    "was already assigned"
+                )
+                continue
+            index_to_id[old_index] = avatar.avatar_id
+            claimed_generated_slots.add(old_index)
+            avatars.append(avatar.to_dict())
+        loop_data["model_avatar_id"] = loop.model_avatar_id
+        loop_data["generated_ids"] = list(loop.generated_ids)
+        loop_data.pop("model_avatar_index", None)
+        loop_data.pop("generated_indices", None)
+        loop_data.pop("_legacy_generated_indices", None)
+
+    for generation in data.get("granulo_generations") or []:
+        indices = generation.pop("generated_indices", None) or []
+        population_id = generation.get("population_id")
+        if generation.get("create_avatars", generation.get("use_particle_population", True)):
+            population_id = population_id or new_population_id()
+            generation["population_id"] = population_id
+            for index, particle_index in enumerate(indices):
+                if (
+                    isinstance(particle_index, int)
+                    and not isinstance(particle_index, bool)
+                    and particle_index >= 0
+                ):
+                    if particle_index in index_to_id:
+                        warnings.append(
+                            f"granulo population {population_id}: legacy body index "
+                            f"{particle_index} conflicts with another migrated body"
+                        )
+                    else:
+                        index_to_id[particle_index] = particle_id(population_id, index)
+        generation.pop("_legacy_generated_indices", None)
+
+    migrated_operations = []
+    for operation in data.get("operations") or []:
+        if "body_index" not in operation:
+            migrated_operations.append(operation)
+            continue
+        body_index = operation.pop("body_index")
+        try:
+            body_index = int(body_index)
+        except (TypeError, ValueError):
+            body_index = -1
+        avatar_id = index_to_id.get(body_index)
+        if avatar_id is None:
+            warnings.append(
+                f"{operation.get('type', 'DOF operation')}: legacy body index "
+                f"{body_index} could not be resolved; operation was skipped"
+            )
+            continue
+        operation["target"] = "avatar"
+        operation["target_value"] = avatar_id
+        migrated_operations.append(operation)
+    data["operations"] = migrated_operations
+
     groups = {}
     for name, refs in (data.get("avatar_groups") or {}).items():
         mapped = []
         for ref in refs:
-            if isinstance(ref, int) and ref in idx_to_id:
-                mapped.append(idx_to_id[ref])
+            if isinstance(ref, int) and ref in index_to_id:
+                mapped.append(index_to_id[ref])
             elif isinstance(ref, str):
                 mapped.append(ref)
+            else:
+                warnings.append(
+                    f"group {name!r}: legacy member index {ref!r} could not be resolved"
+                )
         groups[name] = mapped
     data["avatar_groups"] = groups
     data["schema_version"] = 2
     data["_migrated_from"] = "v1"
+    data["_migration_warnings"] = warnings
     return data
+
+
+def _restore_legacy_granulo(
+    project: Project, data: dict[str, Any], warnings: list[str],
+) -> None:
+    if data.get("_migrated_from") != "v1":
+        return
+    from .generate import NumpyGranulo, sample_radii
+    from .ids import new_population_id
+
+    populations = {population.population_id for population in project.populations}
+    for config in project.granulo:
+        if not config.create_avatars:
+            if config.radii is None:
+                try:
+                    config.radii = [
+                        float(radius) for radius in sample_radii(config)
+                    ]
+                    warnings.append(
+                        f"granulo {config.generation_id[:8]}: distribution radii "
+                        "were regenerated from the stored configuration"
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    warnings.append(
+                        f"granulo {config.generation_id[:8]}: distribution could "
+                        f"not be regenerated: {exc}"
+                    )
+            continue
+
+        population_id = config.population_id
+        if population_id in populations:
+            continue
+        expected_id = population_id or new_population_id()
+        try:
+            result = NumpyGranulo().deposit(config)
+            result.population.population_id = expected_id
+            config.population_id = expected_id
+            project.populations.append(result.population)
+            populations.add(expected_id)
+            if config.group_name:
+                project.population_groups.setdefault(
+                    config.group_name, [],
+                ).append(expected_id)
+                project.avatar_groups.setdefault(config.group_name, []).append(
+                    expected_id,
+                )
+            warnings.append(
+                f"population {expected_id}: regenerated from stored granulo "
+                "configuration because its saved arrays were unavailable"
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            warnings.append(
+                f"population {expected_id}: could not be regenerated from "
+                f"granulo configuration: {exc}"
+            )

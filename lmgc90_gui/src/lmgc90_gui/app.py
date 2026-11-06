@@ -40,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("LMGC90_GUI")
     app.setOrganizationName("LMGC90")
 
+    from .exception_handler import install_exception_hook
+    install_exception_hook()
+
     icon_path = _app_icon_path()
     if icon_path is not None:
         icon = QIcon(str(icon_path))

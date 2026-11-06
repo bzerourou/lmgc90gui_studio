@@ -72,20 +72,31 @@ def explicit_flags(params: Mapping[str, Any]) -> dict[str, bool]:
 
 def select_detectors(dimension: int,
                      params: Optional[Mapping[str, Any]] = None,
-                     visibility: Iterable[Any] = ()) -> list[str]:
+                     visibility: Iterable[Any] = (),
+                     inferred: Optional[Mapping[str, Any]] = None) -> list[str]:
     """Détecteurs à émettre, dans l'ordre officiel, pour la dimension donnée.
 
-    Un flag fourni explicitement (True/False) l'emporte ; sinon on déduit des
-    tables de visibilité (seules sources de vérité des paires qui interagissent).
-    Les détecteurs de l'autre dimension sont toujours exclus.
+    Les détecteurs requis par les tables de visibilité sont toujours inclus.
+    Hors de ces paires requises, un flag fourni explicitement (True/False)
+    l'emporte ; sinon les tables de visibilité servent d'inférence. Les
+    détecteurs de l'autre dimension sont toujours exclus.
     """
     table = DETECTORS_2D if int(dimension) == 2 else DETECTORS_3D
     explicit = explicit_flags(params or {})
-    inferred = {
+    required = {
         detector_for_pair(r.candidate_contactor, r.antagonist_contactor, dimension)
         for r in visibility
     }
-    return [name for name in table if explicit.get(f"use_{name}", name in inferred)]
+    required.discard(None)
+    inferred = inferred or {}
+    return [
+        name for name in table
+        if (
+            name in required
+            or bool(inferred.get(f"use_{name}"))
+            or explicit.get(f"use_{name}", False)
+        )
+    ]
 
 
 # --------------------------------------------------------------------------

@@ -8,6 +8,7 @@ Avatar-type sets (walls, population-capable shapes) come from
 """
 from __future__ import annotations
 
+import inspect
 from typing import Any, Optional
 
 from lmgc90_core.entities import Avatar
@@ -41,6 +42,25 @@ def _resolve(name_or_obj, registry: dict[str, Any], kind: str):
             raise MaterializationError(f"{kind} {name_or_obj!r} not materialized yet")
         return registry[name_or_obj]
     return name_or_obj
+
+
+def _call_supported_signature(
+    fn, candidates: list[tuple[tuple[Any, ...], dict[str, Any]]],
+) -> Any:
+    """Call the first signature-compatible form without catching call errors."""
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):
+        args, kwargs = candidates[0]
+        return fn(*args, **kwargs)
+
+    for args, kwargs in candidates:
+        try:
+            signature.bind(*args, **kwargs)
+        except TypeError:
+            continue
+        return fn(*args, **kwargs)
+    raise TypeError(f"no supported call signature for {fn!r}")
 
 
 
@@ -107,19 +127,16 @@ def expand_rigids_from_mesh2d(
     mat = _resolve(av.material_name, materials, "material")
     mod = _resolve(av.model_name, models, "model")
     color = av.color or "BLEUx"
-    try:
-        result = expand(surfacic_mesh=mesh, model=mod, material=mat, color=color)
-    except TypeError:
-        result = expand(mesh, mod, mat, color)
+    result = _call_supported_signature(expand, [
+        ((), {"surfacic_mesh": mesh, "model": mod, "material": mat, "color": color}),
+        ((mesh, mod, mat, color), {}),
+    ])
     # result may be avatars container or list
     out: list[Any] = []
     if result is None:
         return out
     if hasattr(result, "__iter__") and not hasattr(result, "contactors"):
-        try:
-            out = list(result)
-        except TypeError:
-            out = [result]
+        out = list(result)
     else:
         out = [result]
     return out
@@ -169,23 +186,23 @@ def build_avatar(
             if av.vertices is not None:
                 verts = np.asarray(av.vertices, dtype=float)
                 verts = verts - np.asarray(center, dtype=float)
-                try:
-                    body = pre.rigidPolygon(
-                        generation_type="full", vertices=verts, **kwargs
-                    )
-                except TypeError:
-                    try:
-                        body = pre.rigidPolygon(vertices=verts, **kwargs)
-                    except Exception:
-                        # last resort: regular with radius from bbox
-                        xs, ys = verts[:, 0], verts[:, 1]
-                        r = 0.5 * max(xs.max() - xs.min(), ys.max() - ys.min())
-                        body = pre.rigidPolygon(
-                            generation_type="regular",
-                            nb_vertices=max(3, len(verts)),
-                            radius=float(r),
-                            **kwargs,
-                        )
+                body = _call_supported_signature(pre.rigidPolygon, [
+                    ((), {
+                        "generation_type": "full", "vertices": verts, **kwargs,
+                    }),
+                    ((), {"vertices": verts, **kwargs}),
+                    ((), {
+                        "generation_type": "regular",
+                        "nb_vertices": max(3, len(verts)),
+                        "radius": float(
+                            0.5 * max(
+                                verts[:, 0].max() - verts[:, 0].min(),
+                                verts[:, 1].max() - verts[:, 1].min(),
+                            )
+                        ),
+                        **kwargs,
+                    }),
+                ])
             else:
                 kwargs["generation_type"] = av.generation_type or "regular"
                 kwargs["nb_vertices"] = int(av.nb_vertices or 6)
@@ -241,25 +258,20 @@ def build_avatar(
                         f"(avatar_id={av.avatar_id})"
                     )
                 # pylmgc requires nb_vertices > 4 and a valid generation_type
-                try:
-                    body = pre.rigidPolyhedron(
-                        center=center, model=mod, material=mat, color=color,
-                        generation_type="vertices",
-                        vertices=arr,
-                        nb_vertices=n,
-                    )
-                except TypeError:
-                    try:
-                        body = pre.rigidPolyhedron(
-                            vertices=arr, nb_vertices=n, **kwargs
-                        )
-                    except Exception:
-                        body = pre.rigidPolyhedron(
-                            generation_type="regular",
-                            nb_vertices=max(n, 5),
-                            radius=float(av.radius or max(abs(arr).max(), 1e-3)),
-                            **kwargs,
-                        )
+                body = _call_supported_signature(pre.rigidPolyhedron, [
+                    ((), {
+                        "center": center, "model": mod, "material": mat,
+                        "color": color, "generation_type": "vertices",
+                        "vertices": arr, "nb_vertices": n,
+                    }),
+                    ((), {"vertices": arr, "nb_vertices": n, **kwargs}),
+                    ((), {
+                        "generation_type": "regular",
+                        "nb_vertices": max(n, 5),
+                        "radius": float(av.radius or max(abs(arr).max(), 1e-3)),
+                        **kwargs,
+                    }),
+                ])
             elif av.nb_vertices and av.radius is not None:
                 body = pre.rigidPolyhedron(
                     generation_type="regular",
@@ -321,39 +333,23 @@ def _build_empty_avatar(pre, av: Avatar, mat, mod) -> Any:
     # 1) native emptyAvatar if present
     fn = getattr(pre, "emptyAvatar", None)
     if callable(fn):
-        for kwargs in (
-            dict(center=center, model=mod, material=mat, color=color),
-            dict(model=mod, material=mat, color=color, center=center),
-            dict(model=mod, material=mat, color=color),
-            dict(model=mod, material=mat),
-        ):
-            try:
-                body = fn(**kwargs)
-                if body is not None:
-                    _try_translate(body, center)
-                    return body
-            except TypeError:
-                continue
-            except Exception:
-                break
+        body = _call_supported_signature(fn, [
+            ((), dict(center=center, model=mod, material=mat, color=color)),
+            ((), dict(model=mod, material=mat, color=color, center=center)),
+            ((), dict(model=mod, material=mat, color=color)),
+            ((), dict(model=mod, material=mat)),
+        ])
+        if body is not None:
+            _try_translate(body, center)
+            return body
 
     # 2) pre.avatar(dimension, model) — classic composite rigid shell
     avatar_fn = getattr(pre, "avatar", None)
     if callable(avatar_fn):
-        body = None
-        for call in (
-            lambda: avatar_fn(dim),
-            lambda: avatar_fn(dimension=dim),
-        ):
-            try:
-                body = call()
-                if body is not None:
-                    break
-            except TypeError:
-                continue
-            except Exception:
-                body = None
-                break
+        body = _call_supported_signature(avatar_fn, [
+            ((dim,), {}),
+            ((), {"dimension": dim}),
+        ])
         if body is not None:
             import numpy as np
 
@@ -375,23 +371,14 @@ def _build_empty_avatar(pre, av: Avatar, mat, mod) -> Any:
         fn2 = getattr(pre, name, None)
         if not callable(fn2):
             continue
-        for kwargs in (
-            dict(model=mod, material=mat, dimension=dim, color=color),
-            dict(model=mod, material=mat, dimension=dim),
-            dict(mod, mat),
-        ):
-            try:
-                if isinstance(kwargs, dict):
-                    body = fn2(**kwargs)
-                else:
-                    body = fn2(*kwargs)
-                if body is not None:
-                    _try_translate(body, center)
-                    return body
-            except TypeError:
-                continue
-            except Exception:
-                break
+        body = _call_supported_signature(fn2, [
+            ((), dict(model=mod, material=mat, dimension=dim, color=color)),
+            ((), dict(model=mod, material=mat, dimension=dim)),
+            ((mod, mat), {}),
+        ])
+        if body is not None:
+            _try_translate(body, center)
+            return body
 
     raise MaterializationError(
         f"emptyAvatar: pylmgc90.pre has no emptyAvatar/avatar factory "
@@ -402,18 +389,7 @@ def _build_empty_avatar(pre, av: Avatar, mat, mod) -> Any:
 def _try_translate(body, center) -> None:
     if not center or not hasattr(body, "translate"):
         return
-    try:
-        body.translate(list(center))
-    except TypeError:
-        try:
-            c = list(center)
-            if len(c) == 2:
-                c = c + [0.0]
-            body.translate(c)
-        except Exception:
-            pass
-    except Exception:
-        pass
+    body.translate(list(center))
 
 
 def _build_brick2d(pre, av: Avatar, mat, mod, wp: dict) -> Any:
@@ -449,10 +425,10 @@ def _build_brick2d(pre, av: Avatar, mat, mod, wp: dict) -> Any:
         rigid = getattr(brick, "rigidBrick", None)
         if rigid is None:
             raise MaterializationError("brick2D object has no rigidBrick()")
-        try:
-            return rigid(center=center, model=mod, material=mat, color=color)
-        except TypeError:
-            return rigid(center, mod, mat, color)
+        return _call_supported_signature(rigid, [
+            ((), {"center": center, "model": mod, "material": mat, "color": color}),
+            ((center, mod, mat, color), {}),
+        ])
 
     # Fallback rectangle as rigidPolygon (still not emptyAvatar semantics)
     hx, hy = lx / 2.0, ly / 2.0
@@ -464,16 +440,10 @@ def _build_brick2d(pre, av: Avatar, mat, mod, wp: dict) -> Any:
         [cx - hx, cy + hy],
     ], dtype=float)
     verts -= np.asarray(center, dtype=float)
-    try:
-        return pre.rigidPolygon(
-            center=center, model=mod, material=mat, color=color,
-            generation_type="full", vertices=verts,
-        )
-    except TypeError:
-        return pre.rigidPolygon(
-            center=center, model=mod, material=mat, color=color,
-            generation_type="full", vertices=verts,
-        )
+    return pre.rigidPolygon(
+        center=center, model=mod, material=mat, color=color,
+        generation_type="full", vertices=verts,
+    )
 
 
 
@@ -697,13 +667,12 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
         )
         if colors is not None:
             kwargs["colors"] = colors
-        try:
-            body = deform(**kwargs)
-        except TypeError:
-            # older signature without colors
-            kwargs.pop("colors", None)
-            body = deform(**kwargs)
-        return body
+        candidates = [((), kwargs)]
+        if colors is not None:
+            without_colors = dict(kwargs)
+            without_colors.pop("colors")
+            candidates.append(((), without_colors))
+        return _call_supported_signature(deform, candidates)
 
     geom = mp.get("geom") or ("Rectangle" if "lx" in mp else None)
     build_mesh = getattr(pre, "buildMesh2D", None)
@@ -725,11 +694,10 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
         x0 = cx - lx / 2.0
         y0 = cy - ly / 2.0
         mesh = build_mesh(mesh_type, x0, y0, lx, ly, nx, ny)
-        try:
-            body = build_avatar(mesh=mesh, model=mod, material=mat)
-        except TypeError:
-            body = build_avatar(mesh, mod, mat)
-        return body
+        return _call_supported_signature(build_avatar, [
+            ((), {"mesh": mesh, "model": mod, "material": mat}),
+            ((mesh, mod, mat), {}),
+        ])
 
     if geom in ("Boîte (H8)", "Box3D", "H8") or ("lz" in mp and "lx" in mp):
         build_h8 = getattr(pre, "buildMeshH8", None)
@@ -741,10 +709,10 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
         cy = float(mp.get("cy", av.center[1] if len(av.center) > 1 else 0.0))
         cz = float(mp.get("cz", av.center[2] if len(av.center) > 2 else 0.0))
         mesh = build_h8(cx - lx / 2, cy - ly / 2, cz - lz / 2, lx, ly, lz, nx, ny, nz)
-        try:
-            return build_avatar(mesh=mesh, model=mod, material=mat)
-        except TypeError:
-            return build_avatar(mesh, mod, mat)
+        return _call_supported_signature(build_avatar, [
+            ((), {"mesh": mesh, "model": mod, "material": mat}),
+            ((mesh, mod, mat), {}),
+        ])
 
     if geom in ("Fichier externe", "file") or mp.get("filepath"):
         read_mesh = getattr(pre, "readMesh", None)
@@ -763,14 +731,14 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
         resolved = resolve_mesh_filepath(
             str(raw_path), dim=dim_m, mesh_size=mesh_size_f,
         )
-        try:
-            mesh = read_mesh(resolved, dim_m)
-        except TypeError:
-            mesh = read_mesh(resolved)
-        try:
-            return build_avatar(mesh=mesh, model=mod, material=mat)
-        except TypeError:
-            return build_avatar(mesh, mod, mat)
+        mesh = _call_supported_signature(read_mesh, [
+            ((resolved, dim_m), {}),
+            ((resolved,), {}),
+        ])
+        return _call_supported_signature(build_avatar, [
+            ((), {"mesh": mesh, "model": mod, "material": mat}),
+            ((mesh, mod, mat), {}),
+        ])
 
     raise MaterializationError(
         f"MESH_DEFORMABLE avatar_id={av.avatar_id}: unsupported mesh_params keys {list(mp)}"
@@ -830,32 +798,23 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
             )
 
         is_mesh = sh in _MESH_SHAPES
+        allowed_kwargs = _ALLOWED_MESH_KW if is_mesh else _ALLOWED_RIGID_KW
+        unknown_kwargs = sorted(set(raw) - allowed_kwargs)
+        if unknown_kwargs:
+            raise MaterializationError(
+                f"{shape} contactor has unsupported option(s) "
+                f"{', '.join(unknown_kwargs)} (avatar_id={av.avatar_id})"
+            )
+
         if is_mesh:
-            # only keys understood by meshedContactor; drop junk that breaks element lists
-            kwargs = {k: v for k, v in raw.items() if k in _ALLOWED_MESH_KW}
-            # group required for CLxxx/ALpxx on meshed avatars
+            kwargs = dict(raw)
             if "group" not in kwargs or not kwargs.get("group"):
-                # try common boundary names as last resort
-                added = False
-                last_error = None
-                for gname in ("up", "down", "left", "right", "top", "bottom", "all"):
-                    try:
-                        body.addContactors(shape=shape, group=gname, **{
-                            k: v for k, v in kwargs.items() if k != "group"
-                        })
-                        added = True
-                        break
-                    except Exception as exc:
-                        last_error = exc
-                        continue
-                if not added:
-                    raise MaterializationError(
-                        f"could not add {shape} contactor to avatar_id={av.avatar_id}: "
-                        f"{last_error}"
-                    ) from last_error
-                continue
+                raise MaterializationError(
+                    f"{shape} mesh contactor requires an explicit non-empty "
+                    f"group (avatar_id={av.avatar_id})"
+                )
         else:
-            kwargs = {k: v for k, v in raw.items() if k in _ALLOWED_RIGID_KW}
+            kwargs = dict(raw)
 
         try:
             body.addContactors(shape=shape, **kwargs)

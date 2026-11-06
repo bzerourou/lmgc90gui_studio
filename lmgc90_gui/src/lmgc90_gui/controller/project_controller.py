@@ -69,6 +69,7 @@ class ProjectController(_QObject):
         self._filepath: Optional[Path] = None
         self._batch_depth = 0
         self._is_loading = False
+        self._modified = False
         self.prefs: Preferences = load_preferences()
         self.journal = get_journal()
         if self.prefs.journal_to_file and self.prefs.journal_path:
@@ -92,6 +93,10 @@ class ProjectController(_QObject):
     def is_loading(self) -> bool:
         return self._is_loading
 
+    @property
+    def modified(self) -> bool:
+        return self._modified
+
     # ------------------------------------------------------------------ batch
     @contextmanager
     def batch(self):
@@ -104,8 +109,10 @@ class ProjectController(_QObject):
             if self._batch_depth == 0 and not self._is_loading:
                 self._emit()
 
-    def _emit(self) -> None:
+    def _emit(self, *, modified: bool = True) -> None:
         if self._batch_depth == 0 and not self._is_loading:
+            if modified:
+                self._modified = True
             self.state_changed.emit()
 
     def _notify_error(self, msg: str) -> None:
@@ -120,8 +127,19 @@ class ProjectController(_QObject):
         self._project = Project(name=name, dimension=int(dimension))
         self._session = EngineSession(self._project)
         self._filepath = None
-        self._emit()
+        self._modified = False
+        self._emit(modified=False)
         self.project_loaded.emit()
+
+    def set_dimension(self, dimension: int) -> None:
+        dimension = int(dimension)
+        if dimension not in (2, 3):
+            raise ValidationError(f"unsupported project dimension {dimension}")
+        if dimension == self._project.dimension:
+            return
+        self._project.dimension = dimension
+        self._session.mark_dirty()
+        self._emit()
 
     def apply_scene(self, builder, *, on_conflict: str = "error") -> None:
         """Run a pure core scene builder ``builder(project)`` then notify UI.
@@ -169,6 +187,8 @@ class ProjectController(_QObject):
             raise ValidationError("no path given and no previous filepath")
         out = self._project.save(target)
         self._filepath = out
+        self._modified = False
+        self.state_changed.emit()
         return out
 
     def load_project(self, path: Union[str, Path]) -> Project:
@@ -179,7 +199,8 @@ class ProjectController(_QObject):
             self._filepath = Path(path)
         finally:
             self._is_loading = False
-        self._emit()
+        self._modified = False
+        self._emit(modified=False)
         self.project_loaded.emit()
         return self._project
 
@@ -310,14 +331,22 @@ class ProjectController(_QObject):
         self._emit()
 
     def set_dynamic_var(self, name: str, expression: str) -> None:
-        self._project.dynamic_vars[name] = expression
-        self._session.mark_dirty()
-        self._emit()
+        try:
+            self._project.set_dynamic_var(name, expression)
+            self._session.mark_dirty()
+            self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     def remove_dynamic_var(self, name: str) -> None:
-        self._project.dynamic_vars.pop(name, None)
-        self._session.mark_dirty()
-        self._emit()
+        try:
+            self._project.remove_dynamic_var(name)
+            self._session.mark_dirty()
+            self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     def remove_group(self, name: str) -> None:
         """Delete a group through the project history."""
@@ -379,9 +408,13 @@ class ProjectController(_QObject):
             raise
 
     def remove_population(self, population_id: str) -> None:
-        self._project._drop_population(population_id)
-        self._session.mark_dirty()
-        self._emit()
+        try:
+            self._project.remove_population(population_id)
+            self._session.mark_dirty()
+            self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     # ------------------------------------------------------------------ loops
     def apply_loop(self, loop: Loop, template: Optional[Avatar] = None) -> list[Avatar]:
@@ -476,9 +509,13 @@ class ProjectController(_QObject):
         return self.add(cmd)
 
     def remove_postpro(self, index: int) -> None:
-        self._project._drop_postpro(index)
-        self._session.mark_dirty()
-        self._emit()
+        try:
+            self._project.remove_postpro(index)
+            self._session.mark_dirty()
+            self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
 
     # ------------------------------------------------------------------ history
     def undo(self) -> None:
@@ -501,6 +538,7 @@ class ProjectController(_QObject):
     def emit_chipy_script(self, path: Optional[Union[str, Path]] = None, **kw) -> str:
         """Full ``command.py`` via engine → core ``emit_chipy`` (all ChipyRoutines keys)."""
         params = dict(self.prefs.chipy_params())
+        params["nb_steps"] = self.prefs.nb_steps
         params.update(kw)
         return self._session.emit_chipy_script(path, **params)
 
@@ -551,8 +589,22 @@ class ProjectController(_QObject):
 
 
     def export_all(self, directory: Union[str, Path], **kw) -> dict:
-        kw.setdefault("use_loop", self.prefs.script_use_loop)
-        return self._session.export_all(directory, **kw)
+        chipy_params = dict(self.prefs.chipy_params())
+        dt = kw.pop("dt", chipy_params.pop("dt", self.prefs.dt))
+        nb_steps = kw.pop(
+            "nb_steps", chipy_params.pop("nb_steps", self.prefs.nb_steps),
+        )
+        use_loop = kw.pop("use_loop", self.prefs.script_use_loop)
+        try_datbox = kw.pop("try_datbox", True)
+        chipy_params.update(kw)
+        return self._session.export_all(
+            directory,
+            dt=dt,
+            nb_steps=nb_steps,
+            use_loop=use_loop,
+            try_datbox=try_datbox,
+            **chipy_params,
+        )
 
     def pylmgc_available(self) -> bool:
         return self._session.available()

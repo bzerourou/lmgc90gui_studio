@@ -199,6 +199,7 @@ class EngineSession:
         nb_steps: int = 5000,
         try_datbox: bool = True,
         use_loop: bool = False,
+        **chipy_params: Any,
     ) -> dict[str, Path]:
         """Write pre.py, command.py, and optionally DATBOX into *directory*."""
         out = Path(directory)
@@ -207,7 +208,9 @@ class EngineSession:
         paths["pre"] = Path(datbox_mod.export_pre_script(
             self.project, out / "pre.py", use_loop=use_loop
         ))
-        chipy = self.emit_chipy_script(out / "command.py", dt=dt, nb_steps=nb_steps)
+        self.emit_chipy_script(
+            out / "command.py", dt=dt, nb_steps=nb_steps, **chipy_params,
+        )
         paths["command"] = out / "command.py"
         if try_datbox:
             try:

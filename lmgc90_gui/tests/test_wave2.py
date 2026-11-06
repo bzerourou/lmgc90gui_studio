@@ -1,12 +1,23 @@
 """Vague 2 — journal, preferences, prepare_run_directory (headless)."""
 from __future__ import annotations
 
+import inspect
+import sys
 from pathlib import Path
 
 from lmgc90_core import pre
 from lmgc90_gui import ProjectController
 from lmgc90_gui.utils.app_journal import AppJournal, get_journal
 from lmgc90_gui.utils.preferences import Preferences, load_preferences, save_preferences
+from lmgc90_gui.workers.compute_worker import create_compute_worker
+
+
+def test_python_executable_defaults_to_current_interpreter():
+    assert Preferences().python_executable == sys.executable
+    assert (
+        inspect.signature(create_compute_worker).parameters["python_executable"].default
+        == sys.executable
+    )
 
 
 def test_journal_ring():
@@ -56,3 +67,44 @@ def test_prepare_run_directory(tmp_path: Path):
     assert "100" in text or "1e-4" in text or "0.0001" in text
     assert ctrl.work_dir == out
     assert any("Preparing" in e.message or "DATBOX" in e.message for e in ctrl.journal.entries())
+
+
+def test_export_all_uses_saved_chipy_preferences(tmp_path: Path):
+    ctrl = ProjectController()
+    ctrl.new_project("export-prefs", dimension=2)
+    ctrl.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    ctrl.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    ctrl.add(pre.rigidDisk(r=0.1, center=[0, 0], model="rigid", material="STEEL"))
+    ctrl.prefs.dt = 2e-4
+    ctrl.prefs.nb_steps = 37
+    ctrl.prefs.chipy_options = {"use_SelectProx_macro": True}
+
+    direct_script = ctrl.emit_chipy_script()
+    paths = ctrl.export_all(tmp_path / "export", try_datbox=False)
+    command = paths["command"].read_text(encoding="utf-8")
+
+    assert "dt          = 0.0002" in command
+    assert "nb_steps    = 37" in command
+    assert "chipy.SelectProxTactors()" in command
+    assert command == direct_script
+
+
+def test_project_modified_state_tracks_edits_saves_and_replacements(tmp_path: Path):
+    ctrl = ProjectController()
+    ctrl.new_project("modified-state", dimension=2)
+    assert not ctrl.modified
+
+    ctrl.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    assert ctrl.modified
+    ctrl.set_dimension(3)
+    assert ctrl.modified
+
+    path = tmp_path / "saved.lmgc90"
+    ctrl.save_project(path)
+    assert not ctrl.modified
+
+    ctrl.set_dimension(2)
+    ctrl.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
+    assert ctrl.modified
+    ctrl.load_project(path)
+    assert not ctrl.modified
