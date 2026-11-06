@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lmgc90gui-studio"
-version = "0.1.0"
+version = "0.7.1"
 description = "LMGC90 GUI Studio — monorepo (core + engine + gui)"
 readme = "README_INSTALL.md"
 requires-python = ">=3.10"
