@@ -500,7 +500,7 @@ def on_page(canvas, doc):
     canvas.setFillColor(colors.white)
     canvas.setFont('Helvetica', 7.5)
     canvas.drawString(1.5*cm, 0.33*cm,
-                      "LMGC90_GUI Studio — Documentation officielle v0.6.0")
+                      "LMGC90_GUI Studio — Documentation officielle v0.7.0")
     canvas.drawRightString(w - 1.5*cm, 0.33*cm, f"Page {doc.page}")
     # top rule
     canvas.setStrokeColor(colors.HexColor('#1A3A5C'))
@@ -517,7 +517,7 @@ def build_cover():
     s.append(SP(0.5))
     s.append(P("Documentation Officielle", ST['cov_s']))
     s.append(SP(0.3))
-    s.append(P("Version 0.6.0", ST['cov_v']))
+    s.append(P("Version 0.7.0", ST['cov_v']))
     s.append(SP(1.0))
     s.append(P("© 2026 LMGC90_GUI Studio", ST['cov_v']))
     s.append(SP(0.3))
@@ -594,7 +594,7 @@ def main():
         str(OUT_PDF), pagesize=A4,
         leftMargin=2*cm, rightMargin=2*cm,
         topMargin=2.4*cm, bottomMargin=1.8*cm,
-        title="LMGC90_GUI Studio — Documentation Officielle v0.6.0",
+        title="LMGC90_GUI Studio — Documentation Officielle v0.7.0",
         author="LMGC90_GUI Studio",
         subject="Documentation technique complète",
     )

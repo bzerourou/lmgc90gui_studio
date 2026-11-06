@@ -34,7 +34,7 @@ La suppression retire le groupe, pas les avatars qui le composent. Les opératio
 
 Les assistants de maçonnerie et certaines générations paramétriques ou granulométriques peuvent enregistrer un groupe automatiquement. Il apparaît dans **Existing groups** et peut ensuite être ciblé dans les onglets appropriés.
 
-Les groupes manuels contiennent des avatars individuels. Les populations massives SoA ne sont pas une sélection de lignes d’avatars dans ce panneau ; elles sont identifiées et gérées depuis **Granulo**.
+Les groupes manuels contiennent des avatars individuels. Les populations massives SoA sont gérées depuis **Granulo** ; leur nom de groupe sert aussi aux cibles DOF et aux appels générés. Pour la numérotation LMGC90, les corps SoA suivent les avatars individuels, puis les populations dans l’ordre du projet.
 
 ## Utiliser un groupe
 

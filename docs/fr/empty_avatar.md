@@ -66,7 +66,6 @@ Ces formes sont destinées à être ajoutées sur un maillage FEM 2D. Elles déf
 3. Associez la loi et une distance **Alert** adaptée à l’échelle de la scène.
 4. Cliquez sur **Add**, puis sur **Vérifier** pour rechercher les couleurs sans table ou les lois non référencées.
 
-
 ---
 
 Voir [Contacteurs](contactors.md), [Lois de contact](contact_laws.md) et [Tables de visibilité](visibility.md) pour les formulaires correspondants.

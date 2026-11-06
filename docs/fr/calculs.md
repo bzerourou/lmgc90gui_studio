@@ -189,12 +189,12 @@ La liste correspond désormais aux modules officiels de `chipy.macro.SelectProxT
 | `DKDKL` | DISKx / DISKL | disque/disque linéaire |
 | `DKDKx` | DISKx / DISKx | disque/disque (défaut ✅) |
 | `DKJCx` | DISKx / JONCx | disque/jonc (murs) |
-| `DKKDx` | DISKx / POLYG | disque/polygone |
-| `DKPLx` | DISKx / PLANx | disque/plan |
+| `DKKDx` | DISKx / xKSID | disque / xKSID |
+| `DKPLx` | DISKx / POLYG | disque/polygone |
 | `P2P2L` | PT2DL / PT2DL | point/point linéaire |
-| `PLALp` | PLANx / ALpxx | plan/ligne MAILx |
-| `PLJCx` | PLANx / JONCx | plan/jonc |
-| `PLPLx` | PLANx / PLANx | plan/plan (libellé du dialogue) |
+| `PLALp` | POLYG / ALpxx | polygone/ligne MAILx |
+| `PLJCx` | POLYG / JONCx | polygone/jonc |
+| `PLPLx` | POLYG / POLYG | polygone/polygone |
 | `PTPT2` | PT2Dx / PT2Dx | point/point (câbles, barres) |
 
 #### Détecteurs 3D
@@ -245,7 +245,7 @@ Un détecteur doit exister pour **chaque paire** présente dans vos tables de vi
 | `SPHER` / `PLANx` | `SPPLx` |
 | `PT3Dx` / `PT3Dx` (câbles, barres 3D) | `PTPT3` |
  
-> **`POLYG` / `POLYG` (briques rigides 2D)** : la table interne `infer_chipy_contact_routines` associe cette paire à `DKKDx` (commentaire du code : *fallback*). Vérifiez dans la documentation LMGC90 si `PLPLx` convient mieux à votre cas, avant de lancer un calcul.
+> **`POLYG` / `POLYG` (briques rigides 2D)** : le détecteur prévu par l’API LMGC90 est `PLPLx`. `DKKDx` est réservé à la paire `DISKx` / `xKSID`.
 
 ### 8.2.3 Auto-détection à l’ouverture
 
@@ -381,7 +381,7 @@ Ouvre une liste d'avatars du projet à sélection multiple (Ctrl/Maj+clic). Il i
  
 - **IDs prioritaires** sur le groupe si les deux sont renseignés.
 - Un groupe est résolu en numéros `position + 1` dans `project.avatars`.
-- Les **populations SoA** ne sont pas dans les groupes d'avatars. Leurs numéros commencent à `nb_avatars + 1`.
+- Les **populations SoA** sont résolues depuis leur groupe de population. La première commence au numéro `nb_avatars + 1` ; les suivantes suivent dans l’ordre des populations du projet.
 - Si un `avatar_id` du groupe est introuvable, un **avertissement** est journalisé (`F7`) et un **bandeau d'alerte** est ajouté avant `CloseDisplayFiles` dans `command.py`.
 #### 8.4.4 Messages et visualisation
  

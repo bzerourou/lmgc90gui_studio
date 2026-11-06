@@ -156,6 +156,7 @@ lmgc90gui_studio/
 ### 3.1 `types.py` — LMGC90 vocabulary
 
 Enums (values = `pylmgc90` names): `MaterialType`, `AvatarType`, `ContactLawType`, `AvatarOrigin` (`MANUAL`, `LOOP`, `GRANULO`, `FACTORY`), `UnitSystem`.
+The core uses only its embedded fallback values; runtime `pylmgc90` dictionary introspection belongs to `lmgc90_engine.schema`.
 
 Reference tables that drive validation **and** GUI forms:
 

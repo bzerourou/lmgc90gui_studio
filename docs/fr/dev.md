@@ -164,6 +164,7 @@ lmgc90gui_studio/
 ### 3.1 `types.py` — vocabulaire LMGC90
 
 Enums (valeurs = noms `pylmgc90`) : `MaterialType`, `AvatarType`, `ContactLawType`, `AvatarOrigin` (`MANUAL`, `LOOP`, `GRANULO`, `FACTORY`), `UnitSystem`.
+Le core ne charge que ses valeurs de repli embarquées ; l’introspection des dictionnaires runtime `pylmgc90` appartient à `lmgc90_engine.schema`.
 
 Tables de référence qui pilotent validation **et** formulaires GUI :
 
@@ -564,7 +565,7 @@ Gestion d'erreur côté vue : `try/except (ValidationError, ValueError)` → `QM
 
 ### Ajouter un type de matériau / une option
 
-`types.MATERIAL_PROPERTY_SCHEMA` (+ `MATERIAL_PROPERTY_CHOICES`), puis `engine/materialize._MATERIAL_OPTIONS` et `_MATERIAL_PROP_ALIASES`. Ajouter un test dans `test_material_properties.py`.
+`types.MATERIAL_PROPERTY_SCHEMA` (+ `MATERIAL_PROPERTY_CHOICES`), puis les options runtime de `engine/materialize._material_options()` et `_MATERIAL_PROP_ALIASES`. Ajouter un test dans `test_material_properties.py`.
 
 ### Ajouter un onglet
 

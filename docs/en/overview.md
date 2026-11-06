@@ -1,6 +1,6 @@
 # LMGC90_GUI Documentation
 
-Welcome to the official documentation of the LMGC90_GUI Studio v0.6.0 graphical interface. This is a brief introduction.
+Welcome to the official documentation of the LMGC90_GUI Studio v0.7.0 graphical interface. This is a brief introduction.
 
 ## Getting started
 

@@ -194,12 +194,12 @@ The list now matches the official modules of `chipy.macro.SelectProxTactors`. **
 | `DKDKL` | DISKx / DISKL | disk/linear disk |
 | `DKDKx` | DISKx / DISKx | disk/disk (default ✅) |
 | `DKJCx` | DISKx / JONCx | disk/jonc (walls) |
-| `DKKDx` | DISKx / POLYG | disk/polygon |
-| `DKPLx` | DISKx / PLANx | disk/plane |
+| `DKKDx` | DISKx / xKSID | disk / xKSID |
+| `DKPLx` | DISKx / POLYG | disk/polygon |
 | `P2P2L` | PT2DL / PT2DL | point/point linear |
-| `PLALp` | PLANx / ALpxx | plane/MAILx line |
-| `PLJCx` | PLANx / JONCx | plane/jonc |
-| `PLPLx` | PLANx / PLANx | plane/plane (dialog label) |
+| `PLALp` | POLYG / ALpxx | polygon/MAILx line |
+| `PLJCx` | POLYG / JONCx | polygon/jonc |
+| `PLPLx` | POLYG / POLYG | polygon/polygon |
 | `PTPT2` | PT2Dx / PT2Dx | point/point (cables, rods) |
 
 #### 3D detectors
@@ -249,7 +249,7 @@ A detector must exist for **each pair** present in your visibility tables. The [
 | `SPHER` / `PLANx` | `SPPLx` |
 | `PT3Dx` / `PT3Dx` (cables, 3D rods) | `PTPT3` |
 
-> **`POLYG` / `POLYG` (rigid 2D bricks):** the internal table `infer_chipy_contact_routines` maps this pair to `DKKDx` (code comment: *fallback*). Check in the LMGC90 documentation whether `PLPLx` suits your case better before running.
+> **`POLYG` / `POLYG` (rigid 2D bricks):** the LMGC90 API detector for this pair is `PLPLx`. `DKKDx` is reserved for `DISKx` / `xKSID`.
 
 ### 8.2.3 Auto-detection on open
 
@@ -387,7 +387,7 @@ Opens a multi-select list of project avatars (Ctrl/Shift+click). It inserts **1-
 
 - **IDs take priority** over the group if both are set.
 - A group is resolved to numbers `position + 1` in `project.avatars`.
-- **SoA populations** are not in avatar groups. Their numbers start at `nb_avatars + 1`.
+- **SoA populations** are resolved from their population group. The first starts at `nb_avatars + 1`; subsequent populations follow in project order.
 - If a group `avatar_id` is missing, a **warning** is logged (`F7`) and an **alert banner** is added before `CloseDisplayFiles` in `command.py`.
 
 #### 8.4.4 Messages and visualisation

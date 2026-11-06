@@ -1,6 +1,6 @@
 # LMGC90 Studio — Detailed architecture
 
-> **Version:** 0.6.0  > **Author:** bzerourou  > **class diagrams** and **sequence diagrams** for the **core / engine / gui** architecture.
+> **Version:** 0.7.0  > **Author:** bzerourou  > **class diagrams** and **sequence diagrams** for the **core / engine / gui** architecture.
 ---
 
 ## Table of contents
