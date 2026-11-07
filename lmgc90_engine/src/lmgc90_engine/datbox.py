@@ -151,35 +151,31 @@ def write_cell_dual_datbox(
 
 
 def _maybe_write_evolution_files(project: Project, out: Path) -> None:
-    """Write simple evolution files declared in dynamic_vars / DOF ops."""
+    """Create the configured simple velocity evolution file if it is absent."""
     import ast
-    # from dynamic_vars
+
     raw = (project.dynamic_vars or {}).get("vx_evolution")
-    meta = {}
+    meta = None
     if isinstance(raw, dict):
         meta = raw
     elif isinstance(raw, str):
         try:
             meta = ast.literal_eval(raw)
         except Exception:
-            meta = {}
-    # also collect evolutionFile names from DOF ops
-    evo_files = set()
-    for op in getattr(project, "operations", []) or []:
-        p = op.parameters or {}
-        if str(p.get("description", "")).lower() == "evolution":
-            fn = p.get("evolutionFile") or p.get("evolution_file")
-            if fn:
-                evo_files.add(str(fn))
-    if meta.get("file"):
-        evo_files.add(str(meta["file"]))
-    if not evo_files:
+            return
+    if not isinstance(meta, dict):
         return
-    # default ramp: 0, rest, ramp, hold (gen_sample)
-    v_max = float(meta.get("v_max", 0.02) or 0.02)
-    t_rest = float(meta.get("t_rest", 0.005) or 0.005)
-    t_ramp = float(meta.get("t_ramp", 0.01) or 0.01)
-    # two-column style often used: time value
+    filename = meta.get("file")
+    if not filename or not all(key in meta for key in ("v_max", "t_rest", "t_ramp")):
+        return
+
+    path = out / str(filename)
+    if path.exists():
+        return
+
+    v_max = float(meta["v_max"])
+    t_rest = float(meta["t_rest"])
+    t_ramp = float(meta["t_ramp"])
     lines = [
         f"{0.0:.6g}  {0.0:.6g}",
         f"{t_rest:.6g}  {0.0:.6g}",
@@ -187,9 +183,8 @@ def _maybe_write_evolution_files(project: Project, out: Path) -> None:
         f"{10.0:.6g}  {v_max:.6g}",
     ]
     text = "\n".join(lines) + "\n"
-    for name in evo_files:
-        path = out / name
-        try:
-            path.write_text(text, encoding="utf-8")
-        except Exception:
-            pass
+    try:
+        with path.open("x", encoding="utf-8") as evolution_file:
+            evolution_file.write(text)
+    except FileExistsError:
+        pass

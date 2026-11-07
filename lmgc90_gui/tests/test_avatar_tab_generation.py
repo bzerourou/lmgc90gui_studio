@@ -164,3 +164,47 @@ def test_update_mesh_avatar_preserves_contactors_and_unrepresented_mesh_params(q
     assert updated.origin == AvatarOrigin.FACTORY
     assert updated.contactors == mesh.contactors
     assert updated.mesh_params["source_mesh_tag"] == "preserve-me"
+
+
+@pytest.mark.parametrize(
+    ("dimension", "element", "avatar_factory", "avatar_type"),
+    [
+        (
+            2, "Rxx2D", pre.rigidDisk, AvatarType.RIGID_DISK,
+        ),
+        (
+            3, "Rxx3D", pre.rigidCylinder, AvatarType.RIGID_CYLINDER,
+        ),
+    ],
+)
+def test_update_preserves_hollow_rigid_avatar(
+    qt_app, dimension, element, avatar_factory, avatar_type,
+):
+    controller = ProjectController()
+    controller.new_project("hollow-avatar-update", dimension=dimension)
+    controller.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    controller.add(pre.model(
+        name="rigid", physics="MECAx", element=element, dimension=dimension,
+    ))
+    kwargs = {
+        "r": 0.2,
+        "center": [0.0] * dimension,
+        "model": "rigid",
+        "material": "STEEL",
+        "is_Hollow": True,
+    }
+    if avatar_type == AvatarType.RIGID_CYLINDER:
+        kwargs["h"] = 0.4
+    avatar = avatar_factory(**kwargs)
+    controller.add_avatar(avatar)
+
+    tab = create_avatar_tab()
+    tab.bind_controller(controller)
+    tab.on_state_changed()
+    tab._load_selected(avatar.avatar_id)
+
+    assert tab._param_widgets["is_Hollow"][0].isChecked()
+    tab._on_update()
+
+    updated = controller.project.avatar(avatar.avatar_id)
+    assert updated.is_hollow is True

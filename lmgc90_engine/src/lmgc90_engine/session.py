@@ -144,10 +144,7 @@ class EngineSession:
         patch_numpy_cross()
         scene = self.materialize()
         out = datbox_mod.write_datbox(scene, path)
-        try:
-            datbox_mod._maybe_write_evolution_files(self.project, Path(out))
-        except Exception:
-            pass
+        datbox_mod._maybe_write_evolution_files(self.project, Path(out))
         return out
 
     def write_cell_dual_datbox(

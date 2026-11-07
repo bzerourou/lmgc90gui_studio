@@ -60,7 +60,10 @@ class ParticlePopulation:
             )
         if radii_a.size and np.any(radii_a <= 0):
             raise ValueError("all radii must be strictly positive")
-        extra = extra_params or {}
+        extra = dict(extra_params or {})
+        if atype in (AvatarType.RIGID_POLYGON, AvatarType.RIGID_POLYHEDRON):
+            default_nb_vertices = 6 if atype == AvatarType.RIGID_POLYGON else 8
+            extra.setdefault("nb_vertices", default_nb_vertices)
         cls._validate_extra(atype, extra)
         return cls(
             population_id=population_id or new_population_id(),
@@ -118,8 +121,11 @@ class ParticlePopulation:
         elif self.avatar_type == AvatarType.RIGID_CYLINDER:
             kwargs["wall_params"] = {"h": self.extra_params.get("h", 1.0)}
         elif self.avatar_type in (AvatarType.RIGID_POLYGON, AvatarType.RIGID_POLYHEDRON):
-            kwargs["generation_type"] = "regular"
-            kwargs["nb_vertices"] = self.extra_params.get("nb_vertices", 6)
+            kwargs["generation_type"] = self.extra_params.get(
+                "generation_type", "regular",
+            )
+            nb_default = 6 if self.avatar_type == AvatarType.RIGID_POLYGON else 8
+            kwargs["nb_vertices"] = self.extra_params.get("nb_vertices", nb_default)
         return Avatar(**kwargs)
 
     def bounds(self) -> tuple[np.ndarray, np.ndarray]:

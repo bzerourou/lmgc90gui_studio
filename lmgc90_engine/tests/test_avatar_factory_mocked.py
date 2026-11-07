@@ -1,7 +1,9 @@
 """Exercise avatar factory behavior without requiring pylmgc90."""
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -256,6 +258,97 @@ def test_deformable_h8_uses_3d_mesh_builder(monkeypatch):
     ]
 
 
+@pytest.mark.parametrize(
+    ("geom", "center", "params", "expected_dimension", "expected_method"),
+    [
+        ("Disque", [1.0, 2.0], {"r": 0.5, "nr": 4, "ntheta": 16}, 2, "disk"),
+        (
+            "Sphère", [1.0, 2.0, 3.0],
+            {"r": 0.5, "nr": 4, "ntheta": 16, "nphi": 8},
+            3, "sphere",
+        ),
+        (
+            "Cylindre", [1.0, 2.0, 3.0],
+            {"r": 0.5, "h": 1.5, "nr": 4, "ntheta": 16, "nz": 6},
+            3, "cylinder",
+        ),
+    ],
+)
+def test_gmsh_primitive_geometry_materializes(
+    monkeypatch, geom, center, params, expected_dimension, expected_method,
+):
+    calls = []
+
+    class OCC:
+        def addDisk(self, *args):
+            calls.append(("disk", args))
+
+        def addSphere(self, *args):
+            calls.append(("sphere", args))
+
+        def addCylinder(self, *args):
+            calls.append(("cylinder", args))
+
+        def synchronize(self):
+            calls.append(("synchronize",))
+
+    class Mesh:
+        def generate(self, dimension):
+            calls.append(("generate", dimension))
+
+    class Model:
+        occ = OCC()
+        mesh = Mesh()
+
+        def add(self, name):
+            calls.append(("model", name))
+
+    class Option:
+        def setNumber(self, name, value):
+            calls.append(("option", name, value))
+
+    class FakeGmsh:
+        model = Model()
+        option = Option()
+
+        @staticmethod
+        def initialize():
+            calls.append(("initialize",))
+
+        @staticmethod
+        def write(path):
+            Path(path).write_text("mesh", encoding="utf-8")
+            calls.append(("write",))
+
+        @staticmethod
+        def finalize():
+            calls.append(("finalize",))
+
+    class FakePre:
+        def readMesh(self, path, dimension):
+            assert Path(path).is_file()
+            calls.append(("read", dimension))
+            return "mesh"
+
+        def buildMeshedAvatar(self, *, mesh, model, material):
+            calls.append(("avatar", mesh, model, material))
+            return "deformable"
+
+    monkeypatch.setitem(sys.modules, "gmsh", FakeGmsh)
+    avatar = _avatar(
+        AvatarType.MESH_DEFORMABLE,
+        center=center,
+        mesh_params={"geom": geom, **params},
+    )
+
+    assert _build(monkeypatch, FakePre(), avatar) == "deformable"
+    assert ("generate", expected_dimension) in calls
+    assert any(call[0] == expected_method for call in calls)
+    assert ("read", expected_dimension) in calls
+    assert calls[-2] == ("read", expected_dimension)
+    assert calls[-1] == ("avatar", "mesh", "model", "material")
+
+
 def test_external_mesh_reader_supports_legacy_one_argument_signature(
     monkeypatch, tmp_path,
 ):
@@ -455,3 +548,51 @@ def test_population_constructor_error_identifies_particle(monkeypatch):
         avatar_factory.build_population_bodies(
             population, materials={"MAT": "material"}, models={"MODEL": "model"},
         )
+
+
+@pytest.mark.parametrize(
+    ("avatar_type", "constructor_name", "dimension", "nb_vertices"),
+    [
+        (AvatarType.RIGID_POLYGON, "rigidPolygon", 2, 6),
+        (AvatarType.RIGID_POLYHEDRON, "rigidPolyhedron", 3, 8),
+    ],
+)
+def test_polygon_population_uses_radius_constructor_argument(
+    monkeypatch, avatar_type, constructor_name, dimension, nb_vertices,
+):
+    calls = []
+
+    class FakePre:
+        def rigidPolygon(self, **kwargs):
+            calls.append(("rigidPolygon", kwargs))
+            return "polygon"
+
+        def rigidPolyhedron(self, **kwargs):
+            calls.append(("rigidPolyhedron", kwargs))
+            return "polyhedron"
+
+    population = ParticlePopulation.create(
+        avatar_type=avatar_type,
+        material_name="MAT",
+        model_name="MODEL",
+        centers=[[0.0] * dimension],
+        radii=[0.25],
+    )
+    monkeypatch.setattr(avatar_factory, "_pre", FakePre)
+
+    bodies = avatar_factory.build_population_bodies(
+        population, materials={"MAT": "material"}, models={"MODEL": "model"},
+    )
+
+    assert bodies == ["polygon" if dimension == 2 else "polyhedron"]
+    assert calls == [
+        (constructor_name, {
+            "radius": 0.25,
+            "center": [0.0] * dimension,
+            "model": "model",
+            "material": "material",
+            "color": population.color,
+            "generation_type": "regular",
+            "nb_vertices": nb_vertices,
+        }),
+    ]

@@ -675,14 +675,25 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
         return _call_supported_signature(deform, candidates)
 
     geom = mp.get("geom") or ("Rectangle" if "lx" in mp else None)
+    geom_key = str(geom or "").strip().lower()
     build_mesh = getattr(pre, "buildMesh2D", None)
     build_avatar = getattr(pre, "buildMeshedAvatar", None)
-    if build_mesh is None or build_avatar is None:
+    if build_avatar is None:
         raise MaterializationError(
-            "pylmgc90.pre needs buildMesh2D and buildMeshedAvatar for MESH_DEFORMABLE"
+            "pylmgc90.pre needs buildMeshedAvatar for MESH_DEFORMABLE"
         )
 
+    if geom_key in ("disque", "disk2d", "sphère", "sphere", "sphere3d",
+                    "cylindre", "cylinder3d"):
+        mesh = _build_gmsh_primitive_mesh(pre, av, geom_key, mp)
+        return _call_supported_signature(build_avatar, [
+            ((), {"mesh": mesh, "model": mod, "material": mat}),
+            ((mesh, mod, mat), {}),
+        ])
+
     if geom in (None, "Rectangle") and "lx" in mp:
+        if build_mesh is None:
+            raise MaterializationError("pylmgc90.pre has no buildMesh2D")
         lx = float(mp["lx"])
         ly = float(mp["ly"])
         nx = int(mp.get("nx", 2))
@@ -745,13 +756,93 @@ def _build_mesh(pre, av: Avatar, mat, mod) -> Any:
     )
 
 
+def _build_gmsh_primitive_mesh(pre, av: Avatar, geom: str, mp: dict) -> Any:
+    try:
+        import gmsh  # type: ignore
+    except ImportError as exc:
+        raise MaterializationError(
+            f"Generating {geom} mesh requires the optional Python package gmsh"
+        ) from exc
+
+    center = list(av.center)
+    radius = float(mp.get("r", 0.0))
+    if radius <= 0:
+        raise MaterializationError(f"{geom} mesh requires a positive radius")
+    if geom in ("cylindre", "cylinder3d"):
+        height = float(mp.get("h", 0.0))
+        if height <= 0:
+            raise MaterializationError(f"{geom} mesh requires a positive height")
+        dimension = 3
+        mesh_size = min(
+            radius / max(1, int(mp.get("nr", 8))),
+            2.0 * 3.141592653589793 * radius / max(3, int(mp.get("ntheta", 24))),
+            height / max(1, int(mp.get("nz", 4))),
+        )
+    elif geom in ("disque", "disk2d"):
+        dimension = 2
+        mesh_size = min(
+            radius / max(1, int(mp.get("nr", 8))),
+            2.0 * 3.141592653589793 * radius / max(3, int(mp.get("ntheta", 24))),
+        )
+    else:
+        dimension = 3
+        mesh_size = min(
+            radius / max(1, int(mp.get("nr", 8))),
+            2.0 * 3.141592653589793 * radius / max(3, int(mp.get("ntheta", 24))),
+            3.141592653589793 * radius / max(3, int(mp.get("nphi", 12))),
+        )
+
+    import tempfile
+    from pathlib import Path
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="lmgc90_primitive_mesh_") as folder:
+            mesh_path = Path(folder) / "primitive.msh"
+            gmsh.initialize()
+            try:
+                gmsh.model.add("lmgc90_primitive")
+                gmsh.option.setNumber("General.Terminal", 0)
+                gmsh.option.setNumber("Mesh.CharacteristicLengthMax", mesh_size)
+                gmsh.option.setNumber("Mesh.CharacteristicLengthMin", mesh_size * 0.2)
+                if geom in ("disque", "disk2d"):
+                    gmsh.model.occ.addDisk(center[0], center[1], 0.0, radius, radius)
+                elif geom in ("cylindre", "cylinder3d"):
+                    gmsh.model.occ.addCylinder(
+                        center[0], center[1], center[2] - height / 2.0,
+                        0.0, 0.0, height, radius,
+                    )
+                else:
+                    z = center[2] if len(center) > 2 else 0.0
+                    gmsh.model.occ.addSphere(center[0], center[1], z, radius)
+                gmsh.model.occ.synchronize()
+                gmsh.model.mesh.generate(dimension)
+                gmsh.write(str(mesh_path))
+            finally:
+                gmsh.finalize()
+
+            read_mesh = getattr(pre, "readMesh", None)
+            if not callable(read_mesh):
+                raise MaterializationError("pylmgc90.pre has no readMesh for gmsh meshes")
+            return _call_supported_signature(read_mesh, [
+                ((str(mesh_path), dimension), {}),
+                ((str(mesh_path),), {}),
+            ])
+    except MaterializationError:
+        raise
+    except Exception as exc:
+        raise MaterializationError(
+            f"gmsh failed to generate {geom} mesh for avatar_id={av.avatar_id}: {exc}"
+        ) from exc
+
+
 def _apply_contactors(body: Any, av: Avatar) -> None:
     """Attach contactors listed on the core Avatar.
 
-    Meshed contactors (CLxxx, ALpxx, …) need a coherent *group* of elements.
+    Meshed contactors (CLxxx, ALpxx, …) need a coherent *group* of elements;
+    point contactors (PT2Dx / PT3Dx) attach directly to rigid bodies.
     """
     _MESH_SHAPES = {
-        "CLXXX", "ALPXX", "CSPXX", "ASPXX", "PT2DX", "PT3DX", "CL3xx", "AS3xx",
+        "CLXXX", "ALPXX", "CSPXX", "ASPXX", "CL3XX", "AS3XX",
     }
     _ALLOWED_MESH_KW = {
         "group", "color", "weights", "reverse", "byrd", "shift", "quadrature",
@@ -781,6 +872,15 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
         raw = {k: v for k, v in c.items() if k not in ("shape", "params")}
         raw.update(params)
         raw = _resolve_polygon_contactors(shape, sh, raw, av)
+        is_mesh = sh in _MESH_SHAPES
+        if is_mesh and "by" in raw:
+            by_group = raw.pop("by")
+            if "group" in raw and raw["group"] != by_group:
+                raise MaterializationError(
+                    f"{shape} contactor has conflicting 'by' and 'group' "
+                    f"values (avatar_id={av.avatar_id})"
+                )
+            raw.setdefault("group", by_group)
 
         required_options = {
             "DISKX": ("byrd",), "XKSID": ("byrd",), "SPHER": ("byrd",),
@@ -797,7 +897,6 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
                 f"(avatar_id={av.avatar_id})"
             )
 
-        is_mesh = sh in _MESH_SHAPES
         allowed_kwargs = _ALLOWED_MESH_KW if is_mesh else _ALLOWED_RIGID_KW
         unknown_kwargs = sorted(set(raw) - allowed_kwargs)
         if unknown_kwargs:
@@ -952,16 +1051,16 @@ def build_population_bodies(
         kwargs: dict[str, Any] = dict(
             r=r, center=center, model=mod, material=mat, color=color,
         )
+        if t in (AvatarType.RIGID_POLYGON, AvatarType.RIGID_POLYHEDRON):
+            kwargs["radius"] = kwargs.pop("r")
+            kwargs["generation_type"] = extra.get("generation_type", "regular")
+            kwargs["nb_vertices"] = int(extra.get(
+                "nb_vertices", 6 if t == AvatarType.RIGID_POLYGON else 8,
+            ))
         if t == AvatarType.RIGID_CLUSTER:
             kwargs["nb_disk"] = int(extra.get("nb_disk", 3))
         if t == AvatarType.RIGID_CYLINDER:
             kwargs["h"] = float(extra.get("h", 1.0))
-        if t in (AvatarType.RIGID_POLYGON, AvatarType.RIGID_POLYHEDRON):
-            # radius already set; optional gen
-            if "generation_type" in extra:
-                kwargs["generation_type"] = extra["generation_type"]
-            if "nb_vertices" in extra:
-                kwargs["nb_vertices"] = int(extra["nb_vertices"])
         try:
             bodies.append(fn(**kwargs))
         except Exception as exc:

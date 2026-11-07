@@ -40,6 +40,26 @@ def test_derived_ids_and_view():
     assert meta["n_particles"] == 2
 
 
+@pytest.mark.parametrize(
+    ("avatar_type", "nb_vertices"),
+    [
+        (AvatarType.RIGID_POLYGON, 6),
+        (AvatarType.RIGID_POLYHEDRON, 8),
+    ],
+)
+def test_polygon_population_defaults_to_regular_vertex_count(avatar_type, nb_vertices):
+    pop = ParticlePopulation.create(
+        avatar_type=avatar_type,
+        material_name="STEEL",
+        model_name="rigid",
+        centers=[[0.0, 0.0] if avatar_type == AvatarType.RIGID_POLYGON else [0.0, 0.0, 0.0]],
+        radii=[0.1],
+    )
+
+    assert pop.extra_params["nb_vertices"] == nb_vertices
+    assert pop.as_avatar_view(0).nb_vertices == nb_vertices
+
+
 def test_contactors_mesh_vs_rigid():
     from lmgc90_core.types import AvatarType
     assert "CLxxx" in compatible_contactors(AvatarType.MESH_DEFORMABLE, 2)

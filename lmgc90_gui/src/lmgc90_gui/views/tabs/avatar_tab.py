@@ -382,6 +382,7 @@ def create_avatar_tab(parent=None):
             # fill known params from avatar attributes
             mapping = {
                 "r": av.radius, "radius": av.radius,
+                "is_Hollow": av.is_hollow,
                 "nb_vertices": av.nb_vertices,
                 "vertices": (
                     "; ".join(", ".join(str(value) for value in row)

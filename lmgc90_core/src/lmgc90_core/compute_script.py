@@ -467,7 +467,10 @@ class ComputeScriptGenerator:
                         else:
                             print("WARNING:", msg)
                         continue
-                elif avatar.avatar_type in rigid_types:
+                elif (
+                    avatar.avatar_type in rigid_types
+                    or avatar.avatar_type == AvatarType.EMPTY_AVATAR
+                ):
                     body_count = 1
                 else:
                     non_rigid_members.add(avatar.avatar_id)

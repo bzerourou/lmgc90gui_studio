@@ -14,6 +14,7 @@ from functools import lru_cache
 from typing import Any, Optional
 
 from lmgc90_core.entities import Avatar, ContactLaw, Material, Model, VisibilityRule
+from lmgc90_core.ids import parse_particle_id
 from lmgc90_core.naming import lmgc5
 from lmgc90_core.population import ParticlePopulation
 from lmgc90_core.project import Project
@@ -174,7 +175,7 @@ def materialize_project(project: Project) -> MaterializedScene:
                     for g in names
                 ]
             elif tt == "avatar":
-                body = scene.body_by_avatar_id.get(str(tv))
+                body = _body_for_avatar_target(scene, str(tv))
                 if body is None:
                     raise MaterializationError(
                         f"Post-processing target avatar_id={tv!r} is not in the scene"
@@ -210,6 +211,17 @@ def _bodies_for_group(project, scene, group_name: str) -> list:
     for population_id in population_ids:
         bodies.extend(scene.bodies_by_population_id.get(population_id, []))
     return bodies
+
+
+def _body_for_avatar_target(scene, target: str) -> Any:
+    particle = parse_particle_id(target)
+    if particle is not None:
+        population_id, index = particle
+        population_bodies = scene.bodies_by_population_id.get(population_id, [])
+        if 0 <= index < len(population_bodies):
+            return population_bodies[index]
+        return None
+    return scene.body_by_avatar_id.get(target)
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +429,7 @@ def _apply_dof(project: Project, scene: MaterializedScene, op) -> None:
     """Apply one DOFOperation onto the corresponding live body(ies)."""
     targets: list[Any] = []
     if op.target_type == "avatar":
-        body = scene.body_by_avatar_id.get(str(op.target_value))
+        body = _body_for_avatar_target(scene, str(op.target_value))
         if body is None:
             raise MaterializationError(
                 f"DOF target avatar_id={op.target_value!r} not in scene"

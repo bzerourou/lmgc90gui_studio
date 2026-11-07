@@ -100,6 +100,84 @@ def test_mesh_contactor_uses_only_the_explicit_group():
     }]
 
 
+def test_mesh_contactor_accepts_legacy_by_as_explicit_group():
+    avatar = pre.meshed_rectangle(
+        lx=1.0, ly=1.0, nx=1, ny=1, center=[0, 0],
+        model="mesh", material="MAT",
+        contactors=[{"shape": "CLxxx", "color": "CYANx", "by": "down"}],
+    )
+
+    class Body:
+        def __init__(self):
+            self.added = []
+
+        def addContactors(self, **kwargs):
+            self.added.append(kwargs)
+
+    body = Body()
+    _apply_contactors(body, avatar)
+
+    assert body.added == [{
+        "shape": "CLxxx", "group": "down", "color": "CYANx",
+    }]
+
+
+def test_mesh_contactor_rejects_conflicting_by_and_group():
+    avatar = pre.meshed_rectangle(
+        lx=1.0, ly=1.0, nx=1, ny=1, center=[0, 0],
+        model="mesh", material="MAT",
+        contactors=[{
+            "shape": "CLxxx", "color": "CYANx",
+            "by": "down", "group": "up",
+        }],
+    )
+
+    class Body:
+        def addContactors(self, **kwargs):
+            raise AssertionError("invalid contactor must not be added")
+
+    with pytest.raises(MaterializationError, match="conflicting 'by' and 'group'"):
+        _apply_contactors(Body(), avatar)
+
+
+@pytest.mark.parametrize(
+    "shape, constructor, center, options",
+    [
+        (
+            "PT2Dx",
+            pre.rigidDisk,
+            [0, 0],
+            {"color": "VERTx", "shift": [0.0, 0.0]},
+        ),
+        (
+            "PT3Dx",
+            pre.rigidSphere,
+            [0, 0, 0],
+            {"color": "BNOYp"},
+        ),
+    ],
+)
+def test_point_contactors_attach_to_rigid_bodies_without_mesh_group(
+    shape, constructor, center, options,
+):
+    avatar = constructor(
+        r=0.1, center=center, model="rigid", material="MAT",
+    )
+    avatar.contactors.append({"shape": shape, **options})
+
+    class Body:
+        def __init__(self):
+            self.added = []
+
+        def addContactors(self, **kwargs):
+            self.added.append(kwargs)
+
+    body = Body()
+    _apply_contactors(body, avatar)
+
+    assert body.added == [{"shape": shape, **options}]
+
+
 @pytest.mark.parametrize(
     "shape, options",
     [

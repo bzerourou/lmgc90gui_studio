@@ -164,7 +164,18 @@ def _call_deposit(pre, config: GranuloConfig) -> tuple[np.ndarray, np.ndarray]:
                 result = fn(radii_in, [0.0, 0.0, 0.0], [lx, ly, lz])
             return _parse_result(result, radii_in, dim=3)
 
-        if ctype in ("disk2d", "drum2d"):
+        if ctype == "disk2d":
+            fn = getattr(pre, "depositInDisk2D", None) or getattr(pre, "depositInDrum2D", None)
+            if fn is None:
+                raise MaterializationError(f"no deposit for {config.container_type}")
+            r = float(p.get("r", 1.0))
+            try:
+                result = fn(radii_in, r)
+            except TypeError:
+                result = fn(radii_in, r=r)
+            return _parse_result(result, radii_in, dim=2)
+
+        if ctype == "drum2d":
             fn = getattr(pre, "depositInDrum2D", None) or getattr(pre, "depositInDisk2D", None)
             if fn is None:
                 raise MaterializationError(f"no deposit for {config.container_type}")

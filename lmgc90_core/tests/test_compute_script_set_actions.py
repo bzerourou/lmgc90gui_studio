@@ -79,13 +79,14 @@ def test_invalid_set_actions_fail_with_a_clear_error(entry, message):
         _generate([entry])
 
 
-def _group_visibility_script(project):
+def _group_visibility_script(project, dimension=2):
     return ComputeScriptGenerator(project).generate_string({
-        "use_RBDY2": True,
+        "use_RBDY2": dimension == 2,
+        "use_RBDY3": dimension == 3,
         "use_mecaMAILx": True,
         "vis_entries": [{
             "action": "visible",
-            "dim": "2D",
+            "dim": f"{dimension}D",
             "group": "selected",
             "ids": "",
         }],
@@ -163,3 +164,41 @@ def test_group_indices_include_soa_after_aos_bodies():
 
     assert "chipy.RBDY2_SetVisible(2)" in script
     assert "chipy.RBDY2_SetVisible(3)" in script
+
+
+@pytest.mark.parametrize(
+    ("dimension", "element", "visibility_function"),
+    [
+        (2, "Rxx2D", "RBDY2_SetVisible"),
+        (3, "Rxx3D", "RBDY3_SetVisible"),
+    ],
+)
+def test_group_indices_count_empty_rigid_avatars(
+    dimension, element, visibility_function,
+):
+    project = Project(name="empty_avatar_indices", dimension=dimension)
+    empty_avatars = [
+        pre.emptyAvatar(
+            center=[float(index)] * dimension,
+            model="rigid",
+            material="STEEL",
+        )
+        for index in range(2)
+    ]
+    if dimension == 2:
+        empty_avatars[0].wall_params = {
+            "brick_name": "rigid-brick", "l": 1.0, "h": 0.5,
+        }
+    rigid_after = (
+        pre.rigidDisk(r=0.1, center=[2.0, 0.0], model="rigid", material="STEEL")
+        if dimension == 2
+        else pre.rigidSphere(
+            r=0.1, center=[2.0, 0.0, 0.0], model="rigid", material="STEEL",
+        )
+    )
+    project.avatars.extend([*empty_avatars, rigid_after])
+    project.group("selected", [rigid_after.avatar_id])
+
+    script = _group_visibility_script(project, dimension)
+
+    assert f"chipy.{visibility_function}(3)" in script

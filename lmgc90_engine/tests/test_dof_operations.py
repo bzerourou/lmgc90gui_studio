@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from lmgc90_core import DOFOperation, Project, pre
+from lmgc90_core import AvatarType, DOFOperation, ParticlePopulation, Project, pre
 from lmgc90_engine.materialize import _apply_dof
 
 
@@ -72,4 +72,32 @@ def test_materialized_dof_keeps_lmgc_parameters_and_filters_color():
     assert red_body.calls[-1] == ("imposeDrivenDof", driven)
     assert blue_body.calls == [
         ("rotate", {"description": "Euler", "phi": 0.1, "theta": 0.2, "psi": 0.3})
+    ]
+
+
+def test_materialized_dof_resolves_particle_avatar_target():
+    population = ParticlePopulation.create(
+        avatar_type=AvatarType.RIGID_DISK,
+        material_name="STEEL",
+        model_name="rigid",
+        centers=[[0.0, 0.0], [1.0, 0.0]],
+        radii=[0.1, 0.1],
+        population_id="pop_dof_test",
+    )
+    bodies = [CapturingBody(), CapturingBody()]
+    project = Project(name="dof_particle", dimension=2)
+    scene = SimpleNamespace(
+        body_by_avatar_id={},
+        bodies_by_population_id={population.population_id: bodies},
+    )
+    operation = DOFOperation(
+        "imposeInitValue", "avatar", population.particle_avatar_id(1),
+        {"component": 1, "value": 0.25},
+    )
+
+    _apply_dof(project, scene, operation)
+
+    assert bodies[0].calls == []
+    assert bodies[1].calls == [
+        ("imposeInitValue", {"component": 1, "value": 0.25}),
     ]

@@ -486,7 +486,7 @@ def create_mesh_wizard(controller, parent=None):
             }
             byg = self.by_group.text().strip()
             if byg:
-                entry["by"] = byg
+                entry["group"] = byg
             return [entry]
 
     class MeshSummaryPage(QWizardPage):

@@ -419,6 +419,37 @@ def test_deposit_is_soa_and_one_undo():
     assert p.n_bodies == 0
 
 
+def test_deposit_reuses_scene_granulo_config_and_remove_undo_tracks_one_config():
+    p = _empty()
+    config = GranuloConfig(
+        nb_particles=12,
+        radius_min=0.02,
+        radius_max=0.03,
+        container_type="Box2D",
+        container_params={"lx": 1.0, "ly": 1.0},
+        material_name="STEEL",
+        model_name="rigid",
+        seed=3,
+        dimension=2,
+    )
+    p.granulo.append(config)
+
+    population = p.deposit(config)
+
+    assert population is not None
+    assert len(p.granulo) == 1
+    assert p.granulo[0].generation_id == config.generation_id
+    assert p.granulo[0].population_id == population.population_id
+
+    p.remove_population(population.population_id)
+    assert p.granulo == []
+    p.undo()
+    assert len(p.granulo) == 1
+    assert p.granulo[0].generation_id == config.generation_id
+    p.redo()
+    assert p.granulo == []
+
+
 def test_undo_empty_raises():
     p = Project()
     try:

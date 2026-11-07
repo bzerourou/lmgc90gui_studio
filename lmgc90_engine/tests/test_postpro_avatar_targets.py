@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from lmgc90_core import PostProCommand, Project, pre
+from lmgc90_core import AvatarType, ParticlePopulation, PostProCommand, Project, pre
 from lmgc90_engine import materialize as materialize_module
 
 
@@ -93,3 +93,39 @@ def test_materialize_rejects_unknown_postpro_avatar_target(monkeypatch):
         assert "missing-avatar" in str(exc)
     else:
         raise AssertionError("missing avatar target should fail materialization")
+
+
+def test_materialize_resolves_particle_postpro_target(monkeypatch):
+    project = Project(name="postpro-particle", dimension=2)
+    project.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    project.add(pre.model(
+        name="rigid", physics="MECAx", element="Rxx2D", dimension=2,
+    ))
+    population = ParticlePopulation.create(
+        avatar_type=AvatarType.RIGID_DISK,
+        material_name="STEEL",
+        model_name="rigid",
+        centers=[[0.0, 0.0], [1.0, 0.0]],
+        radii=[0.1, 0.1],
+        population_id="pop_postpro_test",
+    )
+    project.add(population)
+    target_id = population.particle_avatar_id(1)
+    project.add(PostProCommand(
+        name="BODY TRACKING", target_type="avatar", target_value=target_id,
+    ))
+    bodies = [object(), object()]
+    monkeypatch.setattr(materialize_module, "_pre", lambda: _Pre())
+    monkeypatch.setattr(materialize_module, "_make_material", lambda _pre, _mat: object())
+    monkeypatch.setattr(materialize_module, "_make_model", lambda _pre, _model: object())
+    monkeypatch.setattr(
+        materialize_module,
+        "build_population_bodies",
+        lambda *_args, **_kwargs: bodies,
+    )
+
+    scene = materialize_module.materialize_project(project)
+
+    assert scene.posts_container == [{
+        "name": "BODY TRACKING", "step": 1, "rigid_set": [bodies[1]],
+    }]

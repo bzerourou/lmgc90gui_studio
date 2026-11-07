@@ -716,7 +716,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def _open_docs(self) -> None:
             # vers un lien externe (docs en ligne)
             import webbrowser
-            webbrowser.open("https://github.com/bzerourou/lmgc90gui_studio/blob/main/docs/fr/overview.md")
+            webbrowser.open("https://github.com/bzerourou/lmgc90gui_studio/blob/main/docs/en/overview.md")
 
         def _on_refresh_viewer(self) -> None:
             try:

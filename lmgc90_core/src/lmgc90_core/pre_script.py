@@ -28,6 +28,10 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
     for line in PRE_PY_CROSS_PATCH.strip("\n").splitlines():
         L(line)
     L()
+    if any(_is_gmsh_primitive(item) for item in project.avatars):
+        for line in _gmsh_primitive_helper().splitlines():
+            L(line)
+        L()
     L("mats   = pre.materials()")
     L("mods   = pre.models()")
     L("bodies = pre.avatars()")
@@ -191,6 +195,86 @@ def emit_equivalent(project: Project, obj) -> str:
 
 def _ident(avatar_id: str) -> str:
     return avatar_id.replace("-", "_")
+
+
+def _canonical_gmsh_primitive(geom: Any) -> str | None:
+    key = str(geom or "").strip().lower()
+    return {
+        "disque": "Disque",
+        "disk2d": "Disque",
+        "sphère": "Sphère",
+        "sphere": "Sphère",
+        "sphere3d": "Sphère",
+        "cylindre": "Cylindre",
+        "cylinder3d": "Cylindre",
+    }.get(key)
+
+
+def _is_gmsh_primitive(avatar: Avatar) -> bool:
+    return (
+        avatar.avatar_type == AvatarType.MESH_DEFORMABLE
+        and _canonical_gmsh_primitive(
+            (avatar.mesh_params or {}).get("geom")
+        ) is not None
+    )
+
+
+def _gmsh_primitive_helper() -> str:
+    return '''def _lmgc90_gmsh_primitive(geom, center, params):
+    import gmsh
+    import os
+    import tempfile
+    radius = float(params["r"])
+    if radius <= 0:
+        raise ValueError(f"{geom} mesh requires a positive radius")
+    if geom == "Disque":
+        dimension = 2
+        mesh_size = min(
+            radius / max(1, int(params.get("nr", 8))),
+            2.0 * math.pi * radius / max(3, int(params.get("ntheta", 24))),
+        )
+    elif geom == "Cylindre":
+        height = float(params["h"])
+        if height <= 0:
+            raise ValueError("Cylindre mesh requires a positive height")
+        dimension = 3
+        mesh_size = min(
+            radius / max(1, int(params.get("nr", 8))),
+            2.0 * math.pi * radius / max(3, int(params.get("ntheta", 24))),
+            height / max(1, int(params.get("nz", 4))),
+        )
+    else:
+        dimension = 3
+        mesh_size = min(
+            radius / max(1, int(params.get("nr", 8))),
+            2.0 * math.pi * radius / max(3, int(params.get("ntheta", 24))),
+            math.pi * radius / max(3, int(params.get("nphi", 12))),
+        )
+    with tempfile.TemporaryDirectory(prefix="lmgc90_primitive_mesh_") as folder:
+        mesh_path = os.path.join(folder, "primitive.msh")
+        gmsh.initialize()
+        try:
+            gmsh.model.add("lmgc90_primitive")
+            gmsh.option.setNumber("General.Terminal", 0)
+            gmsh.option.setNumber("Mesh.CharacteristicLengthMax", mesh_size)
+            gmsh.option.setNumber("Mesh.CharacteristicLengthMin", mesh_size * 0.2)
+            if geom == "Disque":
+                gmsh.model.occ.addDisk(center[0], center[1], 0.0, radius, radius)
+            elif geom == "Cylindre":
+                gmsh.model.occ.addCylinder(
+                    center[0], center[1], center[2] - height / 2.0,
+                    0.0, 0.0, height, radius,
+                )
+            else:
+                z = center[2] if len(center) > 2 else 0.0
+                gmsh.model.occ.addSphere(center[0], center[1], z, radius)
+            gmsh.model.occ.synchronize()
+            gmsh.model.mesh.generate(dimension)
+            gmsh.write(mesh_path)
+        finally:
+            gmsh.finalize()
+        return pre.readMesh(mesh_path, dimension)
+'''
 
 
 def _is_rigids_from_mesh2d(av: Avatar) -> bool:
@@ -429,6 +513,14 @@ def _emit_avatar(
                 f"{mp['lx']}, {mp['ly']}, {mp['lz']}, {mp['nx']}, {mp['ny']}, {mp['nz']})\n"
                 f"av_{ident} = pre.buildMeshedAvatar(mesh=mesh_{ident}, model={mod}, material={mat})"
             )
+        primitive_geom = _canonical_gmsh_primitive(geom)
+        if primitive_geom is not None:
+            return (
+                f"mesh_{ident} = _lmgc90_gmsh_primitive("
+                f"{primitive_geom!r}, {c}, {mp!r})\n"
+                f"{target} = pre.buildMeshedAvatar("
+                f"mesh=mesh_{ident}, model={mod}, material={mat})"
+            )
         if geom == "Fichier externe":
             filepath = str(mp.get("filepath", ""))
             if filepath.startswith("pkg://"):
@@ -621,6 +713,8 @@ def _emit_population(pop: ParticlePopulation) -> str:
         AvatarType.RIGID_DISCRETE: "rigidDiscreteDisk",
         AvatarType.RIGID_CLUSTER: "rigidCluster",
         AvatarType.RIGID_CYLINDER: "rigidCylinder",
+        AvatarType.RIGID_POLYGON: "rigidPolygon",
+        AvatarType.RIGID_POLYHEDRON: "rigidPolyhedron",
     }
     fn = fn_map.get(pop.avatar_type)
     if fn is None:
@@ -633,6 +727,16 @@ def _emit_population(pop: ParticlePopulation) -> str:
         extra = f", nb_disk={pop.extra_params.get('nb_disk', 3)}"
     if pop.avatar_type == AvatarType.RIGID_CYLINDER:
         extra = f", h={pop.extra_params.get('h', 1.0)}"
+    if pop.avatar_type in (AvatarType.RIGID_POLYGON, AvatarType.RIGID_POLYHEDRON):
+        nb_default = 6 if pop.avatar_type == AvatarType.RIGID_POLYGON else 8
+        radius_arg = (
+            f"generation_type={pop.extra_params.get('generation_type', 'regular')!r}, "
+            f"nb_vertices={int(pop.extra_params.get('nb_vertices', nb_default))}, "
+            "radius=float(_r)"
+        )
+        extra = ""
+    else:
+        radius_arg = "r=float(_r)"
     ident = pop.population_id[:12].replace("-", "_")
     bodies_ref = _population_bodies_ref(pop)
     return "\n".join([
@@ -641,7 +745,7 @@ def _emit_population(pop: ParticlePopulation) -> str:
         f"centers_{ident} = np.array({pop.centers.tolist()})",
         f"radii_{ident}   = np.array({pop.radii.tolist()})",
         f"for _i, (_c, _r) in enumerate(zip(centers_{ident}, radii_{ident})):",
-        f"    _body = pre.{fn}(r=float(_r), center=_c, model=mod_{pop.model_name}, "
+        f"    _body = pre.{fn}({radius_arg}, center=_c, model=mod_{pop.model_name}, "
         f"material=mat_{pop.material_name}, color={pop.color!r}{extra})",
         f"    bodies.addAvatar(_body)",
         f"    {bodies_ref}.append(_body)",

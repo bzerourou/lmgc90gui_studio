@@ -956,7 +956,17 @@ class Project:
         self.populations.append(pop)
         if config is not None:
             config.population_id = pop.population_id
-            self.granulo.append(config)
+            existing_config = next(
+                (
+                    item for item in self.granulo
+                    if item.generation_id == config.generation_id
+                ),
+                None,
+            )
+            if existing_config is None:
+                self.granulo.append(config)
+            else:
+                existing_config.population_id = pop.population_id
         if pop.group_name:
             self.population_groups.setdefault(pop.group_name, []).append(pop.population_id)
             self.avatar_groups.setdefault(pop.group_name, []).append(pop.population_id)

@@ -1,7 +1,10 @@
 import math
 
+import pytest
+
 from lmgc90_core import GranuloConfig, Loop
 from lmgc90_core.generate import NumpyGranulo, loop_positions
+from lmgc90_core.types import AvatarType
 
 
 def test_circle_on_radius():
@@ -56,3 +59,31 @@ def test_particles_do_not_overlap():
         d2 = ((c[i + 1:] - c[i]) ** 2).sum(axis=1)
         min2 = (r[i + 1:] + r[i]) ** 2
         assert (d2 >= min2 - 1e-12).all()
+
+
+@pytest.mark.parametrize(
+    ("avatar_type", "dimension", "nb_vertices"),
+    [
+        (AvatarType.RIGID_POLYGON, 2, 6),
+        (AvatarType.RIGID_POLYHEDRON, 3, 8),
+    ],
+)
+def test_numpy_deposit_sets_polygon_population_shape_parameters(
+    avatar_type, dimension, nb_vertices,
+):
+    config = GranuloConfig(
+        nb_particles=1,
+        radius_min=0.1,
+        radius_max=0.1,
+        container_type="Box2D" if dimension == 2 else "Box3D",
+        container_params={"lx": 1.0, "ly": 1.0, "lz": 1.0},
+        material_name="MAT",
+        model_name="MODEL",
+        avatar_type=avatar_type.value,
+        dimension=dimension,
+        seed=1,
+    )
+
+    result = NumpyGranulo().deposit(config)
+
+    assert result.population.extra_params["nb_vertices"] == nb_vertices

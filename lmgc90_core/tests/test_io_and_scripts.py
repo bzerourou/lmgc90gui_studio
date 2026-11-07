@@ -4,7 +4,8 @@ import ast
 import pytest
 
 from lmgc90_core import (
-    DOFOperation, GranuloConfig, ParticlePopulation, PostProCommand, Project, pre,
+    Avatar, AvatarType, DOFOperation, GranuloConfig, ParticlePopulation,
+    PostProCommand, Project, pre,
     render_sbatch,
 )
 from lmgc90_core.scenes.demos import falling_disks, sphere_stack
@@ -260,6 +261,44 @@ def test_empty_avatar_contactors_are_emitted_before_rigid_properties():
     ast.parse(script)
 
 
+@pytest.mark.parametrize(
+    ("dimension", "element", "geom", "mesh_params"),
+    [
+        (2, "T3xxx", "Disque", {"r": 0.5, "nr": 4, "ntheta": 16}),
+        (3, "TE4xx", "Sphère", {"r": 0.5, "nr": 4, "ntheta": 16, "nphi": 8}),
+        (3, "TE4xx", "Cylindre", {
+            "r": 0.5, "h": 1.5, "nr": 4, "ntheta": 16, "nz": 6,
+        }),
+    ],
+)
+def test_pre_script_emits_gmsh_mesh_for_mesh_wizard_primitives(
+    dimension, element, geom, mesh_params,
+):
+    project = Project(name="primitive_mesh", dimension=dimension)
+    project.add(pre.material(
+        name="ELAS1", materialType="ELAS", density=2500, young=1e6, nu=0.25,
+    ))
+    project.add(pre.model(
+        name="mesh", physics="MECAx", element=element, dimension=dimension,
+    ))
+    center = [1.0, 2.0] if dimension == 2 else [1.0, 2.0, 3.0]
+    project.add(Avatar(
+        avatar_type=AvatarType.MESH_DEFORMABLE,
+        center=center,
+        material_name="ELAS1",
+        model_name="mesh",
+        mesh_params={"geom": geom, "dim": dimension, **mesh_params},
+    ))
+
+    script = project.to_pre_script()
+
+    assert "def _lmgc90_gmsh_primitive" in script
+    assert f"_lmgc90_gmsh_primitive({geom!r}" in script
+    assert "gmsh.model.mesh.generate(dimension)" in script
+    assert "pre.buildMeshedAvatar(" in script
+    ast.parse(script)
+
+
 def test_pre_script_emits_rigid_brick_geometry_for_empty_avatar():
     project = Project(name="rigid_brick", dimension=2)
     project.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
@@ -386,6 +425,42 @@ def test_pre_script_applies_group_dof_to_population_particles():
     assert f"{bodies_ref}[0].imposeDrivenDof(" in script
     assert f"{bodies_ref}[1].imposeDrivenDof(" in script
     assert "av_pop_" not in script
+    ast.parse(script)
+
+
+@pytest.mark.parametrize(
+    ("avatar_type", "dimension", "constructor", "nb_vertices"),
+    [
+        (AvatarType.RIGID_POLYGON, 2, "rigidPolygon", 6),
+        (AvatarType.RIGID_POLYHEDRON, 3, "rigidPolyhedron", 8),
+    ],
+)
+def test_pre_script_emits_polygon_population_constructor(
+    avatar_type, dimension, constructor, nb_vertices,
+):
+    project = Project(name="polygon_population", dimension=dimension)
+    project.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    project.add(pre.model(
+        name="rigid", physics="MECAx",
+        element="Rxx2D" if dimension == 2 else "Rxx3D",
+        dimension=dimension,
+    ))
+    population = project.add(ParticlePopulation.create(
+        avatar_type=avatar_type,
+        material_name="STEEL",
+        model_name="rigid",
+        centers=[[0.0] * dimension],
+        radii=[0.1],
+    ))
+
+    script = project.to_pre_script()
+
+    assert (
+        f"pre.{constructor}(generation_type='regular', "
+        f"nb_vertices={nb_vertices}, radius=float(_r), center=_c" in script
+    )
+    assert "r=float(_r)" not in script
+    assert population.extra_params["nb_vertices"] == nb_vertices
     ast.parse(script)
 
 
