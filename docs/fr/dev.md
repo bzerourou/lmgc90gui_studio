@@ -392,7 +392,7 @@ Même pattern `create_*_dialog(...)` : `mesh_wizard` (corps déformables), `maso
 | Module | Rôle |
 |---|---|
 | `safe_eval.py` | évaluateur AST restreint (opérateurs, comparaisons, `if` ternaire, compréhensions à une clause `for`, appels sur noms du contexte, attributs non privés) |
-| `eval_context.py` | `build_eval_context(project)` : `avatar[i]`, `group[...]`, `material[...]`, `model[...]`, `avatars_by_*`, math/numpy + variables dynamiques résolues dans l'ordre |
+| `eval_context.py` | `build_eval_context(project)` : `avatar[i]`, `group[...]`, `material[...]`, `model[...]`, `avatars_by_*`, fonctions mathématiques exposées directement (`sin`, `sqrt`, etc.) + variables dynamiques résolues dans l'ordre ; ni `math` ni NumPy ne sont exposés |
 | `preferences.py` | `Preferences` (JSON `~/.lmgc90_gui/preferences.json`) |
 | `app_journal.py` | journal circulaire + fichier optionnel |
 | `field_forms.py` | schémas de paramètres d'avatars/DOF, `parse_vertices` |

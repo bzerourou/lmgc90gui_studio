@@ -29,6 +29,8 @@ The **Loops** tab clones a model avatar and distributes its copies along a regul
 
 Select the loop in the list, then click **Delete selected loop** and confirm. The loop and the avatars it generated are removed; other project avatars stay in place. This action can be undone or redone with **Undo** and **Redo**.
 
+An avatar used as a loop template cannot be deleted while that loop exists. Delete the loop first if you also want to remove its template avatar.
+
 ## Result and repetition
 
 Each copy is added to the project as an independent avatar. Applying a loop again adds a new series; it does not replace the previous generation. Give a distinct group name if you need to distinguish several series.

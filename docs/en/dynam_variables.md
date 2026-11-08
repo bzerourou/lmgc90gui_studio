@@ -16,3 +16,19 @@ Dynamic variables are named values you can reuse in numeric fields of the interf
 In a form field that accepts expressions, type the variable name. The value is substituted when the object is created or updated.
 
 Variables are stored with the project. Rename or delete a variable only after checking that no form still depends on it.
+
+## Supported expressions
+
+Expressions use a restricted evaluator, not general Python. Available constants and functions include `pi`, `e`, `sqrt`, `sin`, `cos`, `tan`, `abs`, `min`, `max`, `round`, `sum`, `len`, `list`, `int`, `float`, `str` and `bool`. The project context also provides `dimension`, `n_bodies`, `avatar`, `group`, `material`, `model`, and `avatars_by_color`, `avatars_by_material`, `avatars_by_type`, and `avatars_by_origin`.
+
+Call functions directly by name: `sin(angle)` is supported, but `math.sin(angle)` is not. NumPy is not exposed in this context, so `np.array(...)` is not a supported expression.
+
+Examples:
+
+| Expression | Example use |
+|---|---|
+| `sin(pi / 4) * radius` | A trigonometric expression using a project variable. |
+| `sqrt(2)` | Square root. |
+| `diameter / 2` | Derive a radius from a previously defined variable. |
+
+Names already used by the evaluator or project context are reserved and cannot be defined as dynamic variables.

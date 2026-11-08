@@ -36,5 +36,11 @@ Exemples d’expressions :
 | `0.05` | Rayon ou longueur fixe. |
 | `diametre / 2` | Rayon dérivé d’une dimension définie auparavant. |
 | `largeur + joint` | Distance composée de paramètres du projet. |
+| `sin(pi / 4) * rayon` | Fonction trigonométrique appelée directement, sans préfixe `math.`. |
+| `sqrt(2)` | Racine carrée. |
+
+Constantes et fonctions disponibles : `pi`, `e`, `sqrt`, `sin`, `cos`, `tan`, `abs`, `min`, `max`, `round`, `sum`, `len`, `list`, `int`, `float`, `str` et `bool`. Le contexte fournit aussi `dimension`, `n_bodies`, `avatar`, `group`, `material`, `model` et les fonctions `avatars_by_color`, `avatars_by_material`, `avatars_by_type` et `avatars_by_origin`.
+
+Les appels de fonctions se font par leur nom direct : `sin(angle)` est accepté, mais `math.sin(angle)` ne l’est pas. NumPy n’est pas exposé dans ce contexte : `np.array(...)` n’est pas une expression prise en charge.
 
 >**Remarque** : Le dialogue utilise un évaluateur restreint pour les expressions autorisées. Ce n’est pas un interpréteur Python général : ne comptez pas sur l’accès à tous les modules Python ou à toutes les méthodes d’objets.

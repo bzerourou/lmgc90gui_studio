@@ -449,9 +449,11 @@ Règles du générateur :
 - Fonction **sans ID** (nom contenant `GetNb`, nom dans `_NO_ID_FUNCS`, ou IDs et groupe vides) : appel sans argument, `res = chipy.DKDKx_GetNbDKDKx()`.
 - Avec IDs : `for _id in [...]: chipy.<fonction>(_id)`.
 - Le résultat est stocké dans `<variable>_{_id}` si une variable est donnée.
+- À la génération, le nombre d'arguments émis est vérifié contre les arités connues du snapshot Chipy ; une configuration incompatible est refusée.
+- `RBDY2_GetBodyVector` et `RBDY3_GetBodyVector` exigent aussi le nom du vecteur. Utilisez la section d'extraction des vecteurs dédiée, qui émet `chipy.RBDYx_GetBodyVector('<vec>', _id)`, et non une inspection générique.
 - Modes `before` et `after` : émis hors boucle.
 - Le catalogue n'est **pas** filtré par version de chipy : vérifiez qu'une fonction existe dans la vôtre.
-- Certaines fonctions marquées « 0 paramètre » dans le catalogue exigent en réalité un identifiant (`RBDY2_GetBodyVector`, `RBDY3_GetVelocity`…). Dans ce cas, renseignez les IDs malgré tout.
+- Certaines fonctions marquées « 0 paramètre » dans le catalogue exigent en réalité un identifiant (par ex. `RBDY3_GetVelocity`). Dans ce cas, renseignez les IDs malgré tout.
 
 ![](../captures/chipy_inspec.png)
 

@@ -45,7 +45,9 @@ L’assistant **Mesh déformable** guide la création d’un corps maillé et de
 
 ## Formes et maillage effectivement produits
 
-Le rectangle 2D utilise la construction structurée disponible dans l’application. Pour les autres géométries et les fichiers externes, l’assistant enregistre l’intention de maillage et ses paramètres dans le projet ; la génération/matérialisation complète dépend de l’export et des outils LMGC90 présents dans l’environnement.
+Le rectangle 2D et la boîte H8 utilisent les constructeurs structurés de pylmgc90. Le disque 2D, la sphère 3D et le cylindre 3D sont générés par l’API géométrique de **gmsh** puis lus par pylmgc90. Cette génération nécessite le paquet Python `gmsh` dans l’environnement qui prépare la DATBOX ou exécute `pre.py`. Le maillage produit est non structuré (triangles en 2D, tétraèdres en 3D) ; choisissez un modèle EF compatible.
+
+Les fichiers externes `.brep`, `.step`, `.iges` et `.geo` sont également maillés par gmsh lors de la matérialisation ; les fichiers déjà maillés (`.msh`, `.vtk`, `.vtu`, `.mesh`) sont lus directement. Le projet conserve la géométrie et les paramètres, et le script `pre.py` régénère les primitives gmsh lors de son exécution.
 
 Le bouton **Parcourir…** enregistre un chemin : ce n’est pas un aperçu du maillage importé. Après la génération de l’avatar, contrôlez le résultat dans le projet et lors de la préparation du calcul.
 

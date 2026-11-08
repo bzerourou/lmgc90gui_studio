@@ -456,6 +456,8 @@ Generator rules:
 
 - Function **without ID** (name containing `GetNb`, or listed in `_NO_ID_FUNCS`): `chipy.Func()` or `var = chipy.Func()`.
 - Function **with ID**: `for _id in [...]: chipy.Func(_id)` or `var__id = chipy.Func(_id)`.
+- At generation time, emitted argument counts are checked against known Chipy snapshot arities; incompatible configurations are rejected.
+- `RBDY2_GetBodyVector` and `RBDY3_GetBodyVector` also require a vector name. Use the dedicated vector-extraction section, which emits `chipy.RBDYx_GetBodyVector('<vec>', _id)`, rather than generic inspection.
 - Timing uses the shared Mode/Timing widget.
 
 ![](../captures/chipy_inspec.png)

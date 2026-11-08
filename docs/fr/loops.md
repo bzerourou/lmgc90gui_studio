@@ -29,6 +29,8 @@ L’onglet **Loops** clone un avatar modèle et répartit ses copies selon une g
 
 Sélectionnez la boucle dans la liste, puis cliquez sur **Delete selected loop** et confirmez. La boucle et les avatars qu’elle a générés sont retirés ; les autres avatars du projet restent en place. Cette action peut être annulée ou rétablie avec les commandes **Undo** et **Redo**.
 
+Un avatar utilisé comme modèle ne peut pas être supprimé tant que la boucle existe. Supprimez d’abord la boucle si vous souhaitez également retirer son avatar modèle.
+
 ## Résultat et répétition
 
 Chaque copie est ajoutée au projet comme un avatar indépendant. Appliquer de nouveau une boucle ajoute une nouvelle série ; cela ne remplace pas la génération précédente. Donnez un nom de groupe distinct si vous devez distinguer plusieurs séries.
