@@ -41,7 +41,5 @@ def emit_chipy(project: Project, **params: Any) -> str:
     p.update({k: v for k, v in params.items() if v is not None})
     if p.get("dimension") is None:
         p["dimension"] = project.dimension
-    if p.get("use_mecaMAILx") or p.get("use_therMAILx") or p.get("use_poroMAILx"): 
-        p["deformable"] = True
 
     return generate_command_script(project, p)

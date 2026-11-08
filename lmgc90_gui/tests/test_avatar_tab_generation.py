@@ -167,6 +167,53 @@ def test_update_mesh_avatar_preserves_contactors_and_unrepresented_mesh_params(q
 
 
 @pytest.mark.parametrize(
+    "mesh_params",
+    [
+        {"geom": "Disque", "r": 0.5},
+        {"geom": "Sphère", "r": 0.5},
+        {"geom": "Fichier externe", "filepath": "mesh.msh"},
+        {"geom": "Boîte (H8)", "lx": 1.0, "ly": 1.0, "lz": 1.0},
+    ],
+)
+def test_update_nonrectangular_mesh_is_rejected(
+    qt_app, monkeypatch, mesh_params,
+):
+    from PyQt6.QtWidgets import QMessageBox
+
+    controller = ProjectController()
+    controller.new_project("avatar-update-nonrectangle", dimension=2)
+    controller.add(pre.material(
+        name="STEEL", materialType="ELAS", density=7800,
+        young=1e6, nu=0.25,
+    ))
+    controller.add(pre.model(
+        name="mesh", physics="MECAx", element="T3xxx", dimension=2,
+    ))
+    mesh = pre.meshed_rectangle(
+        lx=1.0, ly=0.5, nx=2, ny=2, center=[0.0, 0.0],
+        model="mesh", material="STEEL",
+        contactors=[{"shape": "CLxxx", "color": "CYANx"}],
+    )
+    mesh.mesh_params.update(mesh_params)
+    controller.add_avatar(mesh)
+    original = mesh.to_dict()
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning",
+        lambda *args: warnings.append(args[2]),
+    )
+
+    tab = create_avatar_tab()
+    tab.bind_controller(controller)
+    tab.on_state_changed()
+    tab._load_selected(mesh.avatar_id)
+    tab._on_update()
+
+    assert controller.project.avatar(mesh.avatar_id).to_dict() == original
+    assert warnings == ["Update is only supported for rectangular meshes."]
+
+
+@pytest.mark.parametrize(
     ("dimension", "element", "avatar_factory", "avatar_type"),
     [
         (

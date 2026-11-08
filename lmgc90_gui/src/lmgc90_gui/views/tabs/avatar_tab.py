@@ -421,8 +421,20 @@ def create_avatar_tab(parent=None):
                 QMessageBox.information(self, "Avatar", "select an avatar in the list before updating")
                 return
             try:
-                pre = self.controller.pre()
+                existing = self.controller.project.avatar(self._editing_id)
                 atype = self.type_combo.currentData()
+                if (
+                    existing.avatar_type == AvatarType.MESH_DEFORMABLE
+                    and atype == AvatarType.MESH_DEFORMABLE
+                    and (existing.mesh_params or {}).get("geom") != "Rectangle"
+                ):
+                    QMessageBox.warning(
+                        self,
+                        "Avatar",
+                        "Update is only supported for rectangular meshes.",
+                    )
+                    return
+                pre = self.controller.pre()
                 mat = self.mat_combo.currentText()
                 mod = self.mod_combo.currentText()
                 dim = self.controller.project.dimension
@@ -434,7 +446,6 @@ def create_avatar_tab(parent=None):
                     center.append(self.eval_float(self.cz.text(), 0.0, "center Z"))
                 color = self.color_edit.text().strip() or "BLUEx"
                 p = self._read_params()
-                existing = self.controller.project.avatar(self._editing_id)
                 av = self._build(pre, atype, center, mat, mod, color, p)
                 av.avatar_id = existing.avatar_id
                 av.origin = existing.origin

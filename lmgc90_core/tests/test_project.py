@@ -450,6 +450,31 @@ def test_deposit_reuses_scene_granulo_config_and_remove_undo_tracks_one_config()
     assert p.granulo == []
 
 
+def test_remove_distribution_only_config_is_undoable():
+    p = _empty()
+    config = GranuloConfig(
+        nb_particles=4,
+        radius_min=0.01,
+        radius_max=0.02,
+        container_type="Box2D",
+        container_params={"lx": 1.0, "ly": 1.0},
+        material_name="STEEL",
+        model_name="rigid",
+        create_avatars=False,
+        radii=[0.01, 0.012, 0.015, 0.02],
+    )
+    p.granulo.append(config)
+
+    removed = p.remove_granulo_config(config.generation_id)
+
+    assert removed is config
+    assert p.granulo == []
+    p.undo()
+    assert p.granulo == [config]
+    p.redo()
+    assert p.granulo == []
+
+
 def test_undo_empty_raises():
     p = Project()
     try:

@@ -333,6 +333,52 @@ class AddGranuloConfig:
 
 
 @dataclass
+class RemoveGranuloConfig:
+    generation_id: str
+    config: GranuloConfig | None = None
+    index: int = -1
+
+    def apply(self, project: Project) -> None:
+        self.index = next(
+            (
+                i for i, item in enumerate(project.granulo)
+                if item.generation_id == self.generation_id
+            ),
+            -1,
+        )
+        if self.index < 0:
+            raise HistoryError(
+                f"granulo config {self.generation_id!r} not found"
+            )
+        self.config = project.granulo.pop(self.index)
+
+    def revert(self, project: Project) -> None:
+        if self.config is None:
+            raise HistoryError(
+                f"granulo config data for {self.generation_id!r} is unavailable"
+            )
+        project.granulo.insert(
+            min(self.index, len(project.granulo)), self.config,
+        )
+
+    def describe(self) -> str:
+        return f"remove granulo distribution {self.generation_id[:12]}"
+
+    def to_journal(self) -> dict[str, Any]:
+        if self.config is None:
+            raise HistoryError(
+                f"granulo config data for {self.generation_id!r} is unavailable"
+            )
+        return {
+            "op": "remove_granulo_config",
+            "payload": {
+                "config": self.config.to_dict(),
+                "index": self.index,
+            },
+        }
+
+
+@dataclass
 class AddLaw:
     law: ContactLaw
 
@@ -1325,6 +1371,13 @@ def command_from_journal(
         return AddGranuloConfig(
             GranuloConfig.from_dict(payload["config"]),
             int(payload.get("index", -1)),
+        )
+    if op == "remove_granulo_config":
+        config = GranuloConfig.from_dict(payload["config"])
+        return RemoveGranuloConfig(
+            generation_id=config.generation_id,
+            config=config,
+            index=int(payload.get("index", -1)),
         )
     if op == "add_law":
         return AddLaw(ContactLaw.from_dict(payload))

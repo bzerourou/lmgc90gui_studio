@@ -1,7 +1,10 @@
 """Dynamic variables — SafeEvaluator + project context."""
 from __future__ import annotations
 
-from lmgc90_core import pre
+import pytest
+
+from lmgc90_core import Project, ValidationError, pre
+from lmgc90_core.dynamic_vars import DYNAMIC_VAR_RESERVED_NAMES
 from lmgc90_gui import ProjectController
 from lmgc90_gui.utils.eval_context import build_eval_context, resolve_dynamic_vars
 from lmgc90_gui.utils.safe_eval import safe_eval
@@ -53,3 +56,28 @@ def test_persistence_roundtrip(tmp_path):
     assert "a" in ctrl2.project.dynamic_vars
     r = resolve_dynamic_vars(ctrl2.project)
     assert r["b"] == 2.0
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "e", "pi", "min", "max", "avatar", "group", "material", "model",
+    ],
+)
+def test_project_rejects_reserved_dynamic_variable_names(name):
+    with pytest.raises(ValidationError, match="is reserved"):
+        Project().set_dynamic_var(name, "1")
+
+
+def test_dynamic_variable_reserved_names_cover_evaluator_and_context():
+    from lmgc90_gui.utils.eval_context import _base_names
+    from lmgc90_gui.utils.safe_eval import (
+        _ALLOWED_CONTEXT_FUNCS,
+        _ALLOWED_FUNCS,
+    )
+
+    assert DYNAMIC_VAR_RESERVED_NAMES == (
+        set(_base_names(Project()))
+        | set(_ALLOWED_CONTEXT_FUNCS)
+        | set(_ALLOWED_FUNCS)
+    )

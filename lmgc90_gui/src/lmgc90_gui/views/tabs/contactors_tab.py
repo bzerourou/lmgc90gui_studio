@@ -32,6 +32,10 @@ _CONTACTOR_PARAMS: dict[str, tuple[tuple[str, str, object, str], ...]] = {
         ("High", "float", 0.1, "Half-height"),
         ("byrd", "float", 0.1, "Contact radius"),
     ),
+    "DNLYC": (
+        ("High", "float", 0.1, "Half-height"),
+        ("byrd", "float", 0.1, "Contact radius"),
+    ),
     "POLYR": (
         ("generation_type", "choice", ("regular", "full"), "Generation method"),
     ),

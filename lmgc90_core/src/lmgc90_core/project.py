@@ -13,7 +13,8 @@ from .commands import (
     AddAvatar, AddAvatarBatch, AddDOF, AddForLoop, AddGranuloConfig, AddLaw,
     AddLoop, AddMaterial, AddModel, AddPopulation, AddPostPro, AddSeeTable,
     CommandHistory, CompositeCommand, RemoveAvatar, RemoveDOF, RemoveForLoop,
-    RemoveLaw, RemoveLoop, RemoveMaterial, RemoveModel, RemovePopulation,
+    RemoveGranuloConfig, RemoveLaw, RemoveLoop, RemoveMaterial, RemoveModel,
+    RemovePopulation,
     RemovePostPro, RemoveSeeTable, RemoveGroup, SetDynamicVar, SetGroup,
     UpdateAvatar, UpdateDOF, UpdateLaw, UpdateMaterial, UpdateModel,
     UpdateSeeTable,
@@ -23,6 +24,7 @@ from .entities import (
     PostProCommand, VisibilityRule,
 )
 from .errors import HistoryError, UnknownReferenceError, ValidationError
+from .dynamic_vars import DYNAMIC_VAR_RESERVED_NAMES
 from .generate import NumpyGranulo, expand_for_loop, expand_loop, sample_radii
 from .masonry import MasonryConfig, expand_masonry
 from .population import ParticlePopulation
@@ -307,6 +309,20 @@ class Project:
         self._run(RemovePopulation(population_id, population=population))
         return population
 
+    def remove_granulo_config(self, generation_id: str) -> GranuloConfig:
+        config = next(
+            (
+                item for item in self.granulo
+                if item.generation_id == generation_id
+            ),
+            None,
+        )
+        if config is None:
+            raise UnknownReferenceError(f"granulo config {generation_id!r}")
+        return self._run(
+            RemoveGranuloConfig(generation_id, config=config), config,
+        )
+
     def update_material(self, name: str, new: Material) -> Material:
         old = self._find_material(name)
         if old is None:
@@ -392,6 +408,10 @@ class Project:
     def set_dynamic_var(self, name: str, value: Any) -> None:
         if not name:
             raise ValidationError("dynamic variable name cannot be empty")
+        if name in DYNAMIC_VAR_RESERVED_NAMES:
+            raise ValidationError(
+                f"dynamic variable name {name!r} is reserved"
+            )
         self._run(SetDynamicVar(name, value))
 
     def remove_dynamic_var(self, name: str) -> Any:

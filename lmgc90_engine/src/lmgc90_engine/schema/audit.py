@@ -83,14 +83,7 @@ def audit_core_catalogs(snapshot: dict[str, Any] | None = None) -> dict[str, Any
     snapshot = snapshot or inspect_runtime()
     runtime = snapshot.get("catalogs", {}) if snapshot.get("available") else {}
     runtime_contacts = runtime.get("bodyType2contactor", {})
-    core_contactors = {
-        "RBDY2": lmgc_dicts._MANUAL_CONTACTORS.get("RBDY2", ()),
-        "RBDY3": lmgc_dicts._MANUAL_CONTACTORS.get("RBDY3", ()),
-        "MAILx": (
-            tuple(lmgc_dicts._MANUAL_CONTACTORS.get("MAILx_2D", ()))
-            + tuple(lmgc_dicts._MANUAL_CONTACTORS.get("MAILx_3D", ()))
-        ),
-    }
+    core_contactors = lmgc_dicts.CONTACTORS
     runtime_material_options = next((
         runtime[name] for name in (
             "materialTypeOptions", "materialOptions", "bulkBehavOptions",
@@ -100,7 +93,7 @@ def audit_core_catalogs(snapshot: dict[str, Any] | None = None) -> dict[str, Any
 
     domains = {
         "geometry_elements": _compare_domain(
-            lmgc_dicts._MANUAL_GEO2ELEMENT, runtime.get("geo2element", {}),
+            lmgc_dicts.GEO2ELEMENT, runtime.get("geo2element", {}),
         ),
         "contactors": {
             "core_only": sorted(

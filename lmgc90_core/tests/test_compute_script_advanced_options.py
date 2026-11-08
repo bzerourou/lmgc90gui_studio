@@ -1,6 +1,6 @@
 import pytest
 
-from lmgc90_core import Project
+from lmgc90_core import Project, generate_command_script, pre
 from lmgc90_core.compute_script import ComputeScriptGenerator
 
 
@@ -129,6 +129,35 @@ def test_advanced_routine_options_are_emitted_when_enabled():
     )
     for call in expected_calls:
         assert call in script
+
+
+@pytest.mark.parametrize(
+    "generate",
+    [
+        lambda project: generate_command_script(project),
+        lambda project: ComputeScriptGenerator(project).generate_string({}),
+    ],
+)
+def test_direct_compute_script_generation_enables_fem_for_inferred_mesh(generate):
+    project = Project(name="inferred_fem", dimension=2)
+    project.add(pre.material(
+        name="ELAS1", materialType="ELAS", density=1000,
+        young=1e6, nu=0.25,
+    ))
+    project.add(pre.model(
+        name="mesh", physics="MECAx", element="T3xxx", dimension=2,
+    ))
+    project.add(pre.meshed_rectangle(
+        lx=1.0, ly=1.0, nx=2, ny=2, center=[0.0, 0.0],
+        model="mesh", material="ELAS1",
+    ))
+
+    script = generate(project)
+
+    assert "chipy.ReadDatbox(deformable=True)" in script
+    assert "chipy.mecaMAILx_ComputeFext()" in script
+    assert "chipy.mecaMAILx_ComputeBulk()" in script
+    assert "chipy.mecaMAILx_ComputeFreeVelocity()" in script
 
 
 def test_advanced_calls_are_absent_by_default():

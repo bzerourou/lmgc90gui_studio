@@ -54,6 +54,11 @@ def test_contactor_form_parses_shape_specific_options():
             _CONTACTOR_PARAMS
         )
 
+    assert "DNLYC" in compatible_contactors(AvatarType.EMPTY_AVATAR, 3)
+    assert _CONTACTOR_PARAMS["DNLYC"] == _CONTACTOR_PARAMS["CYLND"]
+    cylinder = _read_contactor_params("DNLYC", {"High": "0.3", "byrd": "0.08"})
+    assert cylinder == {"High": 0.3, "byrd": 0.08}
+
     disk = _read_contactor_params("DISKx", {"byrd": "0.25"})
     assert disk == {"byrd": 0.25}
 

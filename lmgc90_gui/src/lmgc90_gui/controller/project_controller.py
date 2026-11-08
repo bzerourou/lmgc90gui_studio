@@ -416,6 +416,15 @@ class ProjectController(_QObject):
             self._notify_error(str(exc))
             raise
 
+    def remove_granulo_config(self, generation_id: str) -> None:
+        try:
+            self._project.remove_granulo_config(generation_id)
+            self._session.mark_dirty()
+            self._emit()
+        except (LMGC90Error, ValueError) as exc:
+            self._notify_error(str(exc))
+            raise
+
     # ------------------------------------------------------------------ loops
     def apply_loop(self, loop: Loop, template: Optional[Avatar] = None) -> list[Avatar]:
         try:

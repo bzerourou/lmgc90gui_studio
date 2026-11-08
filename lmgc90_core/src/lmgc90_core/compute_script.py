@@ -226,6 +226,12 @@ class ComputeScriptGenerator:
         """Retourne le script complet sous forme de chaine."""
         inferred_routines = infer_chipy_contact_routines(self.project)
         p   = {**self._DEFAULTS, **inferred_routines, **params}
+        if (
+            p.get('use_mecaMAILx')
+            or p.get('use_therMAILx')
+            or p.get('use_poroMAILx')
+        ):
+            p['deformable'] = True
         buf = StringIO()
         w   = buf.write
 

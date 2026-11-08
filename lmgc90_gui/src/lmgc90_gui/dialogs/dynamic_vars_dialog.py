@@ -13,6 +13,7 @@ def create_dynamic_vars_dialog(controller: "ProjectController", parent=None):
         QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
         QVBoxLayout,
     )
+    from lmgc90_core.dynamic_vars import DYNAMIC_VAR_RESERVED_NAMES
     from ..utils.eval_context import build_eval_context, resolve_dynamic_vars
     from ..utils.safe_eval import safe_eval
 
@@ -104,6 +105,13 @@ def create_dynamic_vars_dialog(controller: "ProjectController", parent=None):
             expr = self.expr_edit.text().strip()
             if not name.isidentifier():
                 QMessageBox.warning(self, "Variables", "Nom d'identifiant Python requis")
+                return
+            if name in DYNAMIC_VAR_RESERVED_NAMES:
+                QMessageBox.warning(
+                    self,
+                    "Variables",
+                    f"Nom réservé dans les expressions dynamiques : {name}",
+                )
                 return
             if not expr:
                 QMessageBox.warning(self, "Variables", "Expression requise")

@@ -41,10 +41,11 @@ _DISTRIBUTIONS = [
 
 
 def create_granulo_tab(parent=None):
+    from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import (
         QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,
-        QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton, QWidget,
-        QVBoxLayout,
+        QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
+        QPushButton, QWidget, QVBoxLayout,
     )
 
     class GranuloTab(QWidget, BaseTab):
@@ -196,6 +197,12 @@ def create_granulo_tab(parent=None):
             if self.controller is None:
                 return
             dim = int(self.controller.project.dimension)
+            selected_type = self.type_combo.currentData()
+            selected_material = self.mat_combo.currentText()
+            selected_model = self.mod_combo.currentText()
+            parameter_values = {
+                name: widget.text() for name, widget in self._param_widgets.items()
+            }
             # containers for this dimension (+ allow 2D containers always documented)
             cur = self.container.currentData()
             self.container.blockSignals(True)
@@ -217,6 +224,10 @@ def create_granulo_tab(parent=None):
                     self.container.setCurrentIndex(idx)
             self.container.blockSignals(False)
             self._on_container_changed()
+            for name, value in parameter_values.items():
+                widget = self._param_widgets.get(name)
+                if widget is not None:
+                    widget.setText(value)
 
             # avatar types by dimension
             self.type_combo.blockSignals(True)
@@ -224,6 +235,9 @@ def create_granulo_tab(parent=None):
             for label, at in (_AVATARS_2D if dim == 2 else _AVATARS_3D):
                 self.type_combo.addItem(label, at)
             self.type_combo.blockSignals(False)
+            type_index = self.type_combo.findData(selected_type)
+            if type_index >= 0:
+                self.type_combo.setCurrentIndex(type_index)
 
             self.mat_combo.clear()
             self.mod_combo.clear()
@@ -232,21 +246,35 @@ def create_granulo_tab(parent=None):
             for m in self.controller.project.models:
                 if int(getattr(m, "dimension", dim)) == dim:
                     self.mod_combo.addItem(m.name)
+            material_index = self.mat_combo.findText(selected_material)
+            if material_index >= 0:
+                self.mat_combo.setCurrentIndex(material_index)
+            model_index = self.mod_combo.findText(selected_model)
+            if model_index >= 0:
+                self.mod_combo.setCurrentIndex(model_index)
 
             self.list.clear()
             for pop in self.controller.project.populations:
-                self.list.addItem(
+                item = QListWidgetItem(
                     f"[SoA] {pop.population_id[:8]}…  N={len(pop)}  "
                     f"{getattr(pop, 'avatar_type', '?')}  "
                     f"{getattr(pop, 'group_name', '') or ''}"
                 )
+                item.setData(Qt.ItemDataRole.UserRole, (
+                    "population", pop.population_id,
+                ))
+                self.list.addItem(item)
             for g in getattr(self.controller.project, "granulo", []) or []:
                 if not getattr(g, "create_avatars", True):
                     nr = len(g.radii or [])
-                    self.list.addItem(
+                    item = QListWidgetItem(
                         f"[dist] N={g.nb_particles} r∈[{g.radius_min:.4g},{g.radius_max:.4g}] "
                         f"→ {nr} rayons  ({g.container_type})"
                     )
+                    item.setData(Qt.ItemDataRole.UserRole, (
+                        "distribution", g.generation_id,
+                    ))
+                    self.list.addItem(item)
 
         def _on_container_changed(self, *_a) -> None:
             key = self.container.currentData()
@@ -392,10 +420,13 @@ def create_granulo_tab(parent=None):
         def _on_remove(self) -> None:
             if self.controller is None:
                 return
-            row = self.list.currentRow()
-            pops = self.controller.project.populations
-            if row < 0 or row >= len(pops):
+            item = self.list.currentItem()
+            if item is None:
                 return
-            self.controller.remove_population(pops[row].population_id)
+            item_type, item_id = item.data(Qt.ItemDataRole.UserRole) or (None, None)
+            if item_type == "population":
+                self.controller.remove_population(item_id)
+            elif item_type == "distribution":
+                self.controller.remove_granulo_config(item_id)
 
     return GranuloTab(parent)
