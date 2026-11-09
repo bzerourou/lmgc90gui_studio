@@ -159,12 +159,28 @@ class ProjectController(_QObject):
         if not callable(builder):
             raise TypeError("apply_scene expects a callable(project) -> None")
         prev = getattr(self._project, "_on_conflict", "error")
+        existing_granulo_ids = {
+            config.generation_id for config in self._project.granulo
+        }
         self._project._on_conflict = on_conflict
         try:
             builder(self._project)
-            for cfg in list(self._project.granulo):
-                if getattr(cfg, "population_id", None):
+            pending_configs = []
+            seen_generation_ids = set(existing_granulo_ids)
+            for cfg in self._project.granulo:
+                if (
+                    cfg.generation_id in seen_generation_ids
+                    or getattr(cfg, "population_id", None)
+                ):
                     continue
+                seen_generation_ids.add(cfg.generation_id)
+                pending_configs.append(cfg)
+            pending_ids = {id(config) for config in pending_configs}
+            self._project.granulo[:] = [
+                config for config in self._project.granulo
+                if id(config) not in pending_ids
+            ]
+            for cfg in pending_configs:
                 try:
                     self.deposit(cfg)
                 except Exception as dep_exc:

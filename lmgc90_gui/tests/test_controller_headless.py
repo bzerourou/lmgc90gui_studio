@@ -5,8 +5,78 @@ from pathlib import Path
 
 import pytest
 
-from lmgc90_core import ForLoop, Loop, MaterialType, ValidationError, pre
+from lmgc90_core import (
+    ForLoop, GranuloConfig, Loop, MaterialType, ValidationError, pre,
+)
 from lmgc90_gui import ProjectController
+from lmgc90_gui.controller.signals import _NoopSignal
+
+
+def test_noop_controller_signals_are_isolated_per_instance():
+    class HeadlessProjectController(ProjectController):
+        state_changed = _NoopSignal()
+
+    first = HeadlessProjectController()
+    second = HeadlessProjectController()
+    first_events = []
+    second_events = []
+    first.state_changed.connect(lambda: first_events.append("first"))
+    second.state_changed.connect(lambda: second_events.append("second"))
+
+    first.state_changed.emit()
+    assert first_events == ["first"]
+    assert second_events == []
+
+    second.state_changed.emit()
+    assert first_events == ["first"]
+    assert second_events == ["second"]
+
+
+def test_apply_scene_deposits_only_new_distribution_configs(monkeypatch):
+    ctrl = ProjectController()
+    ctrl.new_project("scene-granulo", dimension=2)
+
+    def distribution_config(seed):
+        return GranuloConfig(
+            nb_particles=4,
+            radius_min=0.01,
+            radius_max=0.02,
+            container_type="Box2D",
+            container_params={"lx": 1.0, "ly": 1.0},
+            material_name="STEEL",
+            model_name="rigid",
+            create_avatars=False,
+            seed=seed,
+        )
+
+    existing = distribution_config(1)
+    added_by_scene = distribution_config(2)
+    ctrl.deposit(existing)
+
+    deposit_calls = []
+    deposit = ctrl.deposit
+
+    def track_deposit(config):
+        deposit_calls.append(config.generation_id)
+        return deposit(config)
+
+    monkeypatch.setattr(ctrl, "deposit", track_deposit)
+    ctrl.apply_scene(
+        lambda project: project.granulo.append(added_by_scene),
+        on_conflict="merge",
+    )
+
+    assert deposit_calls == [added_by_scene.generation_id]
+    assert [cfg.generation_id for cfg in ctrl.project.granulo] == [
+        existing.generation_id,
+        added_by_scene.generation_id,
+    ]
+    assert len(added_by_scene.radii) == added_by_scene.nb_particles
+
+    ctrl.project.undo()
+    assert [cfg.generation_id for cfg in ctrl.project.granulo] == [
+        existing.generation_id,
+    ]
 
 
 def test_new_project_and_summary():

@@ -34,7 +34,7 @@ def validate_model(model: Model) -> None:
     physics = model.physics or "MECAx"
     table = ELEMENTS_BY_PHYSICS.get(physics)
     if table is None:
-        return
+        raise ValidationError(f"unknown physics {physics!r}")
     allowed = table.get(model.dimension)
     if allowed is None:
         raise ValidationError(f"no elements for {physics} in {model.dimension}D")

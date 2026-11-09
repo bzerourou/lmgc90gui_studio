@@ -1,6 +1,6 @@
 from lmgc90_core import (
-    DOFOperation, ForLoop, GranuloConfig, HistoryError, Loop, PostProCommand,
-    Project, ValidationError, pre,
+    ContactLaw, DOFOperation, ForLoop, GranuloConfig, HistoryError, Loop,
+    PostProCommand, Project, ValidationError, VisibilityRule, pre,
 )
 
 
@@ -21,6 +21,45 @@ def test_add_and_undo_avatar():
     assert p.avatar(av.avatar_id).radius == 0.1
 
 
+def test_add_normalizes_lmgc_names_and_references_once():
+    p = Project()
+    material = p.add(pre.material(name="iron", materialType="RIGID", density=1))
+    model = p.add(pre.model(
+        name="mod", physics="MECAx", element="Rxx2D", dimension=2,
+    ))
+    law = p.add(ContactLaw(name="law", law_type="IQS_CLB", friction=0.3))
+    avatar = p.add(pre.rigidDisk(
+        r=0.1, center=[0, 0], model="mod", material="iron", color="RED",
+    ))
+    rule = p.add(VisibilityRule(
+        candidate_body="RBDY2", candidate_contactor="DISKx",
+        candidate_color="RED", antagonist_body="RBDY2",
+        antagonist_contactor="DISKx", antagonist_color="BLUEx",
+        behavior_name="law",
+    ))
+
+    assert material.name == "ironx"
+    assert model.name == "modxx"
+    assert law.name == "lawxx"
+    assert avatar.material_name == material.name
+    assert avatar.model_name == model.name
+    assert avatar.color == "REDxx"
+    assert rule.behavior_name == law.name
+    assert rule.candidate_color == avatar.color
+    assert p.material("iron") is material
+    assert p.model("mod") is model
+
+
+def test_add_conflicts_are_checked_after_name_normalization():
+    p = Project()
+    existing = p.add(pre.material(name="iron", materialType="RIGID", density=1))
+
+    assert p.add(
+        pre.material(name="ironx-extra", materialType="RIGID", density=1),
+        on_conflict="skip",
+    ) is existing
+
+
 def test_postpro_removal_and_addition_remain_undoable_in_order():
     p = _empty()
     first = PostProCommand("SOLVER INFORMATIONS", step=10)
@@ -36,6 +75,46 @@ def test_postpro_removal_and_addition_remain_undoable_in_order():
     assert p.postpro == [first]
     p.redo()
     assert p.postpro == [first, second]
+
+
+def test_add_see_dof_and_postpro_undo_redo_after_reload(tmp_path):
+    p = _empty()
+    p.add(ContactLaw(name="law", law_type="IQS_CLB", friction=0.3))
+    avatar = p.add(pre.rigidDisk(
+        r=0.1, center=[0, 0], model="rigid", material="STEEL",
+    ))
+    rule = p.add(VisibilityRule(
+        candidate_body="RBDY2", candidate_contactor="DISKx",
+        candidate_color="BLUEx", antagonist_body="RBDY2",
+        antagonist_contactor="JONCx", antagonist_color="WALLx",
+        behavior_name="law",
+    ))
+    operation = p.add(DOFOperation(
+        "translate", "avatar", avatar.avatar_id, {"dx": 0.1},
+    ))
+    postpro = p.add(PostProCommand("BODY TRACKING", step=10))
+
+    path = tmp_path / "command-history.lmgc90"
+    p.save(path)
+    loaded = Project.load(path)
+
+    loaded.undo()
+    assert loaded.postpro == []
+    loaded.undo()
+    assert loaded.operations == []
+    loaded.undo()
+    assert loaded.visibility == []
+
+    loaded.redo()
+    assert [item.visibility_id for item in loaded.visibility] == [
+        rule.visibility_id,
+    ]
+    loaded.redo()
+    assert [item.operation_id for item in loaded.operations] == [
+        operation.operation_id,
+    ]
+    loaded.redo()
+    assert loaded.postpro == [postpro]
 
 
 def test_dynamic_variable_set_and_remove_are_undoable():

@@ -399,9 +399,10 @@ class NumpyGranulo:
             if pre_sampled_radii is None:
                 cand_r = sample_radii(config, count=batch, rng=rng)
             else:
-                cand_r = pre_sampled_radii[attempts:attempts + batch]
-                if len(cand_r) == 0:
-                    break
+                indices = (
+                    np.arange(attempts, attempts + batch) % len(pre_sampled_radii)
+                )
+                cand_r = pre_sampled_radii[indices]
             batch_count = len(cand_r)
             cand_c = self._sample(rng, batch_count, config, cand_r)
             mask = self._inside(cand_c, cand_r, config)

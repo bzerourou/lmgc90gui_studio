@@ -27,6 +27,7 @@ from .errors import HistoryError, UnknownReferenceError, ValidationError
 from .dynamic_vars import DYNAMIC_VAR_RESERVED_NAMES
 from .generate import NumpyGranulo, expand_for_loop, expand_loop, sample_radii
 from .masonry import MasonryConfig, expand_masonry
+from .naming import lmgc5
 from .population import ParticlePopulation
 from .types import UnitSystem
 from .validate import (
@@ -74,18 +75,21 @@ class Project:
         return mode
 
     def _find_material(self, name: str) -> Optional[Material]:
+        name = lmgc5(name)
         for m in self.materials:
             if m.name == name:
                 return m
         return None
 
     def _find_model(self, name: str) -> Optional[Model]:
+        name = lmgc5(name)
         for m in self.models:
             if m.name == name:
                 return m
         return None
 
     def _find_law(self, name: str) -> Optional[ContactLaw]:
+        name = lmgc5(name)
         for law in self.laws:
             if law.name == name:
                 return law
@@ -188,6 +192,7 @@ class Project:
         mode = self._conflict_mode(on_conflict)
 
         if isinstance(obj, Material):
+            self._normalize_entity_names(obj)
             validate_material(obj)
             existing = self._find_material(obj.name)
             if existing is not None:
@@ -197,6 +202,7 @@ class Project:
             return self._run(AddMaterial(obj), obj)
 
         if isinstance(obj, Model):
+            self._normalize_entity_names(obj)
             validate_model(obj)
             if obj.dimension != self.dimension:
                 raise ValidationError(
@@ -217,6 +223,7 @@ class Project:
             return self.add_population(obj)
 
         if isinstance(obj, ContactLaw):
+            self._normalize_entity_names(obj)
             validate_contact_law(obj)
             existing = self._find_law(obj.name)
             if existing is not None:
@@ -226,6 +233,7 @@ class Project:
             return self._run(AddLaw(obj), obj)
 
         if isinstance(obj, VisibilityRule):
+            self._normalize_entity_names(obj)
             validate_visibility(obj, {l.name for l in self.laws})
             if mode in ("skip", "merge"):
                 for v in self.visibility:
@@ -293,6 +301,7 @@ class Project:
     def update_avatar(self, avatar_id: str, new: Avatar) -> Avatar:
         old = self.avatar(avatar_id)
         new.avatar_id = avatar_id
+        self._normalize_entity_names(new)
         self.material(new.material_name)
         model = self.model(new.model_name)
         validate_avatar(new, model)
@@ -301,6 +310,9 @@ class Project:
     def add_population(
         self, population: ParticlePopulation, config: GranuloConfig | None = None,
     ) -> ParticlePopulation:
+        self._normalize_entity_names(population)
+        if config is not None:
+            self._normalize_entity_names(config)
         self._check_population(population)
         return self._run(AddPopulation(population, config), population)
 
@@ -324,6 +336,8 @@ class Project:
         )
 
     def update_material(self, name: str, new: Material) -> Material:
+        name = lmgc5(name)
+        self._normalize_entity_names(new)
         old = self._find_material(name)
         if old is None:
             raise UnknownReferenceError(f"material {name!r}")
@@ -333,6 +347,7 @@ class Project:
         return self._run(UpdateMaterial(old, new), new)
 
     def remove_material(self, name: str) -> Material:
+        name = lmgc5(name)
         material = self._find_material(name)
         if material is None:
             raise UnknownReferenceError(f"material {name!r}")
@@ -341,6 +356,8 @@ class Project:
         return material
 
     def update_model(self, name: str, new: Model) -> Model:
+        name = lmgc5(name)
+        self._normalize_entity_names(new)
         old = self._find_model(name)
         if old is None:
             raise UnknownReferenceError(f"model {name!r}")
@@ -354,6 +371,7 @@ class Project:
         return self._run(UpdateModel(old, new), new)
 
     def remove_model(self, name: str) -> Model:
+        name = lmgc5(name)
         model = self._find_model(name)
         if model is None:
             raise UnknownReferenceError(f"model {name!r}")
@@ -362,6 +380,8 @@ class Project:
         return model
 
     def update_law(self, name: str, new: ContactLaw) -> ContactLaw:
+        name = lmgc5(name)
+        self._normalize_entity_names(new)
         old = self._find_law(name)
         if old is None:
             raise UnknownReferenceError(f"law {name!r}")
@@ -373,6 +393,7 @@ class Project:
     def update_visibility(self, index: int, new: VisibilityRule) -> VisibilityRule:
         if not 0 <= index < len(self.visibility):
             raise ValidationError(f"visibility rule index {index} out of range")
+        self._normalize_entity_names(new)
         validate_visibility(new, {law.name for law in self.laws})
         old = self.visibility[index]
         return self._run(UpdateSeeTable(index, old, new), new)
@@ -422,6 +443,7 @@ class Project:
         return value
 
     def remove_law(self, name: str) -> ContactLaw:
+        name = lmgc5(name)
         law = self._find_law(name)
         if law is None:
             raise UnknownReferenceError(f"law {name!r}")
@@ -431,6 +453,7 @@ class Project:
 
     def deposit(self, config: GranuloConfig) -> ParticlePopulation | None:
         """Place particles (SoA) or sample radii only if ``create_avatars`` is False."""
+        self._normalize_entity_names(config)
         if not getattr(config, "create_avatars", True):
             try:
                 radii = sample_radii(config)
@@ -465,6 +488,7 @@ class Project:
         return loop
 
     def apply_for_loop(self, for_loop: ForLoop, template: Optional[Avatar] = None):
+        self._normalize_entity_names(for_loop)
         if self._command_batch is not None:
             raise HistoryError("nested ForLoop transactions are not supported")
         commands: list[Any] = []
@@ -774,6 +798,7 @@ class Project:
 
     def apply_masonry(self, config: MasonryConfig) -> list[Avatar]:
         # planar layout in XY; valid in 2D and 3D projects (lz / paneresse use dimension)
+        self._normalize_entity_names(config)
         config.dimension = int(self.dimension)
         generated = expand_masonry(config)
         for av in generated:
@@ -793,12 +818,14 @@ class Project:
 
     # ---------------------------------------------------------------- lookup
     def material(self, name: str) -> Material:
+        name = lmgc5(name)
         for m in self.materials:
             if m.name == name:
                 return m
         raise UnknownReferenceError(f"material {name!r}")
 
     def model(self, name: str) -> Model:
+        name = lmgc5(name)
         for m in self.models:
             if m.name == name:
                 return m
@@ -873,6 +900,41 @@ class Project:
         return render_sbatch(self, **slurm)
 
     # ---------------------------------------------------------- internals
+    @staticmethod
+    def _normalize_entity_names(
+        obj: Entity | ParticlePopulation | GranuloConfig | MasonryConfig,
+    ) -> None:
+        """Store LMGC90 identifiers in their canonical five-character form."""
+        if isinstance(obj, (Material, Model, ContactLaw)):
+            obj.name = lmgc5(obj.name)
+        elif isinstance(obj, Avatar):
+            obj.material_name = lmgc5(obj.material_name)
+            obj.model_name = lmgc5(obj.model_name)
+            obj.color = lmgc5(obj.color)
+        elif isinstance(obj, ParticlePopulation):
+            obj.material_name = lmgc5(obj.material_name)
+            obj.model_name = lmgc5(obj.model_name)
+            obj.color = lmgc5(obj.color)
+        elif isinstance(obj, VisibilityRule):
+            obj.behavior_name = lmgc5(obj.behavior_name)
+            obj.candidate_color = lmgc5(obj.candidate_color)
+            obj.antagonist_color = lmgc5(obj.antagonist_color)
+        elif isinstance(obj, GranuloConfig):
+            obj.material_name = lmgc5(obj.material_name)
+            obj.model_name = lmgc5(obj.model_name)
+            obj.color = lmgc5(obj.color)
+        elif isinstance(obj, MasonryConfig):
+            obj.material_name = lmgc5(obj.material_name)
+            obj.model_name = lmgc5(obj.model_name)
+            obj.color = lmgc5(obj.color)
+        elif isinstance(obj, ForLoop):
+            kind = (obj.target_kind or "avatar").lower().strip()
+            if kind in (
+                "material", "materials", "model", "models", "law", "laws",
+                "contact", "contact_law", "contact_laws",
+            ):
+                obj.template_name = lmgc5(obj.template_name)
+
     def _run(self, cmd, result=None):
         if self._command_batch is not None:
             cmd.apply(self)
@@ -885,6 +947,7 @@ class Project:
         return result if result is not None else cmd
 
     def _check_avatar(self, avatar: Avatar) -> None:
+        self._normalize_entity_names(avatar)
         if any(a.avatar_id == avatar.avatar_id for a in self.avatars):
             raise ValidationError(f"avatar id {avatar.avatar_id!r} already present")
         model = self.model(avatar.model_name)

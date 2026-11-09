@@ -3,6 +3,7 @@ pyproject.toml
 src/lmgc90_gui/__init__.py
 src/lmgc90_gui/__main__.py
 src/lmgc90_gui/app.py
+src/lmgc90_gui/exception_handler.py
 src/lmgc90_gui.egg-info/PKG-INFO
 src/lmgc90_gui.egg-info/SOURCES.txt
 src/lmgc90_gui.egg-info/dependency_links.txt
@@ -70,11 +71,19 @@ src/lmgc90_gui/workers/compute_worker.py
 src/lmgc90_gui/workers/datbox_worker.py
 src/lmgc90_gui/workers/materialize_worker.py
 tests/test_avatar_tab_generation.py
+tests/test_compute_tab_run.py
 tests/test_controller_headless.py
+tests/test_datbox_worker_snapshot.py
 tests/test_dynamic_vars.py
+tests/test_dynamic_vars_dialog.py
+tests/test_granulo_tab.py
+tests/test_groups_tab.py
+tests/test_main_window_unsaved.py
+tests/test_material_tab_update.py
 tests/test_mesh_wizard_material.py
 tests/test_model_tab.py
 tests/test_naming.py
+tests/test_postpro_tab_targets.py
 tests/test_safe_eval.py
 tests/test_tree_view_preferences.py
 tests/test_visibility_suggestions.py

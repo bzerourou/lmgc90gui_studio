@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: lmgc90-core
-Version: 0.1.2
+Version: 0.7.0
 Summary: Headless scientific core for LMGC90 scene preparation — no Qt, no pylmgc90.
 Author: Bachir Zerourou
 License: Open Source
@@ -68,6 +68,14 @@ Exemples :
 
 ## Contrat d’architecture
 
+Le core charge ses catalogues de compatibilité depuis les snapshots JSON
+embarqués dans `src/lmgc90_core/capabilities/`. Il ne détecte ni n’importe
+`pylmgc90`. L’index sélectionne le snapshot par défaut; lorsqu’une version est
+fournie, le snapshot de version exacte est pris s’il existe, sinon le plus
+proche parmi ceux embarqués. Pour actualiser ces données, lancer
+`lmgc90-engine-snapshot` dans un environnement contenant `pylmgc90`, puis
+rebâtir et distribuer le paquet core avec le JSON et son index.
+
 ```
 chercheur / notebook / sbatch
         │
@@ -95,7 +103,7 @@ chercheur / notebook / sbatch
 - Le script `pre.py` généré est la source de vérité pour une publication, pas le JSON.
 - Aucun import `pylmgc90` / `PyQt6` dans ce paquet — `tests/test_purity.py` casse le CI sinon.
 
-## Limites 0.1.0 (honnêtes)
+## Limites 0.7.0 (honnêtes)
 
 - Le DATBOX réel (`pre.writeDatbox`) n’est pas exécuté ici : il faut pylmgc90, c’est le moteur.
 - Les types d’avatars rares (ovoid, granuloWall3D, polyèdre faces custom) sont stockés et validés ; l’émetteur `pre.py` a un TODO ciblé.

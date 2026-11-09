@@ -143,7 +143,7 @@ class EngineSession:
         """Materialize if needed, then pre.writeDatbox."""
         patch_numpy_cross()
         scene = self.materialize()
-        out = datbox_mod.write_datbox(scene, path)
+        out = datbox_mod.write_datbox(scene, path, project=self.project)
         datbox_mod._maybe_write_evolution_files(self.project, Path(out))
         return out
 

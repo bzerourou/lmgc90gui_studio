@@ -10,6 +10,7 @@ src/lmgc90_engine/session.py
 src/lmgc90_engine.egg-info/PKG-INFO
 src/lmgc90_engine.egg-info/SOURCES.txt
 src/lmgc90_engine.egg-info/dependency_links.txt
+src/lmgc90_engine.egg-info/entry_points.txt
 src/lmgc90_engine.egg-info/requires.txt
 src/lmgc90_engine.egg-info/top_level.txt
 src/lmgc90_engine/schema/__init__.py
@@ -17,9 +18,17 @@ src/lmgc90_engine/schema/audit.py
 src/lmgc90_engine/schema/introspection.py
 src/lmgc90_engine/schema/laws.py
 src/lmgc90_engine/schema/model_options.py
+src/lmgc90_engine/schema/snapshot.py
+tests/test_avatar_factory_mocked.py
 tests/test_avatar_factory_walls.py
+tests/test_datbox.py
+tests/test_datbox_evolution.py
 tests/test_dof_operations.py
 tests/test_engine_purity.py
+tests/test_granulo.py
 tests/test_masonry_scene_materialization.py
 tests/test_material_properties.py
+tests/test_postpro_avatar_targets.py
+tests/test_schema_audit.py
+tests/test_schema_snapshot.py
 tests/test_session_pure.py

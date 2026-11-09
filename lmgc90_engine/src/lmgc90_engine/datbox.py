@@ -1,7 +1,10 @@
 """Write a real DATBOX from a MaterializedScene (or fall back to script emission)."""
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
+import subprocess
+import sys
 from typing import Optional, Union
 
 from lmgc90_core.numpy_compat import patch_numpy_cross
@@ -17,6 +20,7 @@ def write_datbox(
     path: Union[str, Path],
     *,
     dimension: Optional[int] = None,
+    project: Optional[Project] = None,
 ) -> Path:
     """Call pre.writeDatbox on the live containers.
 
@@ -37,21 +41,8 @@ def write_datbox(
     dim = int(dimension if dimension is not None else scene.dimension)
 
     try:
-        pre.writeDatbox(
-            dim=dim,
-            mats=scene.materials_container,
-            mods=scene.models_container,
-            tacts=scene.tacts_container,
-            sees=scene.sees_container,
-            bodies=scene.bodies_container,
-            post=scene.posts_container,
-            datbox_path=str(out),
-        )
-    except TypeError:
-        import os
-        cwd = Path.cwd()
-        try:
-            os.chdir(out)
+        parameters = inspect.signature(pre.writeDatbox).parameters
+        if "datbox_path" in parameters:
             pre.writeDatbox(
                 dim=dim,
                 mats=scene.materials_container,
@@ -60,9 +51,23 @@ def write_datbox(
                 sees=scene.sees_container,
                 bodies=scene.bodies_container,
                 post=scene.posts_container,
+                datbox_path=str(out),
             )
-        finally:
-            os.chdir(cwd)
+        else:
+            if project is None:
+                raise DatboxError(
+                    "this pylmgc90 version does not support datbox_path; "
+                    "a Project is required for safe subprocess export"
+                )
+            subprocess.run(
+                [sys.executable, "-c", emit_pre(project)],
+                cwd=out,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+    except DatboxError:
+        raise
     except Exception as exc:
         raise DatboxError(f"writeDatbox failed: {exc}") from exc
 
@@ -130,8 +135,8 @@ def write_cell_dual_datbox(
         stbl_path = base / "DATBOX_STBL"
 
     dim = int(getattr(project, "dimension", scene.dimension) or scene.dimension)
-    p1 = write_datbox(scene, sprd_path, dimension=dim)
-    p2 = write_datbox(scene, stbl_path, dimension=dim)
+    p1 = write_datbox(scene, sprd_path, dimension=dim, project=project)
+    p2 = write_datbox(scene, stbl_path, dimension=dim, project=project)
 
     meta_path = base / "PHASES.json"
     meta = {

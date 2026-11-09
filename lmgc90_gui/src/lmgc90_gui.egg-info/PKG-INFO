@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: lmgc90-gui
-Version: 0.1.0
+Version: 0.7.0
 Summary: PyQt6 GUI client for lmgc90_core.Project + lmgc90_engine.EngineSession
 Author: Bachir Zerourou
 License: Open Source
@@ -8,8 +8,8 @@ Project-URL: Repository, https://github.com/bzerourou/LMG90_GUI_MVC
 Keywords: LMGC90,DEM,granular,PyQt6,GUI
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: lmgc90-core>=0.1.0
-Requires-Dist: lmgc90-engine>=0.1.0
+Requires-Dist: lmgc90-core>=0.7.0
+Requires-Dist: lmgc90-engine>=0.7.0
 Requires-Dist: numpy>=1.24
 Provides-Extra: qt
 Requires-Dist: PyQt6>=6.4; extra == "qt"

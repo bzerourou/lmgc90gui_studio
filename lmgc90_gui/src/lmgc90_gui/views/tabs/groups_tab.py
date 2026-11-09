@@ -8,6 +8,7 @@ from ...utils.naming import unique_name
 
 
 def create_groups_tab(parent=None):
+    from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import (
         QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
         QMessageBox, QPushButton, QVBoxLayout, QWidget,
@@ -20,7 +21,7 @@ def create_groups_tab(parent=None):
 
             layout.addWidget(QLabel("Existing groups"))
             self.group_list = QListWidget()
-            self.group_list.currentTextChanged.connect(self._on_group_selected)
+            self.group_list.currentItemChanged.connect(self._on_group_selected)
             layout.addWidget(self.group_list)
 
             layout.addWidget(QLabel("Members (avatar_id) — multi-select from all avatars"))
@@ -48,18 +49,24 @@ def create_groups_tab(parent=None):
             if self.controller is None:
                 return
             p = self.controller.project
-            cur = self.group_list.currentItem().text() if self.group_list.currentItem() else ""
+            current_item = self.group_list.currentItem()
+            cur = (
+                current_item.data(Qt.ItemDataRole.UserRole)
+                if current_item else ""
+            )
             self.group_list.clear()
             for name, ids in sorted(p.avatar_groups.items()):
-                self.group_list.addItem(f"{name}  ({len(ids)})")
+                item = QListWidgetItem(f"{name}  ({len(ids)})")
+                item.setData(Qt.ItemDataRole.UserRole, name)
+                self.group_list.addItem(item)
             if cur:
                 for i in range(self.group_list.count()):
-                    if self.group_list.item(i).text().startswith(cur.split()[0]):
+                    if self.group_list.item(i).data(Qt.ItemDataRole.UserRole) == cur:
                         self.group_list.setCurrentRow(i)
                         break
             # all avatars as candidates
             selected_ids = {
-                self.member_list.item(i).data(256)
+                self.member_list.item(i).data(Qt.ItemDataRole.UserRole)
                 for i in range(self.member_list.count())
                 if self.member_list.item(i).isSelected()
             }
@@ -67,7 +74,7 @@ def create_groups_tab(parent=None):
             for av in p.avatars:
                 label = f"{av.avatar_id[:10]}…  {av.avatar_type.value}  @ {av.center}"
                 item = QListWidgetItem(label)
-                item.setData(256, av.avatar_id)  # Qt.UserRole
+                item.setData(Qt.ItemDataRole.UserRole, av.avatar_id)
                 self.member_list.addItem(item)
                 if av.avatar_id in selected_ids:
                     item.setSelected(True)
@@ -75,15 +82,15 @@ def create_groups_tab(parent=None):
                 existing = list(p.avatar_groups.keys())
                 self.name_edit.setText(unique_name("GRP", existing, max_len=8))
 
-        def _on_group_selected(self, text: str) -> None:
-            if self.controller is None or not text:
+        def _on_group_selected(self, item, _previous=None) -> None:
+            if self.controller is None or item is None:
                 return
-            name = text.split()[0]
+            name = item.data(Qt.ItemDataRole.UserRole)
             self.name_edit.setText(name)
             ids = set(self.controller.project.avatar_groups.get(name, []))
             for i in range(self.member_list.count()):
                 item = self.member_list.item(i)
-                item.setSelected(item.data(256) in ids)
+                item.setSelected(item.data(Qt.ItemDataRole.UserRole) in ids)
 
         def _on_save(self) -> None:
             if self.controller is None:
@@ -93,7 +100,7 @@ def create_groups_tab(parent=None):
                 QMessageBox.warning(self, "Groups", "Group name required")
                 return
             ids = [
-                self.member_list.item(i).data(256)
+                self.member_list.item(i).data(Qt.ItemDataRole.UserRole)
                 for i in range(self.member_list.count())
                 if self.member_list.item(i).isSelected()
             ]
@@ -101,7 +108,13 @@ def create_groups_tab(parent=None):
                 QMessageBox.warning(self, "Groups", "Select at least one avatar")
                 return
             try:
-                self.controller.group(name, ids)
+                project = self.controller.project
+                avatar_ids = {avatar.avatar_id for avatar in project.avatars}
+                kept = [
+                    item_id for item_id in project.avatar_groups.get(name, [])
+                    if item_id not in avatar_ids
+                ]
+                self.controller.group(name, kept + ids)
                 self.controller.journal.info(f"Group {name!r} = {len(ids)} avatars")
             except (ValidationError, ValueError) as exc:
                 QMessageBox.warning(self, "Groups", str(exc))

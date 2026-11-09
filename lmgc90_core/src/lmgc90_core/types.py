@@ -127,19 +127,28 @@ class UnitSystem(str, Enum):
     CGS = "CGS"
 
 
-# These aliases preserve the public API while sourcing their values from JSON.
+# Keep the hand-maintained catalogs available independently of JSON snapshots.
 _FALLBACK_CONTACT_LAW_OPTIONS = {
-    name: tuple(options) for name, options in _SNAPSHOT_CONTACT_LAW_OPTIONS.items()
+    name: tuple(options)
+    for name, options in _snapshot_catalogs.FALLBACK_CONTACT_LAW_OPTIONS.items()
 }
 _FALLBACK_CONTACT_LAW_CATEGORIES = {
-    name: tuple(laws) for name, laws in _SNAPSHOT_CONTACT_LAW_CATEGORIES.items()
+    name: tuple(laws)
+    for name, laws in _snapshot_catalogs.FALLBACK_CONTACT_LAW_CATEGORIES.items()
 }
 _FALLBACK_MATERIAL_OPTIONS = {
-    name: tuple(options) for name, options in _SNAPSHOT_MATERIAL_OPTIONS.items()
+    name: tuple(options)
+    for name, options in _snapshot_catalogs.FALLBACK_MATERIAL_OPTIONS.items()
 }
-_CONTACT_LAW_OPTIONS = _FALLBACK_CONTACT_LAW_OPTIONS
-CONTACT_LAW_CATEGORIES = _FALLBACK_CONTACT_LAW_CATEGORIES
-MATERIAL_OPTIONS = _FALLBACK_MATERIAL_OPTIONS
+_CONTACT_LAW_OPTIONS = {
+    name: tuple(options) for name, options in _SNAPSHOT_CONTACT_LAW_OPTIONS.items()
+} or dict(_FALLBACK_CONTACT_LAW_OPTIONS)
+CONTACT_LAW_CATEGORIES = {
+    name: tuple(laws) for name, laws in _SNAPSHOT_CONTACT_LAW_CATEGORIES.items()
+} or dict(_FALLBACK_CONTACT_LAW_CATEGORIES)
+MATERIAL_OPTIONS = {
+    name: tuple(options) for name, options in _SNAPSHOT_MATERIAL_OPTIONS.items()
+} or dict(_FALLBACK_MATERIAL_OPTIONS)
 CONTACTOR_PAIR_TO_LAWS = CONTACT_LAW_CATEGORIES
 
 

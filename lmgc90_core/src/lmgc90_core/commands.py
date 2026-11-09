@@ -542,7 +542,17 @@ class AddSeeTable:
         self.index = project._insert_see(self.rule)
 
     def revert(self, project: Project) -> None:
-        project._drop_see(self.index)
+        index = next(
+            (
+                i for i, item in enumerate(project.visibility)
+                if item.visibility_id == self.rule.visibility_id
+            ),
+            -1,
+        )
+        if index < 0:
+            raise HistoryError("visibility rule added by command not found")
+        self.index = index
+        project._drop_see(index)
 
     def describe(self) -> str:
         return (
@@ -613,7 +623,17 @@ class AddDOF:
         self.index = project._insert_dof(self.operation)
 
     def revert(self, project: Project) -> None:
-        project._drop_dof(self.index)
+        index = next(
+            (
+                i for i, item in enumerate(project.operations)
+                if item.operation_id == self.operation.operation_id
+            ),
+            -1,
+        )
+        if index < 0:
+            raise HistoryError("DOF operation added by command not found")
+        self.index = index
+        project._drop_dof(index)
 
     def describe(self) -> str:
         return f"{self.operation.operation_type} on {self.operation.target_type}:{self.operation.target_value}"
@@ -682,12 +702,18 @@ class AddPostPro:
         self.index = project._insert_postpro(self.command)
 
     def revert(self, project: Project) -> None:
-        index = next(
-            (i for i, item in enumerate(project.postpro) if item is self.command),
-            -1,
-        )
+        index = self.index
+        if (
+            index < 0 or index >= len(project.postpro)
+            or project.postpro[index] != self.command
+        ):
+            index = next(
+                (i for i, item in enumerate(project.postpro) if item == self.command),
+                -1,
+            )
         if index < 0:
             raise HistoryError("post-processing command not found")
+        self.index = index
         project._drop_postpro(index)
 
     def describe(self) -> str:

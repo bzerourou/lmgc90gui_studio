@@ -5,6 +5,7 @@ import json
 import re
 from importlib.resources import files
 from typing import Any
+import warnings
 
 
 SNAPSHOT_SCHEMA_VERSION = 1
@@ -106,8 +107,212 @@ def _as_name_lists(value: Any) -> dict[str, list[str]]:
     }
 
 
-CAPABILITY_SNAPSHOT = load_capability_snapshot()
-CAPABILITY_VERSION = CAPABILITY_SNAPSHOT["runtime"]["version"]
+_FALLBACK_ELEMENTS_BY_PHYSICS: dict[str, dict[int, tuple[str, ...]]] = {
+    "MECAx": {
+        2: (
+            "Rxx2D", "T3xxx", "T3Lxx", "T33xx", "T6xxx", "T63xx",
+            "Q4xxx", "Q4P0x", "Q44xx", "Q8xxx", "Q8Rxx", "Q84xx",
+            "Q9xxx", "DKTxx", "BARxx", "SPRG2", "S2xth",
+        ),
+        3: (
+            "Rxx3D", "TE4xx", "TE4Lx", "TE44x", "TE10x", "TE104",
+            "H8xxx", "H88xx", "H20xx", "H20Rx", "H208x", "PRI6x",
+            "SHB6x", "PRI15", "BARxx", "SPRG3",
+        ),
+    },
+    "THERx": {
+        2: (
+            "Rxx2D", "T3xxx", "T6xxx", "DKTxx", "Q4xxx", "Q4P0x",
+            "Q8xxx", "Q8Rxx", "SPRG2", "S2xth",
+        ),
+        3: (
+            "Rxx3D", "TE4xx", "TE10x", "H8xxx", "H20xx", "H20Rx",
+            "PRI6x", "PRI15", "SPRG3",
+        ),
+    },
+    "POROx": {
+        2: ("T33xx", "T63xx", "Q44xx", "Q84xx"),
+        3: ("TE44x", "TE104", "H88xx", "H208x"),
+    },
+    "MULTI": {
+        2: ("T33xx", "T63xx", "Q44xx", "Q84xx"),
+        3: ("TE44x", "TE104", "H8xxx", "H88xx", "H208x"),
+    },
+}
+
+_FALLBACK_DIMENSION_ELEMENTS = {
+    str(dimension): list(dict.fromkeys(
+        element
+        for dimensions in _FALLBACK_ELEMENTS_BY_PHYSICS.values()
+        for element in dimensions.get(dimension, ())
+    ))
+    for dimension in (2, 3)
+}
+_FALLBACK_ELEMENT_PHYSICS: dict[str, dict[str, int]] = {}
+for _physics, _dimensions in _FALLBACK_ELEMENTS_BY_PHYSICS.items():
+    for _dimension, _elements in _dimensions.items():
+        for _element in _elements:
+            _FALLBACK_ELEMENT_PHYSICS.setdefault(_element, {})[_physics] = 1
+
+FALLBACK_CONTACTORS = {
+    "RBDY2": ["DISKx", "xKSID", "JONCx", "POLYG", "PT2Dx"],
+    "RBDY3": ["CYLND", "DNLYC", "PLANx", "POLYR", "PT3Dx", "SPHER"],
+    "MAILx": ["ALpxx", "PT2DL", "PT2TL", "CLxxx", "DISKL", "POLYR", "CSxxx", "ASpxx"],
+    "MBS2D": ["DISKx", "xKSID", "JONCx", "POLYG", "PT2Dx"],
+    "MBS3D": ["CYLND", "DNLYC", "PLANx", "POLYR", "PT3Dx", "SPHER"],
+}
+FALLBACK_CONTACT_LAW_CATEGORIES = {
+    "rigid/rigid": (
+        "IQS_CLB", "IQS_CLB_g0", "IQS_DS_CLB", "RST_CLB",
+        "IQS_WET_DS_CLB", "IQS_MOHR_DS_CLB", "IQS_MAC_CZM",
+        "IQS_MAL_CZM", "IQS_TH_CZM",
+    ),
+    "deformable/deformable": (
+        "GAP_SGR_CLB", "GAP_SGR_CLB_g0", "VEL_SGR_CLB",
+        "GAP_MOHR_DS_CLB", "MAC_CZM", "MP_CZM", "MP3_CZM",
+        "MAL_CZM", "TH_CZM",
+    ),
+    "rigid/deformable": (
+        "IQS_CLB", "IQS_CLB_g0", "IQS_DS_CLB", "RST_CLB",
+        "GAP_SGR_CLB", "GAP_SGR_CLB_g0", "VEL_SGR_CLB",
+    ),
+    "point/point": (
+        "COUPLED_DOF", "NORMAL_COUPLED_DOF", "ELASTIC_REPELL_CLB",
+        "ELASTIC_ROD", "ELASTIC_WIRE", "BRITTLE_ELASTIC_WIRE",
+    ),
+    "any/any": (
+        "COUPLED_DOF", "NORMAL_COUPLED_DOF", "ELASTIC_REPELL_CLB",
+    ),
+}
+FALLBACK_CONTACT_LAW_OPTIONS = {
+    "IQS_CLB": ("fric",),
+    "IQS_CLB_g0": ("fric",),
+    "IQS_DS_CLB": ("dyfr", "stfr"),
+    "IQS_WET_DS_CLB": ("cohn", "coht", "Wthk", "dyfr", "stfr"),
+    "IQS_MOHR_DS_CLB": ("cohn", "coht", "dyfr", "stfr"),
+    "RST_CLB": ("rstn", "rstt", "fric"),
+    "GAP_SGR_CLB": ("fric",),
+    "GAP_SGR_CLB_g0": ("fric",),
+    "VEL_SGR_CLB": ("fric",),
+    "GAP_MOHR_DS_CLB": ("cohn", "coht", "dyfr", "stfr"),
+    "COUPLED_DOF": (),
+    "NORMAL_COUPLED_DOF": (),
+    "ELASTIC_REPELL_CLB": ("stiffness", "fric"),
+    "ELASTIC_ROD": ("stiffness", "prestrain"),
+    "ELASTIC_WIRE": ("stiffness", "prestrain"),
+    "BRITTLE_ELASTIC_WIRE": ("stiffness", "prestrain", "Fmax"),
+    "MAC_CZM": ("dyfr", "stfr", "cn", "ct", "b", "w"),
+    "IQS_MAC_CZM": ("dyfr", "stfr", "cn", "ct", "b", "w"),
+    "MP_CZM": ("dyfr", "stfr", "cn", "ct", "w"),
+    "MP3_CZM": ("dyfr", "stfr", "cn", "ct", "smax", "w"),
+    "MAL_CZM": ("dyfr", "stfr", "cn", "ct", "s1", "s2", "G1", "G2"),
+    "IQS_MAL_CZM": ("dyfr", "stfr", "cn", "ct", "s1", "s2", "G1", "G2"),
+    "TH_CZM": ("dyfr", "stfr", "cn", "ct", "s1", "s2", "G1", "G2", "dp1", "dp2"),
+    "IQS_TH_CZM": ("dyfr", "stfr", "cn", "ct", "s1", "s2", "G1", "G2", "dp1", "dp2"),
+}
+FALLBACK_MATERIAL_OPTIONS = {
+    "RIGID": ("density",),
+    "ELAS": ("density", "elas", "anisotropy", "young", "nu", "G"),
+    "ELAS_DILA": (
+        "density", "elas", "anisotropy", "young", "nu", "dilatation", "T_ref_meca",
+    ),
+    "VISCO_ELAS": (
+        "density", "elas", "anisotropy", "young", "nu",
+        "viscous_model", "viscous_young", "viscous_nu",
+    ),
+    "ELAS_PLAS": (
+        "density", "elas", "anisotropy", "young", "nu",
+        "critere", "isoh", "iso_hard", "isoh_coeff", "cinh", "visc",
+    ),
+    "THERMO_ELAS": (
+        "density", "elas", "anisotropy", "young", "nu",
+        "dilatation", "T_ref_meca", "conductivity", "specific_capacity", "therm_cpl",
+    ),
+    "PORO_ELAS": (
+        "density", "elas", "anisotropy", "young", "nu",
+        "hydro_cpl", "conductivity", "specific_capacity",
+    ),
+    "DISCRETE": ("masses", "stiffnesses", "viscosities"),
+    "USER_MAT": ("density", "file_mat"),
+    "EXTERNAL": (),
+}
+FALLBACK_MODEL_OPTIONS = {
+    "MECAx": {
+        "kinematic": ("small", "large"),
+        "formulation": ("UpdtL", "TotaL"),
+        "mass_storage": ("lump_", "coher"),
+    },
+    "THERx": {
+        "capacity_storage": ("lump_", "coher"),
+        "formulation": ("UpdtL", "TotaL"),
+        "convection_type": ("supg_", "char_", "center"),
+    },
+    "POROx": {
+        "kinematic": ("small", "large"),
+        "mass_storage": ("lump_", "coher"),
+        "capacity_storage": ("lump_", "coher"),
+    },
+    "MULTI": {
+        "kinematic": ("small", "large"),
+        "mass_storage": ("lump_", "coher"),
+        "formulation": ("UpdtL", "TotaL"),
+    },
+}
+
+_FALLBACK_CATALOGS: dict[str, Any] = {
+    "geo2element": {
+        "Point": ["Rxx2D", "Rxx3D"],
+        "S2xxx": ["SPRG2", "SPRG3", "BARxx", "S2xth"],
+        "Q4xxx": ["Q4xxx", "Q4P0x", "Q44xx"],
+        "T3xxx": ["T3xxx", "T3Lxx", "DKTxx", "T33xx"],
+        "Q8xxx": ["Q8xxx", "Q8Rxx", "Q84xx"],
+        "Q9xxx": ["Q9xxx"],
+        "T6xxx": ["T6xxx", "T63xx"],
+        "TE4xx": ["TE4xx", "TE4Lx", "TE44x"],
+        "TE10x": ["TE10x", "TE104"],
+        "H8xxx": ["H8xxx", "H88xx"],
+        "H20xx": ["H20xx", "H20Rx", "H208x"],
+        "PRI6x": ["PRI6x", "SHB6x"],
+        "PRI15": ["PRI15"],
+    },
+    "dimension2element": _FALLBACK_DIMENSION_ELEMENTS,
+    "element2ddl": _FALLBACK_ELEMENT_PHYSICS,
+    "rigidElements": ["Rxx2D", "Rxx3D"],
+    "bodyType2contactor": FALLBACK_CONTACTORS,
+    "dimension2contactor": {
+        "2": ["DISKx", "xKSID", "JONCx", "POLYG", "PT2Dx", "CLxxx", "ALpxx", "PT2DL", "PT2TL", "DISKL"],
+        "3": ["SPHER", "CYLND", "DNLYC", "PLANx", "POLYR", "PT3Dx", "POLYF", "POLYO", "CSpxx", "ASpxx"],
+    },
+    "contactorPair2TactBehav": {
+        key: list(values) for key, values in FALLBACK_CONTACT_LAW_CATEGORIES.items()
+    },
+    "tactBehavOptions": {
+        key: list(values) for key, values in FALLBACK_CONTACT_LAW_OPTIONS.items()
+    },
+    "bulkBehavOptions": {
+        key: list(values) for key, values in FALLBACK_MATERIAL_OPTIONS.items()
+    },
+    "modelOptions": {
+        physics: {
+            option: list(values) for option, values in options.items()
+        }
+        for physics, options in FALLBACK_MODEL_OPTIONS.items()
+    },
+}
+
+try:
+    CAPABILITY_SNAPSHOT = load_capability_snapshot()
+    CAPABILITY_SNAPSHOT_ERROR: str | None = None
+except (OSError, ValueError, LookupError) as error:
+    CAPABILITY_SNAPSHOT = {"runtime": {}, "catalogs": {}}
+    CAPABILITY_SNAPSHOT_ERROR = str(error)
+    warnings.warn(
+        "bundled pylmgc90 capability snapshot unavailable; using built-in "
+        f"compatibility catalogs ({error})",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+CAPABILITY_VERSION = CAPABILITY_SNAPSHOT.get("runtime", {}).get("version", "fallback")
 CAPABILITY_CATALOGS: dict[str, Any] = CAPABILITY_SNAPSHOT["catalogs"]
 SOURCES: dict[str, str] = {}
 
@@ -116,8 +321,12 @@ def _catalog(name: str) -> Any:
     value = CAPABILITY_CATALOGS.get(name, {})
     if value:
         SOURCES[name] = f"snapshot:{CAPABILITY_VERSION}"
-    else:
-        SOURCES[name] = "snapshot:unavailable"
+        return value
+    fallback = _FALLBACK_CATALOGS.get(name, {})
+    if fallback:
+        SOURCES[name] = "manuel"
+        return fallback
+    SOURCES[name] = "indisponible"
     return value
 
 
@@ -139,8 +348,9 @@ for _element, _physics_map in _ELEMENT_PHYSICS.items():
                     int(_dimension), []
                 ).append(_element)
 SOURCES["ELEMENTS_BY_PHYSICS"] = (
-    f"snapshot:{CAPABILITY_VERSION}"
-    if ELEMENTS_BY_PHYSICS else "snapshot:unavailable"
+    "manuel" if "manuel" in (SOURCES.get("dimension2element"), SOURCES.get("element2ddl"))
+    else f"snapshot:{CAPABILITY_VERSION}" if ELEMENTS_BY_PHYSICS
+    else "indisponible"
 )
 PHYSICS = list(ELEMENTS_BY_PHYSICS)
 
@@ -191,16 +401,20 @@ for _options in MODEL_OPTIONS_BY_PHYSICS.values():
             if _value not in _choices:
                 _choices.append(_value)
 
-for _name, _value in (
-    ("GEO2ELEMENT", GEO2ELEMENT),
-    ("PHYSICS", PHYSICS),
-    ("OPTION_VALUES", OPTION_VALUES),
-    ("CONTACTORS", CONTACTORS),
-    ("CONTACT_LAW_CATEGORIES", CONTACT_LAW_CATEGORIES),
-    ("CONTACT_LAW_OPTIONS", CONTACT_LAW_OPTIONS),
-    ("MATERIAL_OPTIONS", MATERIAL_OPTIONS),
-    ("MODEL_OPTIONS_BY_PHYSICS", MODEL_OPTIONS_BY_PHYSICS),
+for _name, _catalog_name in (
+    ("GEO2ELEMENT", "geo2element"),
+    ("CONTACTORS", "bodyType2contactor"),
+    ("CONTACT_LAW_CATEGORIES", "contactorPair2TactBehav"),
+    ("CONTACT_LAW_OPTIONS", "tactBehavOptions"),
+    ("MATERIAL_OPTIONS", "bulkBehavOptions"),
 ):
-    SOURCES[_name] = (
-        f"snapshot:{CAPABILITY_VERSION}" if _value else "snapshot:unavailable"
+    SOURCES[_name] = SOURCES[_catalog_name]
+SOURCES["PHYSICS"] = SOURCES["ELEMENTS_BY_PHYSICS"]
+SOURCES["OPTION_VALUES"] = SOURCES["modelOptions"]
+SOURCES["MODEL_OPTIONS_BY_PHYSICS"] = (
+    "manuel" if (
+        SOURCES["modelOptions"] == "manuel"
+        or SOURCES["ELEMENTS_BY_PHYSICS"] == "manuel"
     )
+    else SOURCES["modelOptions"]
+)

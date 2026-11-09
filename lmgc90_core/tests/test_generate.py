@@ -1,8 +1,10 @@
 import math
 
+import numpy as np
 import pytest
 
 from lmgc90_core import GranuloConfig, Loop
+from lmgc90_core import generate
 from lmgc90_core.generate import NumpyGranulo, loop_positions
 from lmgc90_core.types import AvatarType
 
@@ -59,6 +61,47 @@ def test_particles_do_not_overlap():
         d2 = ((c[i + 1:] - c[i]) ** 2).sum(axis=1)
         min2 = (r[i + 1:] + r[i]) ** 2
         assert (d2 >= min2 - 1e-12).all()
+
+
+@pytest.mark.parametrize(
+    "distribution_type",
+    ["granulo_ReadFromFile", "granulo_BetaDistribution"],
+)
+def test_pre_sampled_radii_are_retried_after_rejected_candidates(
+    monkeypatch, distribution_type,
+):
+    config = GranuloConfig(
+        nb_particles=2,
+        radius_min=0.1,
+        radius_max=0.1,
+        container_type="Box2D",
+        container_params={"lx": 2.0, "ly": 2.0},
+        material_name="MAT",
+        model_name="MODEL",
+        distribution_type=distribution_type,
+    )
+    monkeypatch.setattr(
+        generate, "sample_radii",
+        lambda config, *, rng: np.array([0.1, 0.1]),
+    )
+    generator = NumpyGranulo()
+    sampled_batches = 0
+
+    def sample_centers(rng, n, cfg, radii):
+        nonlocal sampled_batches
+        sampled_batches += 1
+        if sampled_batches == 1:
+            return np.full((n, 2), 10.0)
+        centers = np.tile([[0.3, 0.3], [1.5, 1.5]], (n // 2 + 1, 1))
+        return centers[:n]
+
+    monkeypatch.setattr(generator, "_sample", sample_centers)
+
+    result = generator.deposit(config)
+
+    assert result.nb_placed == 2
+    assert result.attempts > len(result.population.radii)
+    assert sampled_batches >= 2
 
 
 @pytest.mark.parametrize(

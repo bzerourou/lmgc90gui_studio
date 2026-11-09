@@ -35,7 +35,7 @@ from .types import (
 )
 from .validate import compatible_contactors, is_shape_compatible
 
-__version__ = "0.7.4"
+__version__ = "0.7.5"
 __all__ = [
     "Project", "pre",
     "Material", "Model", "Avatar", "ParticlePopulation",

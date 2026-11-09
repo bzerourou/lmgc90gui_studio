@@ -29,6 +29,15 @@ def test_model_wrong_element():
         pass
 
 
+def test_model_unknown_physics_is_rejected():
+    m = Model(name="UNK", physics="UNKNOWN", element="Rxx2D", dimension=2)
+    try:
+        validate_model(m)
+        assert False
+    except ValidationError as e:
+        assert "unknown physics" in str(e)
+
+
 def test_poro_and_multiphysics_elements_are_not_classified_as_rigid():
     for physics, dimension, elements in (
         ("POROx", 2, ("T33xx", "Q44xx")),

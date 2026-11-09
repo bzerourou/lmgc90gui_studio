@@ -16,6 +16,13 @@ from lmgc90_gui.workers.datbox_worker import create_datbox_worker
 
 def test_datbox_worker_generates_from_project_and_preferences_snapshot(tmp_path):
     project = Project(name="snapshot-before", dimension=2)
+
+    class UncopyableHistoryEntry:
+        def __deepcopy__(self, memo):
+            memo[id(self)] = self
+            raise AssertionError("project history must not be deep-copied")
+
+    project.history._undo.append(UncopyableHistoryEntry())
     preferences = Preferences(nb_steps=17)
     controller = SimpleNamespace(
         project=project,
@@ -29,6 +36,9 @@ def test_datbox_worker_generates_from_project_and_preferences_snapshot(tmp_path)
         chipy_params=preferences.chipy_params(),
         use_loop=False,
     )
+
+    assert runner.worker.session.project.history._undo == []
+    assert runner.worker.session.project.history._redo == []
 
     project.name = "project-after"
     preferences.nb_steps = 23

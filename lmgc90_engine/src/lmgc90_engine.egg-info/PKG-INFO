@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: lmgc90-engine
-Version: 0.1.0
+Version: 0.7.0
 Summary: LMGC90 runtime engine — materialize lmgc90_core.Project into pylmgc90.pre objects, write DATBOX, run granulo.
 Author: Bachir Zerourou
 License: Open Source
@@ -8,7 +8,7 @@ Project-URL: Repository, https://github.com/bzerourou/LMG90_GUI_MVC
 Keywords: LMGC90,DEM,granular,pylmgc90,scientific
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: lmgc90-core>=0.1.0
+Requires-Dist: lmgc90-core>=0.7.0
 Requires-Dist: numpy>=1.24
 Provides-Extra: pylmgc
 Requires-Dist: pylmgc90; extra == "pylmgc"
@@ -73,6 +73,30 @@ Without `pylmgc90` installed, `materialize()` and `write_datbox()` raise
 `PylmgcNotAvailable`. Script emission (`session.emit_pre_script()`) always
 works — it delegates to `lmgc90_core`.
 
+## Runtime capability snapshots
+
+The engine can export the installed runtime's `pre.*` signatures, Chipy
+function arities, and available `lmgc90dicts` catalogs as a versioned JSON
+snapshot. Run this command in the environment where `pylmgc90` is installed:
+
+```bash
+lmgc90-engine-snapshot
+```
+
+By default, it writes `src/lmgc90_core/capabilities/pylmgc90-<version>.json`
+and updates `index.json`. The core package embeds and loads these pure-JSON
+snapshots without importing `pylmgc90`. The engine still prefers live runtime
+introspection when available and uses the core snapshot catalogs otherwise.
+Use `--output-dir` to write elsewhere; copy the generated snapshot and index
+into the core package's `capabilities` directory before rebuilding the core
+distribution if you used a custom output directory.
+
+Arity is the number of fixed positional parameters. For opaque native Chipy
+bindings, it is inferred from the first docstring signature when possible;
+otherwise `arity` is `null` and `arity_source` is `unknown`. Catalogs are
+captured as exposed by the installed version, so absent dictionaries are not
+fabricated.
+
 ## Package layout
 
 ```
@@ -97,7 +121,7 @@ lmgc90_engine/
 - Identity = `avatar_id` / `population_id`. Always.
 - Core remains import-pure: engine is the only place that may `import pylmgc90`.
 
-## Limits 0.1.0
+## Limits 0.7.0
 
 - Mesh builders (gmsh) are stubs / optional; deformable mesh emission relies
   on `mesh_params` already stored on the Avatar.

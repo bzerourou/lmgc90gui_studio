@@ -9,7 +9,7 @@ from typing import Sequence
 
 from lmgc90_core import __file__ as _CORE_PACKAGE_FILE
 
-from .introspection import inspect_runtime
+from .introspection import clear_compatibility_catalog_cache, inspect_runtime
 
 
 SNAPSHOT_SCHEMA_VERSION = 1
@@ -29,6 +29,16 @@ def build_capability_snapshot() -> dict:
     version = runtime.get("version")
     if not isinstance(version, str) or not version.strip():
         raise RuntimeError("cannot generate a versioned snapshot: pylmgc90 version is unknown")
+    catalogs = runtime.get("catalogs")
+    if (
+        runtime.get("catalog_source") != "INTROSPECTION"
+        or not isinstance(catalogs, dict)
+        or not catalogs
+    ):
+        raise RuntimeError(
+            "cannot generate pylmgc90 capabilities: runtime catalogs could not be "
+            "introspected; refusing to copy compatibility snapshot data"
+        )
 
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
@@ -37,7 +47,7 @@ def build_capability_snapshot() -> dict:
             "version": version,
         },
         "apis": runtime["apis"],
-        "catalogs": runtime["catalogs"],
+        "catalogs": catalogs,
     }
 
 
@@ -81,6 +91,7 @@ def write_capability_snapshot(
         json.dumps(index, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    clear_compatibility_catalog_cache()
     return snapshot_path
 
 

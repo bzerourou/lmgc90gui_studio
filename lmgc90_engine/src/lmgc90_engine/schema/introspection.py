@@ -193,8 +193,14 @@ def compatibility_catalog_source() -> str:
     return _catalog_data()[0]
 
 
+def clear_compatibility_catalog_cache() -> None:
+    """Refresh compatibility data after the bundled snapshot index changes."""
+    load_compatibility_catalogs.cache_clear()
+    _catalog_data.cache_clear()
+
+
 def inspect_runtime() -> dict[str, Any]:
-    """Return pylmgc90 callables and compatibility data, or an unavailable marker.
+    """Return pylmgc90 callables and runtime catalogs, or an unavailable marker.
 
     Imports of pylmgc90 stay in this module and are only executed when runtime
     data is requested. Core package initialization never probes the runtime.
@@ -217,6 +223,7 @@ def inspect_runtime() -> dict[str, Any]:
     except importlib.metadata.PackageNotFoundError:
         version = getattr(pylmgc, "__version__", None)
 
+    runtime_catalogs = _runtime_catalogs()
     return {
         "available": True,
         "version": version,
@@ -224,5 +231,6 @@ def inspect_runtime() -> dict[str, Any]:
             "pre": _public_callables(pre),
             "chipy": _public_callables(chipy),
         },
-        "catalogs": load_compatibility_catalogs(),
+        "catalogs": runtime_catalogs,
+        "catalog_source": "INTROSPECTION" if runtime_catalogs else "UNAVAILABLE",
     }

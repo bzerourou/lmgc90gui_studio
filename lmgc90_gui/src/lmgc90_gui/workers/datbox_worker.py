@@ -1,11 +1,12 @@
 """Background DATBOX generation: materialize + writeDatbox + emit scripts."""
 from __future__ import annotations
 
-from copy import deepcopy
+from copy import copy, deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from lmgc90_engine import EngineSession
+from lmgc90_core.commands import CommandHistory
 
 if TYPE_CHECKING:
     from ..controller.project_controller import ProjectController
@@ -21,7 +22,9 @@ def create_datbox_worker(
 ):
     from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
-    project_snapshot = deepcopy(controller.project)
+    project_snapshot = copy(controller.project)
+    project_snapshot.history = CommandHistory()
+    project_snapshot = deepcopy(project_snapshot)
     session = EngineSession(project_snapshot)
     params = dict(controller.prefs.chipy_params())
     params["nb_steps"] = controller.prefs.nb_steps
