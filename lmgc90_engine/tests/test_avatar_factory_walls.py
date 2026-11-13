@@ -178,6 +178,42 @@ def test_point_contactors_attach_to_rigid_bodies_without_mesh_group(
     assert body.added == [{"shape": shape, **options}]
 
 
+def test_runtime_contactor_options_reach_avatar_factory(monkeypatch):
+    monkeypatch.setattr(
+        "lmgc90_engine.schema.contactor_schema_catalog",
+        lambda: {
+            "body_type_contactors": {"MAILx": ()},
+            "options": {"POLYF": ("nb_patch", "patch")},
+            "optional_options": {},
+        },
+    )
+    avatar = pre.rigidSphere(
+        r=0.1, center=[0, 0, 0], model="rigid", material="MAT",
+    )
+    avatar.contactors.append({
+        "shape": "POLYF",
+        "color": "BLUEx",
+        "params": {"nb_patch": 2, "patch": [1, 2]},
+    })
+
+    class Body:
+        def __init__(self):
+            self.added = []
+
+        def addContactors(self, **kwargs):
+            self.added.append(kwargs)
+
+    body = Body()
+    _apply_contactors(body, avatar)
+
+    assert body.added == [{
+        "shape": "POLYF",
+        "color": "BLUEx",
+        "nb_patch": 2,
+        "patch": [1, 2],
+    }]
+
+
 @pytest.mark.parametrize(
     "shape, options",
     [

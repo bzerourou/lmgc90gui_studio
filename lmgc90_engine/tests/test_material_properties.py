@@ -1,5 +1,6 @@
 from lmgc90_core import Material, MaterialType
 from lmgc90_engine.materialize import _make_material
+from lmgc90_engine.schema import materials as schema_materials
 
 
 class PreStub:
@@ -117,3 +118,27 @@ def test_external_material_does_not_receive_unsupported_density():
     kwargs = _materialize("EXTERNAL", {})
 
     assert "density" not in kwargs
+
+
+def test_runtime_only_material_type_is_materialized(monkeypatch):
+    monkeypatch.setattr(schema_materials, "load_compatibility_catalogs", lambda: {
+        "bulkBehavOptions": {
+            "JOINT_ELAS": ["density", "stiffnesses"],
+        },
+    })
+    pre = PreStub()
+    material = Material(
+        name="JOINT",
+        material_type="JOINT_ELAS",
+        density=0,
+        properties={"stiffnesses": [1.0, 2.0]},
+    )
+
+    _make_material(pre, material)
+
+    assert pre.kwargs == {
+        "name": "JOINT",
+        "materialType": "JOINT_ELAS",
+        "density": 0.0,
+        "stiffnesses": [1.0, 2.0],
+    }

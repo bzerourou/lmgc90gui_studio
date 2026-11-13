@@ -16,6 +16,7 @@ from .entities import (
 )
 from .errors import HistoryError
 from .population import ParticlePopulation
+from .types import material_type_name
 
 if TYPE_CHECKING:
     from .project import Project
@@ -39,7 +40,10 @@ class AddMaterial:
         project._drop_material(self.material.name)
 
     def describe(self) -> str:
-        return f"add material {self.material.name} ({self.material.material_type.value})"
+        return (
+            f"add material {self.material.name} "
+            f"({material_type_name(self.material.material_type)})"
+        )
 
     def to_journal(self) -> dict[str, Any]:
         return {"op": "add_material", "payload": self.material.to_dict()}

@@ -13,36 +13,6 @@ from typing import Any
 from lmgc90_core.lmgc_dicts import load_capability_snapshot
 
 
-_CATALOG_NAMES = (
-    "bodyType2contactor",
-    "contactorPair2TactBehav",
-    "contactorOptions",
-    "contactorOptionalOptions",
-    "dimension2contactor",
-    "dimension2element",
-    "discreteElements",
-    "element2ddl",
-    "geo2element",
-    "jointElements",
-    "modelOptions",
-    "materialOptions",
-    "materialTypeOptions",
-    "bulkBehavOptions",
-    "bulk_behav_options",
-    "material_type_options",
-    "tactBehavOptions",
-    "listeBodyType",
-    "listeCandidat",
-    "listeAntagoniste",
-    "listeContactor",
-    "listeTactBehav",
-    "checkModelOptions",
-    "rigidElements",
-    "rigidContactor",
-    "pointContactor",
-)
-
-
 def _safe_value(value: Any) -> Any:
     if isinstance(value, Enum):
         return _safe_value(value.value)
@@ -53,7 +23,7 @@ def _safe_value(value: Any) -> Any:
             "root": _safe_value(value.root),
             "children": [_safe_value(child) for child in value.childs],
         }
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, (list, tuple, set, frozenset)):
         return [_safe_value(item) for item in value]
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
@@ -132,30 +102,22 @@ def _public_callables(module: Any) -> dict[str, dict[str, Any]]:
 
 
 def _runtime_catalogs() -> dict[str, Any]:
-    module = None
-    for module_name in (
-        "pylmgc90.pre.config.lmgc90dicts",
-        "pylmgc90.pre.config.lmgc90_dicts",
-        "pylmgc90.pre_lmgc.config.lmgc90dicts",
-    ):
-        try:
-            module = importlib.import_module(module_name)
-            break
-        except Exception:
-            continue
-    if module is None:
+    try:
+        module = importlib.import_module("pylmgc90.pre.config.lmgc90dicts")
+    except Exception:
         return {}
     return {
-        name: _safe_value(getattr(module, name))
-        for name in _CATALOG_NAMES
-        if hasattr(module, name)
+        name: _safe_value(value)
+        for name, value in sorted(vars(module).items())
+        if not name.startswith("_")
+        and isinstance(value, (Mapping, list, tuple, set, frozenset))
     }
 
 
 def _snapshot_catalogs(version: str | None = None) -> dict[str, Any]:
     try:
         return load_capability_snapshot(version)["catalogs"]
-    except LookupError:
+    except (FileNotFoundError, LookupError):
         return {}
 
 
@@ -173,23 +135,23 @@ def _installed_runtime_version() -> str | None:
 
 @lru_cache(maxsize=1)
 def _catalog_data() -> tuple[str, dict[str, Any]]:
-    runtime_catalogs = _runtime_catalogs()
-    if runtime_catalogs:
-        return "INTROSPECTION", runtime_catalogs
     snapshot_catalogs = _snapshot_catalogs(_installed_runtime_version())
     if snapshot_catalogs:
         return "SNAPSHOT", snapshot_catalogs
+    runtime_catalogs = _runtime_catalogs()
+    if runtime_catalogs:
+        return "INTROSPECTION", runtime_catalogs
     return "FALLBACK", {}
 
 
 @lru_cache(maxsize=1)
 def load_compatibility_catalogs() -> dict[str, Any]:
-    """Load runtime catalogs, or bundled snapshot catalogs when runtime is absent."""
+    """Load bundled snapshot catalogs, or introspect runtime when no snapshot exists."""
     return _catalog_data()[1]
 
 
 def compatibility_catalog_source() -> str:
-    """Return whether runtime, bundled snapshot, or core fallback data is active."""
+    """Return whether snapshot, runtime introspection, or core fallback is active."""
     return _catalog_data()[0]
 
 

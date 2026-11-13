@@ -3,14 +3,12 @@
 Returns a MaterializedScene holding the containers and id maps.
 Does not write DATBOX (see datbox.py / EngineSession.write_datbox).
 
-Material property allow-lists and orthotropic field names come from
-``lmgc90_core.types`` (single source of truth with the GUI schema).
-Runtime dictionary introspection is owned by lmgc90_engine.schema.
+Core material definitions provide fallback metadata; runtime options are
+resolved by ``lmgc90_engine.schema`` and shared with the GUI.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Any, Optional
 
 from lmgc90_core.entities import Avatar, ContactLaw, Material, Model, VisibilityRule
@@ -22,6 +20,7 @@ from lmgc90_core.types import (
     MATERIAL_PROPERTY_SCHEMA,
     ORTHOTROPIC_FIELDS_3D,
     STUDIO_ONLY_KEYS,
+    material_type_name,
 )
 
 from .avatar_factory import build_avatar, build_population_bodies
@@ -243,49 +242,27 @@ _ENGINE_EXTRA_MATERIAL_KEYS: dict[str, set[str]] = {
 # Orthotropic property names — single source: types.ORTHOTROPIC_FIELDS_3D
 _ORTHOTROPIC_FIELDS = tuple(ORTHOTROPIC_FIELDS_3D)
 
-@lru_cache(maxsize=1)
+
 def _material_options() -> dict[str, set[str]]:
-    from .schema.introspection import load_compatibility_catalogs
+    from .schema import material_option_catalog
 
-    catalogs = load_compatibility_catalogs()
-    runtime_options = next((
-        catalogs[name] for name in (
-            "materialTypeOptions", "materialOptions", "bulkBehavOptions",
-            "bulk_behav_options", "material_type_options",
-        ) if isinstance(catalogs.get(name), dict)
-    ), {})
-    options_by_type = dict(MATERIAL_OPTIONS)
-    options_by_type.update({
-        str(material_type): tuple(
-            str(option) for option in (
-                options.keys() if isinstance(options, dict) else options
-            )
-        )
-        for material_type, options in runtime_options.items()
-        if isinstance(options, (dict, list, tuple))
-    })
-
-    result: dict[str, set[str]] = {}
-    material_types = (
-        set(options_by_type)
-        | set(MATERIAL_PROPERTY_SCHEMA)
-        | set(_ENGINE_EXTRA_MATERIAL_KEYS)
-    )
-    for material_type in material_types:
-        names = set(options_by_type.get(material_type, ()))
-        names.update(
-            field[0] for field in MATERIAL_PROPERTY_SCHEMA.get(material_type, ())
-        )
+    options = material_option_catalog(MATERIAL_OPTIONS)
+    for material_type, fields in MATERIAL_PROPERTY_SCHEMA.items():
+        names = set(options.get(material_type, ()))
+        names.update(field[0] for field in fields)
         names.update(_ENGINE_EXTRA_MATERIAL_KEYS.get(material_type, set()))
         if (
             material_type != "EXTERNAL"
-            and "density" not in names
-            and material_type in MATERIAL_PROPERTY_SCHEMA
             and material_type != "DISCRETE"
+            and "density" not in names
         ):
             names.add("density")
-        result[material_type] = names
-    return result
+        options[material_type] = tuple(names)
+    return {
+        material_type: set(names)
+        for material_type, names in options.items()
+    }
+
 
 _STALE_VISCOUS_OPTIONS = (
     "eta", "viscosity",
@@ -293,7 +270,7 @@ _STALE_VISCOUS_OPTIONS = (
 
 
 def _make_material(pre, m: Material) -> Any:
-    mtype = m.material_type.value
+    mtype = material_type_name(m.material_type)
     allowed = _material_options().get(mtype, set())
     kwargs: dict[str, Any] = dict(
         name=m.name,

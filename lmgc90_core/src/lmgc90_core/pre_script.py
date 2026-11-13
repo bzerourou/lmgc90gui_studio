@@ -7,7 +7,10 @@ from typing import Any
 from .entities import Avatar, ContactLaw, GranuloConfig, Material, Model, VisibilityRule
 from .population import ParticlePopulation
 from .project import Project
-from .types import AvatarType, RIGID_AVATARS_2D, RIGID_AVATARS_3D, STUDIO_ONLY_KEYS
+from .types import (
+    AvatarType, RIGID_AVATARS_2D, RIGID_AVATARS_3D, STUDIO_ONLY_KEYS,
+    material_type_name,
+)
 
 
 def emit_pre(project: Project, *, use_loop: bool = False) -> str:
@@ -306,7 +309,8 @@ def _emit_material(m: Material) -> str:
     extra = (", " + _kw(m.properties)) if m.properties else ""
     return (
         f"mat_{m.name} = pre.material(name={m.name!r}, "
-        f"materialType={m.material_type.value!r}, density={m.density}{extra})"
+        f"materialType={material_type_name(m.material_type)!r}, "
+        f"density={m.density}{extra})"
     )
 
 

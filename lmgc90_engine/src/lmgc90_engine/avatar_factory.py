@@ -841,6 +841,9 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
     Meshed contactors (CLxxx, ALpxx, …) need a coherent *group* of elements;
     point contactors (PT2Dx / PT3Dx) attach directly to rigid bodies.
     """
+    if not av.contactors:
+        return
+
     _MESH_SHAPES = {
         "CLXXX", "ALPXX", "CSPXX", "ASPXX", "CL3XX", "AS3XX",
     }
@@ -851,6 +854,17 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
         "color", "byrd", "shift", "axe1", "axe2", "axe3", "nb_vertices",
         "nb_faces", "connectivity", "vertices", "r", "radius", "High",
         "reverse", "area", "volume", "I", "frame",
+    }
+    from .schema import contactor_schema_catalog
+
+    contactor_catalog = contactor_schema_catalog()
+    rigid_shapes = set(
+        contactor_catalog["body_type_contactors"].get("RBDY2", ())
+    ) | set(contactor_catalog["body_type_contactors"].get("RBDY3", ()))
+    runtime_mesh_shapes = {
+        str(shape).upper()
+        for shape in contactor_catalog["body_type_contactors"].get("MAILx", ())
+        if shape not in rigid_shapes
     }
 
     for c in av.contactors or []:
@@ -872,7 +886,7 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
         raw = {k: v for k, v in c.items() if k not in ("shape", "params")}
         raw.update(params)
         raw = _resolve_polygon_contactors(shape, sh, raw, av)
-        is_mesh = sh in _MESH_SHAPES
+        is_mesh = sh in (_MESH_SHAPES | runtime_mesh_shapes)
         if is_mesh and "by" in raw:
             by_group = raw.pop("by")
             if "group" in raw and raw["group"] != by_group:
@@ -897,7 +911,15 @@ def _apply_contactors(body: Any, av: Avatar) -> None:
                 f"(avatar_id={av.avatar_id})"
             )
 
-        allowed_kwargs = _ALLOWED_MESH_KW if is_mesh else _ALLOWED_RIGID_KW
+        allowed_kwargs = set(
+            _ALLOWED_MESH_KW if is_mesh else _ALLOWED_RIGID_KW
+        )
+        allowed_kwargs.update(
+            contactor_catalog["options"].get(str(shape), ())
+        )
+        allowed_kwargs.update(
+            contactor_catalog["optional_options"].get(str(shape), ())
+        )
         unknown_kwargs = sorted(set(raw) - allowed_kwargs)
         if unknown_kwargs:
             raise MaterializationError(

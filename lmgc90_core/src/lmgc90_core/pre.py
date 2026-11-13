@@ -10,13 +10,16 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from .entities import Avatar, ContactLaw, Material, Model, VisibilityRule
-from .types import AvatarOrigin, AvatarType, ContactLawType, MaterialType
+from .types import (
+    AvatarOrigin, AvatarType, ContactLawType, MaterialType,
+    coerce_material_type,
+)
 
 
 def material(*, name: str, materialType: str, density: float, **properties) -> Material:
     return Material(
         name=name,
-        material_type=MaterialType(materialType),
+        material_type=coerce_material_type(materialType),
         density=float(density),
         properties=dict(properties),
     )

@@ -23,7 +23,8 @@ lmgc90gui_studio/
 ├── docs/                 # notes / exemples documentés
 ├── install.ps1           # install Windows rapide
 ├── pyproject.toml        # méta (ne remplace pas les 3 packages)
-└── README.md             # ce fichier
+└── README.md             # README 
+└── README_fr.md          # ce version
 ```
 
 ---
@@ -237,4 +238,8 @@ Projet lié à l’écosystème [LMGC90](https://git-xen.lmgc.univ-montp2.fr/lmg
 
 - `lmgc90_core/README.md` — API Project / pre / populations ; snapshots `capabilities/`  
 - `lmgc90_engine/README.md` — EngineSession / materialize / DATBOX / **schema** (introspection, snapshot, audit)  
+<<<<<<< HEAD
 - `lmgc90_gui/README.md` — lancement GUI / extras `[qt]` `[viz]`  
+=======
+- `lmgc90_gui/README.md` — lancement GUI / extras `[qt]` `[viz]`  
+>>>>>>> 634bb2a (new version 0.7.6)

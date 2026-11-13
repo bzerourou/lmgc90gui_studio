@@ -25,7 +25,7 @@ lmgc90gui_studio/
 ├── install.ps1           # quick Windows install
 ├── pyproject.toml        # meta (does not replace the 3 packages)
 └── README.md             # this file
-```
+└── README_fr.md          # Frensh version
 
 ---
 

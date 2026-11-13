@@ -7,7 +7,10 @@ from typing import Any, Optional
 from .ids import (
     new_avatar_id, new_generation_id, new_operation_id, new_visibility_id,
 )
-from .types import AvatarOrigin, AvatarType, ContactLawType, MaterialType
+from .types import (
+    AvatarOrigin, AvatarType, ContactLawType, MaterialType,
+    coerce_material_type, material_type_name,
+)
 
 
 def jsonable(obj: Any) -> Any:
@@ -27,14 +30,14 @@ def jsonable(obj: Any) -> Any:
 @dataclass
 class Material:
     name: str
-    material_type: MaterialType
+    material_type: MaterialType | str
     density: float
     properties: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
             "name": self.name,
-            "type": self.material_type.value,
+            "type": material_type_name(self.material_type),
             "density": self.density,
             "props": jsonable(self.properties),
         }
@@ -43,7 +46,7 @@ class Material:
     def from_dict(cls, data: dict) -> Material:
         return cls(
             name=data["name"],
-            material_type=MaterialType(data["type"]),
+            material_type=coerce_material_type(str(data["type"])),
             density=float(data["density"]),
             properties=dict(data.get("props") or {}),
         )

@@ -25,7 +25,11 @@ from .granulo import deposit_population
 from .materialize import MaterializedScene, materialize_project
 from .session import EngineSession
 
+<<<<<<< HEAD
 __version__ = "0.7.5"
+=======
+__version__ = "0.7.6"
+>>>>>>> 634bb2a (new version 0.7.6)
 __all__ = [
     "EngineSession",
     "MaterializedScene",

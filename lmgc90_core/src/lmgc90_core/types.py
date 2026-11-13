@@ -38,6 +38,23 @@ class MaterialType(str, Enum):
     EXTERNAL = "EXTERNAL"
 
 
+def material_type_name(material_type: MaterialType | str) -> str:
+    return (
+        material_type.value
+        if isinstance(material_type, MaterialType)
+        else str(material_type)
+    )
+
+
+def coerce_material_type(material_type: MaterialType | str) -> MaterialType | str:
+    if isinstance(material_type, MaterialType):
+        return material_type
+    try:
+        return MaterialType(material_type)
+    except ValueError:
+        return material_type
+
+
 class AvatarType(str, Enum):
     RIGID_DISK = "rigidDisk"
     RIGID_JONC = "rigidJonc"
