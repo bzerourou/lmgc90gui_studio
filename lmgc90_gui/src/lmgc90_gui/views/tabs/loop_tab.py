@@ -2,12 +2,19 @@
 from __future__ import annotations
 
 from lmgc90_core import Loop, ValidationError
-from lmgc90_core.types import LOOP_ALIASES
 
 from .base_tab import BaseTab
 from ...utils.naming import suggest_group_name
 
 _KINDS = ("circle", "grid", "line", "spiral")
+_KIND_FIELDS = {
+    "circle": {"count", "radius", "offset_x", "offset_y", "offset_z"},
+    "grid": {"count", "step", "offset_x", "offset_y", "offset_z"},
+    "line": {"count", "step", "offset_x", "offset_y", "offset_z", "invert"},
+    "spiral": {
+        "count", "radius", "offset_x", "offset_y", "offset_z", "spiral_factor",
+    },
+}
 
 
 def create_loop_tab(parent=None):
@@ -29,6 +36,8 @@ def create_loop_tab(parent=None):
             form = QFormLayout()
             self.kind_combo = QComboBox()
             self.kind_combo.addItems(_KINDS)
+            self.kind_combo.currentTextChanged.connect(self._on_kind_changed)
+            self._parameter_rows = {}
             self.template_combo = QComboBox()
             self.count_spin = QLineEdit("8")
             self.radius_spin = QLineEdit("0.5")
@@ -48,14 +57,19 @@ def create_loop_tab(parent=None):
 
             form.addRow("Type", self.kind_combo)
             form.addRow("Template avatar", self.template_combo)
-            form.addRow("Count", self.count_spin)
-            form.addRow("Radius (circle/spiral)", self.radius_spin)
-            form.addRow("Step (grid/line)", self.step_spin)
-            form.addRow("Offset X", self.ox)
-            form.addRow("Offset Y", self.oy)
-            form.addRow("Offset Z", self.oz)
-            form.addRow("Spiral factor", self.spiral)
-            form.addRow("", self.invert)
+            self._add_parameter_row(form, "count", "Count", self.count_spin)
+            self._add_parameter_row(
+                form, "radius", "Radius (circle/spiral)", self.radius_spin,
+            )
+            self._add_parameter_row(form, "step", "Step (grid/line)", self.step_spin)
+            self._add_parameter_row(form, "offset_x", "Offset X", self.ox)
+            self._add_parameter_row(form, "offset_y", "Offset Y", self.oy)
+            self._add_parameter_row(form, "offset_z", "Offset Z", self.oz)
+            self._add_parameter_row(
+                form, "spiral_factor", "Spiral factor", self.spiral,
+            )
+            self._add_parameter_row(form, "invert", "", self.invert)
+            self._on_kind_changed(self.kind_combo.currentText())
             form.addRow("Group", self.group_edit)
             layout.addLayout(form)
             layout.addWidget(QLabel(
@@ -71,6 +85,18 @@ def create_loop_tab(parent=None):
             self.btn_remove.clicked.connect(self._on_remove)
             row.addWidget(self.btn_remove)
             layout.addLayout(row)
+
+        def _add_parameter_row(self, form, key, label, widget) -> None:
+            label_widget = QLabel(label)
+            form.addRow(label_widget, widget)
+            self._parameter_rows[key] = (label_widget, widget)
+
+        def _on_kind_changed(self, kind: str) -> None:
+            visible_fields = _KIND_FIELDS.get(kind, set())
+            for key, (label, widget) in self._parameter_rows.items():
+                visible = key in visible_fields
+                label.setVisible(visible)
+                widget.setVisible(visible)
 
         def _update_remove_button(self, current, _previous) -> None:
             self.btn_remove.setEnabled(current is not None)

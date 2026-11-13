@@ -1,2 +1,0 @@
-[console_scripts]
-lmgc90-engine-snapshot = lmgc90_engine.schema.snapshot:main

@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from lmgc90_core import pre
 from lmgc90_gui import ProjectController
+from lmgc90_gui.views.tabs import material_tab
 from lmgc90_gui.views.tabs.material_tab import create_material_tab
 
 
@@ -77,3 +78,31 @@ def test_failed_material_rename_keeps_original_and_referenced_material(
     assert materials["STEEL"].density == 7800
     assert controller.project.avatars[0].material_name == "STEEL"
     assert warnings
+
+
+def test_material_tab_builds_runtime_fields_from_schema(qt_app, monkeypatch):
+    monkeypatch.setattr(material_tab, "material_schema_catalog", lambda: {
+        "types": ("RIGID", "ELAS", "JOINT_ELAS"),
+        "properties": {
+            "RIGID": (),
+            "ELAS": (("runtime_field", 1.0, "float"),),
+            "JOINT_ELAS": (("stiffnesses", None, "auto"),),
+        },
+        "choices": {},
+        "choices_by_type": {},
+        "labels": {},
+        "isotropic_fields": (),
+        "orthotropic_fields": {2: (), 3: ()},
+    })
+
+    tab = create_material_tab()
+    tab.type_combo.setCurrentIndex(tab.type_combo.findText("ELAS"))
+
+    assert "runtime_field" in tab._prop_widgets
+
+    tab.type_combo.setCurrentIndex(tab.type_combo.findText("JOINT_ELAS"))
+    assert tab.type_combo.currentData() == "JOINT_ELAS"
+    stiffnesses, kind = tab._prop_widgets["stiffnesses"]
+    assert kind == "auto"
+    stiffnesses.setText("[1.0, 2.0]")
+    assert tab._collect_props()["stiffnesses"] == [1.0, 2.0]

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
+from lmgc90_core.types import material_type_name
+
 from .tabs.base_tab import BaseTab
 
 if TYPE_CHECKING:
@@ -59,7 +61,13 @@ def create_tree_view(parent=None):
                 self.addTopLevelItem(top)
                 top.setExpanded(True)
 
-            branch("Materials", [(m.name, f"{m.material_type.value} ρ={m.density}") for m in p.materials])
+            branch("Materials", [
+                (
+                    m.name,
+                    f"{material_type_name(m.material_type)} ρ={m.density}",
+                )
+                for m in p.materials
+            ])
             branch("Models", [(m.name, f"{m.physics}/{m.element} {m.dimension}D") for m in p.models])
             prefs = self.controller.prefs
             avatar_content = _avatar_rows(p.avatars, prefs)

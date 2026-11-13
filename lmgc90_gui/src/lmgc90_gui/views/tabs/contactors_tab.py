@@ -4,8 +4,13 @@ from __future__ import annotations
 import ast
 
 from lmgc90_core import LMGC90Error, ValidationError
-from lmgc90_core.types import AvatarType
+from lmgc90_core.types import (
+    AvatarType, CONTACTORS_MESH_2D, CONTACTORS_MESH_3D,
+)
 from lmgc90_core.validate import compatible_contactors
+from lmgc90_engine.schema import (
+    contactor_schema_catalog, contactors_for_body_type,
+)
 
 from .base_tab import BaseTab
 from ...utils.safe_eval import safe_eval
@@ -68,18 +73,47 @@ _POLYGON_PARAMS = {
 }
 
 
-def _contactor_param_schema(shape: str, generation_type: str = "regular"):
-    schema = _CONTACTOR_PARAMS.get(shape, ())
-    if shape in _MESH_CONTACTORS:
-        return schema
-    if shape not in ("POLYG", "POLYR"):
-        return (*schema, ("shift", "shift", "", "Coordinates relative to the avatar center"))
-    selector = schema[0]
-    return (
-        selector,
-        *_POLYGON_PARAMS[(shape, generation_type)],
-        ("shift", "shift", "", "Coordinates relative to the avatar center"),
+_POLYGON_OPTION_NAMES = {
+    "POLYG": {"nb_vertices", "vertices"},
+    "POLYR": {"nb_vertices", "vertices", "nb_faces", "connectivity"},
+}
+
+
+def _contactor_param_schema(
+    shape: str,
+    generation_type: str = "regular",
+    *,
+    options=(),
+    optional_options=(),
+    mesh_contactors=None,
+):
+    mesh_shapes = set(
+        _MESH_CONTACTORS if mesh_contactors is None else mesh_contactors
     )
+    schema = _CONTACTOR_PARAMS.get(shape, ())
+    if shape in ("POLYG", "POLYR"):
+        fields = (
+            schema[0],
+            *_POLYGON_PARAMS[(shape, generation_type)],
+            ("shift", "shift", "", "Coordinates relative to the avatar center"),
+        )
+    elif shape in mesh_shapes:
+        fields = schema
+    else:
+        fields = (
+            *schema,
+            ("shift", "shift", "", "Coordinates relative to the avatar center"),
+        )
+
+    field_names = {field[0] for field in fields}
+    for name in (*options, *optional_options):
+        if name in field_names or name in _POLYGON_OPTION_NAMES.get(shape, ()):
+            continue
+        fields = (*fields, (
+            name, "auto", "", "Runtime option; leave blank to omit",
+        ))
+        field_names.add(name)
+    return fields
 
 
 def _read_contactor_params(
@@ -89,6 +123,9 @@ def _read_contactor_params(
     dimension: int = 2,
     evaluate_float=None,
     evaluate_expression=None,
+    options=(),
+    optional_options=(),
+    mesh_contactors=None,
 ) -> dict[str, object]:
     """Convert the visible shape-specific form fields to pylmgc90 option values."""
     parsed: dict[str, object] = {}
@@ -99,7 +136,13 @@ def _read_contactor_params(
         raise ValueError("generation_type must be 'regular' or 'full'")
     schemas = {
         name: kind
-        for name, kind, _, _ in _contactor_param_schema(shape, generation_type)
+        for name, kind, _, _ in _contactor_param_schema(
+            shape,
+            generation_type,
+            options=options,
+            optional_options=optional_options,
+            mesh_contactors=mesh_contactors,
+        )
     }
     for name, raw_value in fields.items():
         if name not in schemas:
@@ -139,6 +182,13 @@ def _read_contactor_params(
             if len(rows) < dimension + 1:
                 raise ValueError(f"{name} needs at least {dimension + 1} vertices")
             parsed[name] = rows
+        elif kind == "auto":
+            if not value:
+                continue
+            try:
+                parsed[name] = expression(value)
+            except (NameError, SyntaxError, TypeError, ValueError):
+                parsed[name] = value
         elif kind == "triangles":
             faces = expression(value)
             if not isinstance(faces, list) or not faces:
@@ -193,6 +243,21 @@ def create_contactors_tab(parent=None):
     class ContactorsTab(QWidget, BaseTab):
         def __init__(self, parent=None):
             super().__init__(parent)
+            self.contactor_catalog = contactor_schema_catalog()
+            body_types = self.contactor_catalog["body_type_contactors"]
+            if "MAILx" in body_types:
+                self._mesh_contactors = set(body_types["MAILx"]) - set(
+                    body_types.get("RBDY2", ()) + body_types.get("RBDY3", ())
+                )
+            else:
+                rigid_shapes = set(
+                    compatible_contactors(AvatarType.EMPTY_AVATAR, 2)
+                    + compatible_contactors(AvatarType.EMPTY_AVATAR, 3)
+                )
+                self._mesh_contactors = set((
+                    *CONTACTORS_MESH_2D, *CONTACTORS_MESH_3D,
+                    *_MESH_CONTACTORS,
+                )) - rigid_shapes
             layout = QVBoxLayout(self)
             layout.addWidget(QLabel("Select avatar"))
             self.avatar_combo = QComboBox()
@@ -236,6 +301,25 @@ def create_contactors_tab(parent=None):
             super().bind_controller(controller)
             self.on_state_changed()
 
+        def _compatible_shapes(self, avatar, dimension: int) -> tuple[str, ...]:
+            body_type = (
+                "MAILx"
+                if avatar.avatar_type == AvatarType.MESH_DEFORMABLE
+                else "RBDY2" if dimension == 2 else "RBDY3"
+            )
+            return contactors_for_body_type(
+                self.contactor_catalog,
+                body_type,
+                dimension,
+                compatible_contactors(avatar.avatar_type, dimension),
+            )
+
+        def _shape_options(self, shape: str) -> tuple[str, ...]:
+            return tuple(self.contactor_catalog["options"].get(shape, ()))
+
+        def _shape_optional_options(self, shape: str) -> tuple[str, ...]:
+            return tuple(self.contactor_catalog["optional_options"].get(shape, ()))
+
         def _current_avatar(self):
             if self.controller is None:
                 return None
@@ -277,7 +361,7 @@ def create_contactors_tab(parent=None):
                 extra = " ".join(f"{k}={v}" for k, v in c.items() if k not in ("shape", "color"))
                 self.list.addItem(f"[{i}] {shape}  {color}  {extra}".strip())
             dim = self.controller.project.dimension
-            shapes = compatible_contactors(av.avatar_type, dim)
+            shapes = self._compatible_shapes(av, dim)
             self.shape_combo.addItems(list(shapes))
             # sensible default for emptyAvatar
             if av.avatar_type == AvatarType.EMPTY_AVATAR and "DISKx" in shapes:
@@ -285,25 +369,42 @@ def create_contactors_tab(parent=None):
             self._on_shape_changed(self.shape_combo.currentText())
 
         def _on_shape_changed(self, shape: str) -> None:
+            if not shape:
+                clear_layout(self._param_layout)
+                self._param_fields = {}
+                self.group_label.setVisible(False)
+                self.bygroup_edit.setVisible(False)
+                return
             if shape in ("POLYG", "POLYR"):
                 self._build_polygon_fields(shape, "regular")
             else:
                 clear_layout(self._param_layout)
                 self._param_fields = {}
-                for name, kind, default, placeholder in _contactor_param_schema(shape):
+                schema = _contactor_param_schema(
+                    shape,
+                    options=self._shape_options(shape),
+                    optional_options=self._shape_optional_options(shape),
+                    mesh_contactors=self._mesh_contactors,
+                )
+                for name, kind, default, placeholder in schema:
                     if kind == "shift" and self.controller is not None:
                         dimension = self.controller.project.dimension
                         placeholder = (
                             f"{dimension}D offset, e.g. "
                             + ", ".join(["0.0"] * dimension)
                         )
-                    field = QLineEdit(str(default))
-                    field.setPlaceholderText(placeholder)
-                    if kind in ("float", "int", "shift"):
-                        self.mark_expr_field(field)
+                    if kind == "choice":
+                        field = QComboBox()
+                        field.addItems(list(default))
+                        field.setCurrentIndex(0)
+                    else:
+                        field = QLineEdit(str(default))
+                        field.setPlaceholderText(placeholder)
+                        if kind in ("float", "int", "shift", "auto"):
+                            self.mark_expr_field(field)
                     self._param_layout.addRow(name, field)
                     self._param_fields[name] = field
-            is_mesh = shape in _MESH_CONTACTORS
+            is_mesh = shape in self._mesh_contactors
             self.group_label.setVisible(is_mesh)
             self.bygroup_edit.setVisible(is_mesh)
 
@@ -324,12 +425,25 @@ def create_contactors_tab(parent=None):
             )
             self._param_layout.addRow("generation_type", selector)
             self._param_fields["generation_type"] = selector
-            for name, _kind, default, placeholder in _POLYGON_PARAMS[
-                (shape, generation_type)
-            ]:
+            schema = _contactor_param_schema(
+                shape,
+                generation_type,
+                options=self._shape_options(shape),
+                optional_options=self._shape_optional_options(shape),
+                mesh_contactors=self._mesh_contactors,
+            )
+            for name, kind, default, placeholder in schema:
+                if name == "generation_type":
+                    continue
+                if name == "shift":
+                    default = shift_text
                 field = QLineEdit(str(default))
                 field.setPlaceholderText(placeholder)
-                self.mark_expr_field(field)
+                if kind in (
+                    "float", "int", "shift", "auto", "vertices2d",
+                    "vertices3d", "triangles",
+                ):
+                    self.mark_expr_field(field)
                 self._param_layout.addRow(name, field)
                 self._param_fields[name] = field
             dimension = self.controller.project.dimension if self.controller else (
@@ -358,7 +472,7 @@ def create_contactors_tab(parent=None):
             try:
                 # validate compatibility
                 dim = self.controller.project.dimension
-                if shape not in compatible_contactors(av.avatar_type, dim):
+                if shape not in self._compatible_shapes(av, dim):
                     raise ValidationError(
                         f"shape {shape!r} incompatible with {av.avatar_type.value} in {dim}D"
                     )
@@ -371,11 +485,14 @@ def create_contactors_tab(parent=None):
                     dimension=dim,
                     evaluate_float=lambda text, name: self.eval_float(text, 0.0, name),
                     evaluate_expression=lambda text: safe_eval(text, self._get_context()),
+                    options=self._shape_options(shape),
+                    optional_options=self._shape_optional_options(shape),
+                    mesh_contactors=self._mesh_contactors,
                 )
                 if params:
                     entry["params"] = params
                 group = self.bygroup_edit.text().strip()
-                if shape in _MESH_CONTACTORS and group:
+                if shape in self._mesh_contactors and group:
                     entry["group"] = group
                 updated = av.copy()
                 updated.contactors.append(entry)

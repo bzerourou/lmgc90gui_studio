@@ -137,6 +137,25 @@ def test_contactor_form_parses_shape_specific_options():
     ]
 
 
+def test_contactor_form_parses_runtime_required_and_optional_options():
+    params = _read_contactor_params(
+        "POLYF",
+        {
+            "nb_patch": "4",
+            "patch": "[1, 2, 3, 4]",
+            "mode": "smooth",
+        },
+        options=("nb_patch", "patch"),
+        optional_options=("mode",),
+    )
+
+    assert params == {
+        "nb_patch": 4,
+        "patch": [1, 2, 3, 4],
+        "mode": "smooth",
+    }
+
+
 def test_pipeline_sbatch_export(tmp_path: Path):
     ctrl = ProjectController()
     _scene(ctrl)

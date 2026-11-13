@@ -16,7 +16,10 @@ from lmgc90_core.types import (
     AvatarType,
 )
 from lmgc90_core.validate import compatible_contactors
-from lmgc90_engine.schema import contact_law_pair_compatibility
+from lmgc90_engine.schema import (
+    contact_law_pair_compatibility, contactor_schema_catalog,
+    contactors_for_body_type,
+)
 
 from .base_tab import BaseTab
 from ..widgets.entity_tree import create_entity_tree
@@ -61,23 +64,42 @@ _CANDIDATE_SHAPES = frozenset({
 })
 
 
-def _contactors_for_avatar(av) -> list[str]:
+def _compatible_shapes(
+    atype: AvatarType | None,
+    dimension: int,
+    catalog,
+) -> tuple[str, ...]:
+    if atype is None:
+        return ()
+    body_type = (
+        "MAILx" if atype == AvatarType.MESH_DEFORMABLE
+        else "RBDY2" if dimension == 2 else "RBDY3"
+    )
+    try:
+        fallback = compatible_contactors(atype, dimension)
+    except ValidationError:
+        fallback = ()
+    return contactors_for_body_type(
+        catalog, body_type, dimension, fallback,
+    )
+
+
+def _contactors_for_avatar(av, catalog=None) -> list[str]:
     """Contacteurs réels sur l'avatar, ou formes compatibles par défaut."""
+    catalog = contactor_schema_catalog() if catalog is None else catalog
+    atype = _as_avatar_type(getattr(av, "avatar_type", None))
+    dimension = len(getattr(av, "center", ()) or ())
     out: list[str] = []
     for cont in getattr(av, "contactors", None) or []:
         if isinstance(cont, dict):
             sh = (cont.get("shape") or "").strip()
-            try:
-                valid = compatible_contactors(av.avatar_type, len(av.center))
-            except (AttributeError, TypeError, ValidationError):
-                valid = ()
+            valid = _compatible_shapes(atype, dimension, catalog)
             if sh and sh in valid:
                 out.append(sh)
     if out:
         return list(dict.fromkeys(out))
-    atype = _as_avatar_type(getattr(av, "avatar_type", None))
     try:
-        return _default_contactors_for_type(atype, len(av.center))
+        return _default_contactors_for_type(atype, dimension, catalog)
     except (AttributeError, TypeError):
         return []
 
@@ -91,13 +113,15 @@ def _as_avatar_type(value) -> AvatarType | None:
         return None
 
 
-def _default_contactors_for_type(atype: AvatarType | None, dimension: int) -> list[str]:
-    try:
-        if atype == AvatarType.MESH_DEFORMABLE:
-            return list(compatible_contactors(atype, dimension))
-        supported = set(compatible_contactors(atype, dimension)) if atype else set()
-    except ValidationError:
-        return []
+def _default_contactors_for_type(
+    atype: AvatarType | None,
+    dimension: int,
+    catalog=None,
+) -> list[str]:
+    catalog = contactor_schema_catalog() if catalog is None else catalog
+    supported = set(_compatible_shapes(atype, dimension, catalog))
+    if atype == AvatarType.MESH_DEFORMABLE:
+        return list(_compatible_shapes(atype, dimension, catalog))
     return [shape for shape in _AVATAR_CONTACTORS.get(atype, ()) if shape in supported]
 
 
@@ -124,9 +148,16 @@ def _role_for_contact(atype: AvatarType | None, shape: str) -> str:
     return "candidate"
 
 
-def _project_contact_options(project) -> list[tuple[str, str, str, str]]:
+def _project_contact_options(
+    project,
+    contactor_catalog=None,
+) -> list[tuple[str, str, str, str]]:
     """Unique (body, shape, color, role) combinations actually present."""
     dimension = int(getattr(project, "dimension", 2) or 2)
+    contactor_catalog = (
+        contactor_schema_catalog()
+        if contactor_catalog is None else contactor_catalog
+    )
     rows: list[tuple[str, str, str, str]] = []
     for avatar in getattr(project, "avatars", []) or []:
         atype = _as_avatar_type(getattr(avatar, "avatar_type", None))
@@ -143,10 +174,15 @@ def _project_contact_options(project) -> list[tuple[str, str, str, str]]:
             ]
             contacts = [
                 (shape, color) for shape, color in contacts
-                if shape and shape in _contactors_for_avatar(avatar)
+                if shape and shape in _contactors_for_avatar(
+                    avatar, contactor_catalog,
+                )
             ]
         else:
-            contacts = [(shape, base_color) for shape in _contactors_for_avatar(avatar)]
+            contacts = [
+                (shape, base_color)
+                for shape in _contactors_for_avatar(avatar, contactor_catalog)
+            ]
         for shape, color in contacts:
             rows.append((body, shape, color, _role_for_contact(atype, shape)))
 
@@ -155,7 +191,9 @@ def _project_contact_options(project) -> list[tuple[str, str, str, str]]:
         dimension = int(getattr(population, "dimension", dimension) or dimension)
         body = "RBDY2" if dimension == 2 else "RBDY3"
         color = (getattr(population, "color", None) or "").strip() or "BLUEx"
-        shapes = _default_contactors_for_type(atype, dimension)
+        shapes = _default_contactors_for_type(
+            atype, dimension, contactor_catalog,
+        )
         for shape in shapes:
             rows.append((body, shape, color, _role_for_contact(atype, shape)))
 
@@ -187,39 +225,77 @@ def _project_colors(project) -> list[str]:
     return colors
 
 
-def _project_shapes(project) -> list[str]:
+def _project_shapes(project, contactor_catalog=None) -> list[str]:
     """Formes de contact réellement présentes dans le projet."""
     shapes = list(dict.fromkeys(
         shape
-        for _body, shape, _color, _role in _project_contact_options(project)
+        for _body, shape, _color, _role in _project_contact_options(
+            project, contactor_catalog,
+        )
     ))
     if shapes:
         return shapes
 
     dimension = int(getattr(project, "dimension", 2) or 2)
     body = "RBDY2" if dimension == 2 else "RBDY3"
-    return _fallback_shapes(body, dimension)
+    return _fallback_shapes(body, dimension, contactor_catalog)
 
 
-def _body_options(project) -> list[str]:
+def _body_options(project=None, contactor_catalog=None) -> list[str]:
     dim = int(getattr(project, "dimension", 2) or 2)
+    contactor_catalog = (
+        contactor_schema_catalog()
+        if contactor_catalog is None else contactor_catalog
+    )
     rigid_body = "RBDY2" if dim == 2 else "RBDY3"
     valid_for_dimension = set(_BODY_2D if dim == 2 else _BODY_3D)
-    options = list(dict.fromkeys(body for body, _shape, _color, _role in _project_contact_options(project)))
-    for rule in getattr(project, "visibility", []) or []:
-        options.extend((rule.candidate_body, rule.antagonist_body))
+    body_types = contactor_catalog.get("body_type_contactors", {})
+    suffix = "2D" if dim == 2 else "3D"
+    if isinstance(body_types, dict):
+        valid_for_dimension.update(
+            body for body in body_types
+            if body == "MAILx" or body.endswith(suffix)
+        )
+    if project is None:
+        initial_body_order = (
+            _BODY_2D if dim == 2 else _BODY_3D
+        )
+        options = list(dict.fromkeys((
+            *initial_body_order,
+            *body_types,
+        )))
+    else:
+        options = list(dict.fromkeys(
+            body for body, _shape, _color, _role
+            in _project_contact_options(project, contactor_catalog)
+        ))
+        for rule in getattr(project, "visibility", []) or []:
+            options.extend((rule.candidate_body, rule.antagonist_body))
     return [rigid_body] + [
         body for body in dict.fromkeys(options)
         if body in valid_for_dimension and body != rigid_body
     ]
 
 
-def _fallback_shapes(body: str, dimension: int) -> list[str]:
+def _fallback_shapes(body: str, dimension: int, contactor_catalog=None) -> list[str]:
+    contactor_catalog = (
+        contactor_schema_catalog()
+        if contactor_catalog is None else contactor_catalog
+    )
     if body == "MAILx":
-        return list(CONTACTORS_MESH_2D if dimension == 2 else CONTACTORS_MESH_3D)
+        fallback = CONTACTORS_MESH_2D if dimension == 2 else CONTACTORS_MESH_3D
+        return list(contactors_for_body_type(
+            contactor_catalog, body, dimension, fallback,
+        ))
     if body in ("MBS2D", "MBS3D"):
-        return list(CONTACTORS_RIGID_2D if dimension == 2 else CONTACTORS_RIGID_3D)
-    return list(CONTACTORS_RIGID_2D if dimension == 2 else CONTACTORS_RIGID_3D)
+        fallback = CONTACTORS_RIGID_2D if dimension == 2 else CONTACTORS_RIGID_3D
+        return list(contactors_for_body_type(
+            contactor_catalog, body, dimension, fallback,
+        ))
+    fallback = CONTACTORS_RIGID_2D if dimension == 2 else CONTACTORS_RIGID_3D
+    return list(contactors_for_body_type(
+        contactor_catalog, body, dimension, fallback,
+    ))
 
 
 def _project_laws(project) -> list[str]:
@@ -288,6 +364,7 @@ def create_visibility_tab(parent=None):
     class VisibilityTab(QWidget, BaseTab):
         def __init__(self, parent=None):
             super().__init__(parent)
+            self.contactor_catalog = contactor_schema_catalog()
             self._editing_index: int | None = None
             layout = QVBoxLayout(self)
             layout.addWidget(QLabel(
@@ -447,13 +524,17 @@ def create_visibility_tab(parent=None):
             color_box = self.c_color if candidate else self.a_color
             body = body_box.currentText().strip()
             options = [
-                option for option in _project_contact_options(self.controller.project)
+                option for option in _project_contact_options(
+                    self.controller.project, self.contactor_catalog,
+                )
                 if option[0] == body
             ]
             shape_items = list(dict.fromkeys(option[1] for option in options))
             if not shape_items:
                 shape_items = _fallback_shapes(
-                    body, int(self.controller.project.dimension)
+                    body,
+                    int(self.controller.project.dimension),
+                    self.contactor_catalog,
                 )
             old_shape = shape_box.currentText().strip()
             shape = shape_items[0] if reset_shape or old_shape not in shape_items else old_shape
@@ -476,8 +557,9 @@ def create_visibility_tab(parent=None):
             dim = default_dim
             if self.controller is not None:
                 dim = int(getattr(self.controller.project, "dimension", default_dim) or default_dim)
-            items = _body_options(self.controller.project) if self.controller is not None else list(
-                _BODY_2D if dim == 2 else _BODY_3D
+            items = _body_options(
+                self.controller.project if self.controller is not None else None,
+                self.contactor_catalog,
             )
             for box in (self.c_body, self.a_body):
                 cur = box.currentText() if box.count() else ""
@@ -591,7 +673,7 @@ def create_visibility_tab(parent=None):
             project = self.controller.project
             if not (project.avatars or project.populations):
                 return True
-            options = _project_contact_options(project)
+            options = _project_contact_options(project, self.contactor_catalog)
             pairs = (
                 ("candidat", self._body_text(self.c_body), self._combo_text(self.c_shape), self._combo_text(self.c_color)),
                 ("antagoniste", self._body_text(self.a_body), self._combo_text(self.a_shape), self._combo_text(self.a_color)),

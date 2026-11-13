@@ -4,7 +4,10 @@ import pytest
 
 from lmgc90_engine.schema import introspection, snapshot
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 10e38cb (fix some bugs)
 from lmgc90_engine.schema.materials import material_schema_catalog
 
 
@@ -13,7 +16,10 @@ def clear_catalog_cache():
     introspection.clear_compatibility_catalog_cache()
     yield
     introspection.clear_compatibility_catalog_cache()
+<<<<<<< HEAD
 >>>>>>> 634bb2a (new version 0.7.6)
+=======
+>>>>>>> 10e38cb (fix some bugs)
 
 
 def test_inspect_runtime_does_not_use_compatibility_snapshot(monkeypatch):
@@ -42,7 +48,10 @@ def test_inspect_runtime_does_not_use_compatibility_snapshot(monkeypatch):
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 10e38cb (fix some bugs)
 def test_runtime_catalogs_include_all_public_data_structures(monkeypatch):
     tree = SimpleNamespace(
         root="kinematic",
@@ -108,7 +117,10 @@ def test_snapshot_catalogs_take_precedence_over_runtime(monkeypatch):
         introspection.clear_compatibility_catalog_cache()
 
 
+<<<<<<< HEAD
 >>>>>>> 634bb2a (new version 0.7.6)
+=======
+>>>>>>> 10e38cb (fix some bugs)
 def test_build_snapshot_rejects_missing_runtime_catalogs(monkeypatch):
     monkeypatch.setattr(snapshot, "inspect_runtime", lambda: {
         "available": True,

@@ -18,6 +18,7 @@ from lmgc90_core.types import (
     MATERIAL_PROPERTY_SCHEMA,
     ORTHOTROPIC_FIELDS_2D,
     ORTHOTROPIC_FIELDS_3D,
+    material_type_name,
 )
 
 # ---------------------------------------------------------------------------
@@ -166,7 +167,8 @@ def create_mesh_wizard(controller, parent=None):
         def initializePage(self):
             mats = [
                 m.name for m in self.wizard().controller.project.materials
-                if m.material_type.value in _ELASTIC_TYPES or m.material_type.value == "ELAS"
+                if material_type_name(m.material_type) in _ELASTIC_TYPES
+                or material_type_name(m.material_type) == "ELAS"
             ]
             self.existing.clear()
             if mats:

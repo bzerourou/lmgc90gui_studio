@@ -5,6 +5,7 @@ import math
 from typing import Any, Iterable, List, Optional
 
 from lmgc90_core import Project
+from lmgc90_core.types import material_type_name
 
 
 class _NodeProxy:
@@ -183,7 +184,7 @@ class _MaterialProxy:
 
     @property
     def material_type(self) -> str:
-        return self._m.material_type.value
+        return material_type_name(self._m.material_type)
 
     def __getitem__(self, key: str):
         return self._m.properties[key]

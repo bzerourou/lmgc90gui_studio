@@ -1,63 +1,16 @@
 """MaterialTab — full ELAS family + orthotropic G (pylmgc90-compatible)."""
 from __future__ import annotations
 
+import ast
+
 from lmgc90_core import Material, MaterialType, ValidationError
-from lmgc90_core.types import (
-    ISOTROPIC_FIELDS,
-    MATERIAL_PROPERTY_CHOICES,
-    MATERIAL_PROPERTY_SCHEMA,
-    ORTHOTROPIC_FIELDS_2D,
-    ORTHOTROPIC_FIELDS_3D,
-)
+from lmgc90_core.types import coerce_material_type, material_type_name
+from lmgc90_engine.schema import material_schema_catalog
 
 from .base_tab import BaseTab
 from ...utils.field_forms import clear_layout
 from ...utils.naming import suggest_material_name
 from ..widgets.entity_tree import create_entity_tree
-
-_ELAS_TYPES = {
-    MaterialType.ELAS,
-    MaterialType.ELAS_DILA,
-    MaterialType.VISCO_ELAS,
-    MaterialType.ELAS_PLAS,
-    MaterialType.THERMO_ELAS,
-    MaterialType.PORO_ELAS,
-}
-
-_LABELS = {
-    "elas": "elas (loi)",
-    "anisotropy": "anisotropy",
-    "young": "E — Young (Pa)",
-    "nu": "ν — Poisson",
-    "young1": "E1 — Young dir. 1 (Pa)",
-    "young2": "E2 — Young dir. 2 (Pa)",
-    "young3": "E3 — Young dir. 3 (Pa)",
-    "nu12": "ν12 — Poisson",
-    "nu13": "ν13 — Poisson",
-    "nu23": "ν23 — Poisson",
-    "G": "G — cisaillement (Pa)",
-    "G12": "G12 — cisaillement (Pa)",
-    "G13": "G13 — cisaillement (Pa)",
-    "G23": "G23 — cisaillement (Pa)",
-    "dilatation": "dilatation (α thermal / dilatation)",
-    "T_ref_meca": "température mécanique de référence",
-    "viscous_model": "modèle visqueux",
-    "viscous_young": "Young visqueux (Pa)",
-    "viscous_nu": "Poisson visqueux",
-    "critere": "critère plastique",
-    "isoh": "écrouissage isotrope",
-    "iso_hard": "limite élastique initiale (Pa)",
-    "isoh_coeff": "module d’écrouissage isotrope (Pa)",
-    "cinh": "écrouissage cinématique",
-    "visc": "viscoplasticité",
-    "conductivity": "conductivité",
-    "specific_capacity": "capacité spécifique / stockage",
-    "hydro_cpl": "couplage hydraulique (Biot)",
-    "masses": "masses (vecteur 2D/3D)",
-    "stiffnesses": "raideurs (vecteur 2D/3D)",
-    "viscosities": "viscosités (vecteur 2D/3D)",
-    "file_mat": "fichier de loi matériau",
-}
 
 
 def create_material_tab(parent=None):
@@ -69,6 +22,7 @@ def create_material_tab(parent=None):
     class MaterialTab(QWidget, BaseTab):
         def __init__(self, parent=None):
             super().__init__(parent)
+            self.material_schema = material_schema_catalog()
             self._prop_widgets: dict = {}
             self._editing_name: str | None = None
             layout = QVBoxLayout(self)
@@ -88,8 +42,9 @@ def create_material_tab(parent=None):
             self.name_edit.setMaxLength(5)
             self.name_edit.setPlaceholderText("≤ 5 chars (LMGC90)")
             self.type_combo = QComboBox()
-            for mt in MaterialType:
-                self.type_combo.addItem(mt.value, mt)
+            for material_type in self.material_schema["types"]:
+                value = coerce_material_type(str(material_type))
+                self.type_combo.addItem(material_type_name(value), value)
             self.density_edit = QLineEdit("7800")
             self.density_edit.setPlaceholderText("nombre ou expression")
             self.mark_expr_field(self.density_edit)
@@ -129,19 +84,35 @@ def create_material_tab(parent=None):
             clear_layout(self.props_form)
             self._prop_widgets.clear()
             mtype = self.type_combo.currentData()
-            key = mtype.value if mtype else "RIGID"
-            self.density_edit.setEnabled(
-                mtype not in (MaterialType.DISCRETE, MaterialType.EXTERNAL)
-            )
-            schema = MATERIAL_PROPERTY_SCHEMA.get(key, ())
+            key = material_type_name(mtype) if mtype else "RIGID"
+            options = self.material_schema.get("options", {})
+            if key in options:
+                self.density_edit.setEnabled("density" in options[key])
+            else:
+                self.density_edit.setEnabled(
+                    key not in (
+                        MaterialType.DISCRETE.value,
+                        MaterialType.EXTERNAL.value,
+                    )
+                )
+            schema = self.material_schema["properties"].get(key, ())
             if not schema:
                 self.props_form.addRow(QLabel("(aucune propriété spécifique)"))
                 return
 
             # Always build all schema widgets; visibility toggled by anisotropy
             for name, default, kind in schema:
-                choices = MATERIAL_PROPERTY_CHOICES.get(name)
-                if name == "anisotropy" and mtype != MaterialType.ELAS:
+                type_choices = self.material_schema.get(
+                    "choices_by_type", {},
+                ).get(key, {})
+                choices = type_choices.get(
+                    name, self.material_schema["choices"].get(name),
+                )
+                if (
+                    name == "anisotropy"
+                    and key != MaterialType.ELAS.value
+                    and name not in type_choices
+                ):
                     choices = ("isotropic",)
                 if choices:
                     w = QComboBox()
@@ -150,18 +121,18 @@ def create_material_tab(parent=None):
                     if i >= 0:
                         w.setCurrentIndex(i)
                     w.currentTextChanged.connect(self._apply_anisotropy_visibility)
-                    self.props_form.addRow(_LABELS.get(name, name), w)
+                    self.props_form.addRow(self.material_schema["labels"].get(name, name), w)
                     self._prop_widgets[name] = (w, "combo")
                     continue
                 if name == "elas":
                     w = QComboBox()
-                    w.addItems(list(MATERIAL_PROPERTY_CHOICES[name]))
+                    w.addItems(list(self.material_schema["choices"][name]))
                     i = w.findText(str(default))
                     if i >= 0:
                         w.setCurrentIndex(i)
                     else:
                         w.setCurrentIndex(0)
-                    self.props_form.addRow(_LABELS.get(name, name), w)
+                    self.props_form.addRow(self.material_schema["labels"].get(name, name), w)
                     self._prop_widgets[name] = (w, "combo")
                     continue
                 if kind == "float":
@@ -178,34 +149,32 @@ def create_material_tab(parent=None):
                     w = QLineEdit(", ".join(str(v) for v in values[:dim]))
                     w.setPlaceholderText("valeurs / expressions séparées par des virgules")
                     self.mark_expr_field(w)
+                elif kind == "auto":
+                    w = QLineEdit(str(default) if default is not None else "")
+                    w.setPlaceholderText("valeur ou expression")
+                    self.mark_expr_field(w)
                 else:
                     w = QLineEdit(str(default) if default is not None else "")
-                self.props_form.addRow(_LABELS.get(name, name), w)
+                self.props_form.addRow(self.material_schema["labels"].get(name, name), w)
                 self._prop_widgets[name] = (w, kind)
 
             self._apply_anisotropy_visibility()
 
         def _apply_anisotropy_visibility(self, *_a) -> None:
-            mtype = self.type_combo.currentData()
-            if mtype not in _ELAS_TYPES and mtype not in (
-                MaterialType.ELAS, MaterialType.ELAS_DILA, MaterialType.VISCO_ELAS,
-            ):
-                # only types with orthotropic extras
-                pass
             aniso = "isotropic"
             if "anisotropy" in self._prop_widgets:
                 aniso = self._prop_widgets["anisotropy"][0].currentText().strip().lower()
             ortho = aniso in ("orthotropic", "ortho")
             dim = self._project_dim()
-            ortho_keys = set(ORTHOTROPIC_FIELDS_3D if dim == 3 else ORTHOTROPIC_FIELDS_2D)
-            # hide 3D-only when 2D
-            all_ortho = set(ORTHOTROPIC_FIELDS_3D)
+            ortho_keys = set(
+                self.material_schema["orthotropic_fields"][3 if dim == 3 else 2]
+            )
+            all_ortho = set(self.material_schema["orthotropic_fields"][3])
 
             for name, (w, _kind) in self._prop_widgets.items():
                 if name in ("anisotropy", "elas"):
                     continue
-                # non elastic extra fields always on (alpha, eta, ...)
-                if name in ISOTROPIC_FIELDS:
+                if name in self.material_schema["isotropic_fields"]:
                     show = not ortho
                 elif name in all_ortho:
                     show = ortho and name in ortho_keys
@@ -213,8 +182,6 @@ def create_material_tab(parent=None):
                     show = True
                 w.setVisible(show)
                 w.setEnabled(show)
-                # label visibility: walk form rows
-            # update form labels visibility by matching widgets
             for i in range(self.props_form.rowCount()):
                 lab_item = self.props_form.itemAt(i, QFormLayout.ItemRole.LabelRole)
                 field_item = self.props_form.itemAt(i, QFormLayout.ItemRole.FieldRole)
@@ -231,7 +198,7 @@ def create_material_tab(parent=None):
             if self.controller is None or self._editing_name:
                 return
             mtype = self.type_combo.currentData()
-            key = mtype.value if mtype else "RIGID"
+            key = material_type_name(mtype) if mtype else "RIGID"
             existing = [m.name for m in self.controller.project.materials]
             suggested = suggest_material_name(key, existing)
             cur = self.name_edit.text().strip()
@@ -246,12 +213,14 @@ def create_material_tab(parent=None):
                 aniso = self._prop_widgets["anisotropy"][0].currentText().strip().lower()
             ortho = aniso in ("orthotropic", "ortho")
             dim = self._project_dim()
-            ortho_keys = set(ORTHOTROPIC_FIELDS_3D if dim == 3 else ORTHOTROPIC_FIELDS_2D)
+            ortho_keys = set(
+                self.material_schema["orthotropic_fields"][3 if dim == 3 else 2]
+            )
 
             for key, (w, kind) in self._prop_widgets.items():
-                if key in ISOTROPIC_FIELDS and ortho:
+                if key in self.material_schema["isotropic_fields"] and ortho:
                     continue
-                if key in set(ORTHOTROPIC_FIELDS_3D):
+                if key in set(self.material_schema["orthotropic_fields"][3]):
                     if not ortho or key not in ortho_keys:
                         continue
                 if kind == "float":
@@ -266,6 +235,14 @@ def create_material_tab(parent=None):
                     props[key] = self.eval_list(
                         w.text().replace(";", ","), dim, field_name=key
                     )
+                elif kind == "auto":
+                    text = w.text().strip()
+                    if not text:
+                        continue
+                    try:
+                        props[key] = ast.literal_eval(text)
+                    except (SyntaxError, ValueError):
+                        props[key] = text
                 elif kind == "combo":
                     props[key] = w.currentText().strip()
                 else:
@@ -303,7 +280,10 @@ def create_material_tab(parent=None):
             for m in self.controller.project.materials:
                 extra = ", ".join(f"{k}={v}" for k, v in (m.properties or {}).items())
                 self.tree.add_row(
-                    [m.name, m.material_type.value, f"{m.density:g}", extra[:80]],
+                    [
+                        m.name, material_type_name(m.material_type),
+                        f"{m.density:g}", extra[:80],
+                    ],
                     m.name,
                 )
             self.tree.resize_columns()
@@ -324,7 +304,9 @@ def create_material_tab(parent=None):
             self.name_edit.setText(mat.name)
             idx = self.type_combo.findData(mat.material_type)
             if idx < 0:
-                idx = self.type_combo.findText(mat.material_type.value)
+                idx = self.type_combo.findText(
+                    material_type_name(mat.material_type),
+                )
             if idx >= 0:
                 self.type_combo.setCurrentIndex(idx)
             self.density_edit.setText(str(mat.density))

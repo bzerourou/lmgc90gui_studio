@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from lmgc90_gui.views.tabs.visibility_tab import (
     _body_options,
+    _fallback_shapes,
     _project_contact_options,
     _project_shapes,
 )
@@ -117,3 +118,30 @@ def test_antagonist_shapes_include_created_spheres_and_planes():
     )
 
     assert _project_shapes(project) == ["SPHER", "PLANx"]
+
+
+def test_visibility_suggestions_use_runtime_contactors_and_aliases():
+    catalog = {
+        "dimension_contactors": {"3": ("CSpxx", "ASpxx")},
+        "body_type_contactors": {
+            "RBDY3": ("SPHER",),
+            "MAILx": ("CSxxx", "ASpxx"),
+        },
+    }
+    project = SimpleNamespace(
+        dimension=3,
+        avatars=[_avatar(
+            "mesh",
+            [0.0, 0.0, 0.0],
+            "CYANx",
+            ({"shape": "CSxxx", "color": "ORANx"},),
+        )],
+        populations=[],
+        visibility=[],
+    )
+
+    assert _project_contact_options(project, catalog) == [
+        ("MAILx", "CSxxx", "ORANx", "both"),
+    ]
+    assert _fallback_shapes("MAILx", 3, catalog) == ["CSxxx", "ASpxx"]
+    assert _body_options(project, catalog) == ["RBDY3", "MAILx"]

@@ -21,8 +21,6 @@ def test_add_and_undo_avatar():
     assert p.avatar(av.avatar_id).radius == 0.1
 
 
-<<<<<<< HEAD
-=======
 def test_runtime_material_type_survives_serialization():
     material = pre.material(
         name="JOINT", materialType="JOINT_ELAS", density=0,
@@ -35,7 +33,6 @@ def test_runtime_material_type_survives_serialization():
     assert restored.to_dict() == material.to_dict()
 
 
->>>>>>> 634bb2a (new version 0.7.6)
 def test_add_normalizes_lmgc_names_and_references_once():
     p = Project()
     material = p.add(pre.material(name="iron", materialType="RIGID", density=1))
