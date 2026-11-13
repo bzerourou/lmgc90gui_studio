@@ -238,8 +238,5 @@ Projet lié à l’écosystème [LMGC90](https://git-xen.lmgc.univ-montp2.fr/lmg
 
 - `lmgc90_core/README.md` — API Project / pre / populations ; snapshots `capabilities/`  
 - `lmgc90_engine/README.md` — EngineSession / materialize / DATBOX / **schema** (introspection, snapshot, audit)  
-<<<<<<< HEAD
 - `lmgc90_gui/README.md` — lancement GUI / extras `[qt]` `[viz]`  
-=======
-- `lmgc90_gui/README.md` — lancement GUI / extras `[qt]` `[viz]`  
->>>>>>> 634bb2a (new version 0.7.6)
+

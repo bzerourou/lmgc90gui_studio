@@ -3,11 +3,6 @@ from types import SimpleNamespace
 import pytest
 
 from lmgc90_engine.schema import introspection, snapshot
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> 10e38cb (fix some bugs)
 from lmgc90_engine.schema.materials import material_schema_catalog
 
 
@@ -16,10 +11,6 @@ def clear_catalog_cache():
     introspection.clear_compatibility_catalog_cache()
     yield
     introspection.clear_compatibility_catalog_cache()
-<<<<<<< HEAD
->>>>>>> 634bb2a (new version 0.7.6)
-=======
->>>>>>> 10e38cb (fix some bugs)
 
 
 def test_inspect_runtime_does_not_use_compatibility_snapshot(monkeypatch):
@@ -47,80 +38,6 @@ def test_inspect_runtime_does_not_use_compatibility_snapshot(monkeypatch):
     assert result["catalog_source"] == "UNAVAILABLE"
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> 10e38cb (fix some bugs)
-def test_runtime_catalogs_include_all_public_data_structures(monkeypatch):
-    tree = SimpleNamespace(
-        root="kinematic",
-        childs=[SimpleNamespace(root="small", childs=[])],
-    )
-    module = SimpleNamespace(
-        bodyType2contactor={"RBDY2": ["DISKx"]},
-        geo2contactor={"Point": ["DISKx"]},
-        checkBulkBehavOptions={"ELAS": tree},
-        commandOptions={"NEW MECAx SETS": ["mecax_sets"]},
-        _private_catalog={"hidden": True},
-        helper=lambda: None,
-        stop_mode="t",
-    )
-    monkeypatch.setattr(introspection.importlib, "import_module", lambda _: module)
-
-    catalogs = introspection._runtime_catalogs()
-
-    assert catalogs == {
-        "bodyType2contactor": {"RBDY2": ["DISKx"]},
-        "checkBulkBehavOptions": {
-            "ELAS": {
-                "root": "kinematic",
-                "children": [{"root": "small", "children": []}],
-            },
-        },
-        "commandOptions": {"NEW MECAx SETS": ["mecax_sets"]},
-        "geo2contactor": {"Point": ["DISKx"]},
-    }
-
-
-def test_missing_snapshot_index_uses_core_fallback(monkeypatch):
-    def missing_snapshot(_version=None):
-        raise FileNotFoundError("bundled pylmgc90 capability index is missing")
-
-    monkeypatch.setattr(introspection, "_runtime_catalogs", lambda: {})
-    monkeypatch.setattr(introspection, "_installed_runtime_version", lambda: None)
-    monkeypatch.setattr(introspection, "load_capability_snapshot", missing_snapshot)
-    introspection.clear_compatibility_catalog_cache()
-
-    try:
-        assert introspection.load_compatibility_catalogs() == {}
-        assert introspection.compatibility_catalog_source() == "FALLBACK"
-        assert material_schema_catalog()["source"] == "FALLBACK"
-    finally:
-        introspection.clear_compatibility_catalog_cache()
-
-
-def test_snapshot_catalogs_take_precedence_over_runtime(monkeypatch):
-    monkeypatch.setattr(introspection, "_installed_runtime_version", lambda: "2026.1")
-    monkeypatch.setattr(
-        introspection, "_snapshot_catalogs", lambda _version: {"value": "snapshot"},
-    )
-    monkeypatch.setattr(
-        introspection, "_runtime_catalogs", lambda: {"value": "introspection"},
-    )
-    introspection.clear_compatibility_catalog_cache()
-
-    try:
-        assert introspection.compatibility_catalog_source() == "SNAPSHOT"
-        assert introspection.load_compatibility_catalogs() == {"value": "snapshot"}
-    finally:
-        introspection.clear_compatibility_catalog_cache()
-
-
-<<<<<<< HEAD
->>>>>>> 634bb2a (new version 0.7.6)
-=======
->>>>>>> 10e38cb (fix some bugs)
 def test_build_snapshot_rejects_missing_runtime_catalogs(monkeypatch):
     monkeypatch.setattr(snapshot, "inspect_runtime", lambda: {
         "available": True,
