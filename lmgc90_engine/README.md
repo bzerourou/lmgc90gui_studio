@@ -59,7 +59,6 @@ works — it delegates to `lmgc90_core`.
 
 ## Schema: catalogues, snapshots, audit
 
-<<<<<<< HEAD
 Subpackage **`lmgc90_engine.schema`** is the only place that may probe
 pylmgc90 **catalogues and APIs** for UI compatibility data (separate from
 materialize / DATBOX).
@@ -86,23 +85,12 @@ or `write_capability_snapshot()`.
 Export the installed runtime's `pre.*` / Chipy API metadata and available
 `lmgc90dicts` catalogues as a versioned JSON snapshot. Run this in the
 environment where `pylmgc90` is installed:
-=======
-The engine can export the installed runtime's `pre.*` signatures, Chipy
-function arities, and all public mapping/list catalogs from `lmgc90dicts` as a
-versioned JSON snapshot. Run this command in the environment where `pylmgc90`
-is installed:
->>>>>>> 634bb2a (new version 0.7.6)
+
 
 ```bash
 lmgc90-engine-snapshot
 ```
 
-<<<<<<< HEAD
-By default it writes into the core package `capabilities/` directory
-(`pylmgc90-<version>.json` + `index.json`). Core loads these pure-JSON files
-**without** importing `pylmgc90`. Use `--output-dir` to write elsewhere, then
-copy into core `capabilities/` before packaging.
-=======
 By default, it writes `src/lmgc90_core/capabilities/pylmgc90-<version>.json`
 and updates `index.json`. The core package embeds and loads these pure-JSON
 snapshots without importing `pylmgc90`. The engine prefers the bundled snapshot
@@ -111,7 +99,6 @@ available.
 Use `--output-dir` to write elsewhere; copy the generated snapshot and index
 into the core package's `capabilities` directory before rebuilding the core
 distribution if you used a custom output directory.
->>>>>>> 634bb2a (new version 0.7.6)
 
 The GUI material form uses the captured material option and conditional-choice
 catalogs to build its fields. Runtime material types that are not in the core

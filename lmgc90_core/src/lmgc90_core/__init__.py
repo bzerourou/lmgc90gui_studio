@@ -36,7 +36,7 @@ from .types import (
 from .validate import compatible_contactors, is_shape_compatible
 
 
-__version__ = "0.7.6"
+__version__ = "0.7.7"
 
 __all__ = [
     "Project", "pre",
