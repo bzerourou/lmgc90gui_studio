@@ -119,6 +119,7 @@ class ComputeScriptGenerator:
         'use_PLPLx': False, 'use_CLALp': False,
         'use_SPSPx': False, 'use_SPCDx': False,  'use_SPPLx': False,
         'use_CDCDx': False, 'use_CDPLx': False,  'use_PRPRx': False,
+        'use_SelectProx_macro': True,
         'use_mecaMAILx': False, 'use_therMAILx': False, 'use_poroMAILx': False,
         'visu_RBDY2': True,  'visu_RBDY3': False,
         'visu_mecaMAILx': False, 'visu_therMAILx': False, 'visu_poroMAILx': False,
@@ -226,6 +227,15 @@ class ComputeScriptGenerator:
         """Retourne le script complet sous forme de chaine."""
         inferred_routines = infer_chipy_contact_routines(self.project)
         p   = {**self._DEFAULTS, **inferred_routines, **params}
+        if params.get('use_SelectProx_macro') is None:
+            explicit_detector_enabled = any(
+                bool(params.get(f'use_{name}'))
+                for name in (*DETECTORS_2D, *DETECTORS_3D)
+            )
+            p['use_SelectProx_macro'] = not (
+                explicit_detector_enabled
+                or bool(params.get('advanced_fd_select_prox'))
+            )
         if (
             p.get('use_mecaMAILx')
             or p.get('use_therMAILx')
@@ -1422,10 +1432,12 @@ def infer_chipy_contact_routines(project) -> Dict[str, bool]:
     return flags
 
 def default_routines(project: Project) -> Dict[str, Any]:
-    """Réglages chipy déduit du projet
-    """
+    """Return project-derived routines with the global detector macro enabled."""
     dim = int(getattr(project, "dimension", 2) or 2)
     flags = infer_chipy_contact_routines(project)
+    for name in (*DETECTORS_2D, *DETECTORS_3D):
+        flags[f"use_{name}"] = False
+    flags["use_SelectProx_macro"] = True
     flags["use_RBDY2"] = dim == 2
     flags["use_RBDY3"] = dim == 3
     flags['deformable'] = bool(flags.get('use_mecaMAILx'))

@@ -6,9 +6,12 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from .compute_script import generate_command_script
 from .project import Project
-from .compute_script import default_routines, generate_command_script, infer_chipy_contact_routines
+from .compute_script import (
+    default_routines,
+    generate_command_script,
+    infer_chipy_contact_routines,
+)
 
 # Backward-compatible defaults (subset); full defaults live in ComputeScriptGenerator
 _DEFAULTS: dict[str, Any] = {
@@ -37,7 +40,6 @@ def emit_chipy(project: Project, **params: Any) -> str:
     generator defaults merge.
     """
     p = dict(_DEFAULTS)
-    p.update(infer_chipy_contact_routines(project))
     p.update({k: v for k, v in params.items() if v is not None})
     if p.get("dimension") is None:
         p["dimension"] = project.dimension

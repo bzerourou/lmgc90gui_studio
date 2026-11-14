@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -109,7 +110,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
-    snapshot_path = write_capability_snapshot(args.output_dir)
+    try:
+        snapshot_path = write_capability_snapshot(args.output_dir)
+    except RuntimeError as exc:
+        parser.exit(
+            2,
+            f"{parser.prog}: error: unable to build a pylmgc90 runtime snapshot\n"
+            f"  Python: {sys.executable}\n"
+            f"  Cause: {exc}\n"
+            "  Run this command with a Python environment where pylmgc90 and its "
+            "runtime catalogs are importable. "
+            "Fallback compatibility catalogs cannot produce a runtime snapshot.\n",
+        )
     print(snapshot_path)
     return 0
 

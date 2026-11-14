@@ -80,7 +80,7 @@ Les listes d’options et tables de compatibilité LMGC90 vivent en amont dans *
 | `laws.py` / `model_options.py` | Helpers lois de contact et options de modèle (côté GUI) |
 | `audit.py` | Rapport en lecture seule : catalogues core vs pylmgc90 installé |
 
-**Générer ou rafraîchir un snapshot** (machine où pylmgc90 est installé ; **pas** automatique au démarrage de la GUI) :
+**Générer ou rafraîchir un snapshot** (environnement Python où pylmgc90 est installé et importable ; **pas** automatique au démarrage de la GUI) :
 
 ```bash
 lmgc90-engine-snapshot
@@ -89,6 +89,7 @@ lmgc90-engine-snapshot --output-dir /chemin/vers/lmgc90_core/src/lmgc90_core/cap
 ```
 
 Écrit `pylmgc90-<version>.json` (catalogues issus de `lmgc90dicts` + métadonnées d’API pre/chipy) et met à jour `index.json`. Commiter ces fichiers dans le package core permet aux autres machines de tourner sans pylmgc90.
+Si l’environnement Python actif ne contient pas `pylmgc90`, la commande s’arrête avec un message indiquant l’interpréteur concerné. Elle ne fabrique pas un snapshot runtime à partir des catalogues de compatibilité de repli : activez ou installez `pylmgc90` dans cet environnement, puis relancez-la.
 
 La barre de statut de la GUI peut afficher la source active (`INTROSPECTION` / `SNAPSHOT` / `FALLBACK`) via `compatibility_catalog_source()`.
 

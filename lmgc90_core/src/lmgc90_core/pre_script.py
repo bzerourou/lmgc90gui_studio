@@ -95,22 +95,27 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
                 for item in batch:
                     batch_lines.append(f"    {item.center!r},")
             batch_lines.append("):")
-            batch_lines.append("    " + _emit_avatar(
-                av,
-                center_expr="_center",
-                radius_expr="_radius" if uses_radius else None,
-                variable="_body",
-            ))
+            batch_lines.extend(
+                "    " + line
+                for line in (
+                    _emit_avatar(
+                        av,
+                        center_expr="_center",
+                        radius_expr="_radius" if uses_radius else None,
+                        variable="_body",
+                    ),
+                    *_emit_contactors(av, body_ref="_body"),
+                )
+            )
             batch_lines.append(f"    {batch_name}.append(_body)")
             batch_lines.append("    bodies.addAvatar(_body)")
 
             expanded_lines = []
             for item in batch:
                 ref = f"av_{_ident(item.avatar_id)}"
-                expanded_lines.extend((
-                    _emit_avatar(item),
-                    f"bodies.addAvatar({ref})",
-                ))
+                expanded_lines.append(_emit_avatar(item))
+                expanded_lines.extend(_emit_contactors(item))
+                expanded_lines.append(f"bodies.addAvatar({ref})")
             if len("\n".join(batch_lines)) < len("\n".join(expanded_lines)):
                 batch_number += 1
                 for line in batch_lines:
@@ -122,6 +127,8 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
                     L(_emit_avatar(item))
                     ref = f"av_{_ident(item.avatar_id)}"
                     avatar_refs[item.avatar_id] = ref
+                    for line in _emit_contactors(item):
+                        L(line)
                     L(f"bodies.addAvatar({ref})")
             L()
             i = run_end
@@ -136,11 +143,53 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
         L()
         i += 1
 
+    population_configs = {
+        config.population_id: config
+        for config in project.granulo
+        if config.population_id is not None
+    }
     if project.populations:
-        L("# --- particle populations (SoA → pre.rigidDisk/Sphere loop) ---")
-        for pop in project.populations:
-            L(_emit_population(pop))
+        L("# --- particle populations ---")
+        if any(
+            population_configs.get(pop.population_id) is not None
+            for pop in project.populations
+        ):
+            L(_granulo_script_helper())
             L()
+        for pop in project.populations:
+            config = population_configs.get(pop.population_id)
+            L(_emit_population(pop, config))
+            L()
+
+    unlinked_configs = [
+        config for config in project.granulo
+        if config.population_id not in population_configs
+    ]
+    for config in unlinked_configs:
+        if config.create_avatars:
+            raise ValueError(
+                f"granulo config {config.generation_id!r} has no particle population"
+            )
+        L(f"# granulometry distribution {config.generation_id}")
+        L(_emit_granulo_radii(config))
+        L()
+
+    group_names = list(dict.fromkeys((
+        *project.avatar_groups,
+        *project.population_groups,
+    )))
+    group_names = [
+        name for name in group_names
+        if project.avatar_groups.get(name) or project.population_groups.get(name)
+    ]
+    if group_names:
+        L("# --- named groups ---")
+        L("group_refs = {}")
+        for group_name in group_names:
+            L(f"group_refs[{group_name!r}] = []")
+            for line in _emit_group_members(project, group_name, avatar_refs):
+                L(line)
+        L()
 
     if project.laws:
         L("# --- contact laws ---")
@@ -189,10 +238,7 @@ def emit_equivalent(project: Project, obj) -> str:
     if isinstance(obj, VisibilityRule):
         return _emit_see(obj, 0)
     if isinstance(obj, GranuloConfig):
-        return (
-            f"# granulo {obj.container_type} n={obj.nb_particles} "
-            f"r=[{obj.radius_min}, {obj.radius_max}] → ParticlePopulation"
-        )
+        return _emit_granulo_radii(obj)
     return f"# no pre.* equivalent for {type(obj).__name__}"
 
 
@@ -298,6 +344,217 @@ def _population_bodies_ref(population: ParticlePopulation) -> str:
     return f"_population_bodies_{ident}"
 
 
+def _granulo_ident(identifier: str) -> str:
+    return identifier.replace("-", "_")
+
+
+def _granulo_script_helper() -> str:
+    return '''def _lmgc90_parse_deposit(result, radii_in, dimension):
+    if not isinstance(result, (tuple, list)):
+        raise ValueError(f"unexpected deposit return type {type(result)}")
+    if len(result) == 3:
+        nb_laid, coors, radii_out = result
+    elif len(result) == 2:
+        coors, radii_out = result
+        nb_laid = -1
+    else:
+        raise ValueError(
+            f"deposit returned {len(result)} values, expected 2 or 3"
+        )
+    centers = np.asarray(coors, dtype=float)
+    if centers.size == 0:
+        centers = np.zeros((0, dimension), dtype=float)
+    elif centers.ndim == 1:
+        centers = centers.reshape((-1, dimension))
+    elif centers.ndim != 2:
+        raise ValueError(f"unexpected deposited coordinate shape {centers.shape}")
+    elif centers.shape[1] != dimension and centers.shape[0] == dimension:
+        centers = centers.T
+    if nb_laid >= 0:
+        centers = centers[:int(nb_laid)]
+    radii = np.asarray(radii_out, dtype=float).reshape(-1)[:len(centers)]
+    if len(radii) != len(centers):
+        radii = np.asarray(radii_in, dtype=float).reshape(-1)[:len(centers)]
+    return centers, radii
+'''
+
+
+def _emit_granulo_radii(config: GranuloConfig, *, variable: str | None = None) -> str:
+    variable = variable or f"_granulo_radii_{_granulo_ident(config.generation_id)}"
+    distribution = config.distribution_type or "granulo_Random"
+    count = int(config.nb_particles)
+    rmin, rmax = float(config.radius_min), float(config.radius_max)
+    seed = f", seed={config.seed!r}"
+    params = config.distribution_params or {}
+
+    if distribution == "granulo_ReadFromFile":
+        if not config.distribution_file:
+            raise ValueError(
+                f"granulo config {config.generation_id!r} has no distribution file"
+            )
+        expression = (
+            f"pre.granulo_ReadFromFile({config.distribution_file!r})"
+            f"[:{count}]"
+        )
+    elif distribution in ("granulo_Random", "granulo_Uniform"):
+        expression = (
+            f"pre.{distribution}({count}, {rmin!r}, {rmax!r}{seed})"
+        )
+    elif distribution in ("granulo_TwoSizesNumber", "granulo_TwoSizesVolume"):
+        probability = float(params.get("p_min", 0.5))
+        expression = (
+            f"pre.{distribution}({count}, {rmin!r}, {rmax!r}, "
+            f"{probability!r}{seed})"
+        )
+    elif distribution == "granulo_BetaDistribution":
+        expression = (
+            f"pre.{distribution}({rmin!r}, {rmax!r}, "
+            f"{int(params.get('nb_t', 10))}, {float(params.get('vol', 0.0))!r}, "
+            f"{float(params.get('a', 0.0))!r}, {float(params.get('b', 0.0))!r}"
+            f"{seed})"
+        )
+    else:
+        raise ValueError(
+            f"unsupported granulo distribution {distribution!r} "
+            f"(config {config.generation_id!r})"
+        )
+
+    lines = [f"{variable} = np.asarray({expression}, dtype=float).reshape(-1)"]
+    if distribution == "granulo_ReadFromFile":
+        lines.extend((
+            f"if len({variable}) < {count}:",
+            f"    raise ValueError('granulometry file contains fewer than {count} radii')",
+        ))
+    return "\n".join(lines)
+
+
+def _emit_granulo_deposit(
+    config: GranuloConfig,
+    radii_variable: str,
+    prefix: str,
+) -> tuple[list[str], str, str]:
+    container = (config.container_type or "Box2D").lower().replace("_", "")
+    params = config.container_params or {}
+    dimension = int(config.dimension or 2)
+
+    result = f"{prefix}_deposit"
+    centers = f"{prefix}_centers"
+    radii_out = f"{prefix}_deposited_radii"
+    call_lines: list[str]
+
+    if container in ("box2d", "box", "depositinbox2d"):
+        lx = float(params.get("lx", params.get("xmax", 1.0) - params.get("xmin", 0.0)))
+        ly = float(params.get("ly", params.get("ymax", 1.0) - params.get("ymin", 0.0)))
+        call_lines = [
+            f"{result} = pre.depositInBox2D({radii_variable}, {lx!r}, {ly!r})"
+        ]
+        dimension = 2
+    elif container in ("box3d", "depositinbox3d"):
+        lx = float(params.get("lx", 1.0))
+        ly = float(params.get("ly", 1.0))
+        lz = float(params.get("lz", 1.0))
+        call_lines = [
+            "try:",
+            f"    {result} = pre.depositInBox3D("
+            f"{radii_variable}, {lx!r}, {ly!r}, {lz!r})",
+            "except TypeError:",
+            f"    {result} = pre.depositInBox3D("
+            f"{radii_variable}, [0.0, 0.0, 0.0], [{lx!r}, {ly!r}, {lz!r}])",
+        ]
+        dimension = 3
+    elif container == "disk2d":
+        radius = float(params.get("r", 1.0))
+        call_lines = [
+            f"_deposit_fn = getattr(pre, 'depositInDisk2D', None) or "
+            "getattr(pre, 'depositInDrum2D', None)",
+            "if _deposit_fn is None:",
+            "    raise ValueError('pylmgc90.pre has no disk deposit function')",
+            "try:",
+            f"    {result} = _deposit_fn({radii_variable}, {radius!r})",
+            "except TypeError:",
+            f"    {result} = _deposit_fn({radii_variable}, r={radius!r})",
+        ]
+        dimension = 2
+    elif container == "drum2d":
+        radius = float(params.get("r", 1.0))
+        call_lines = [
+            f"_deposit_fn = getattr(pre, 'depositInDrum2D', None) or "
+            "getattr(pre, 'depositInDisk2D', None)",
+            "if _deposit_fn is None:",
+            "    raise ValueError('pylmgc90.pre has no drum deposit function')",
+            "try:",
+            f"    {result} = _deposit_fn({radii_variable}, {radius!r})",
+            "except TypeError:",
+            f"    {result} = _deposit_fn({radii_variable}, radius={radius!r})",
+        ]
+        dimension = 2
+    elif container in ("couette2d", "couette"):
+        rint, rext = float(params.get("rint", 1.0)), float(params.get("rext", 2.0))
+        call_lines = [
+            "_deposit_fn = (getattr(pre, 'depositInCouette2D', None) or "
+            "getattr(pre, 'depositIn2DCouette', None) or "
+            "getattr(pre, 'depositInCouette', None))",
+            "if _deposit_fn is None:",
+            "    raise ValueError('pylmgc90.pre has no Couette deposit function')",
+            "try:",
+            f"    {result} = _deposit_fn({radii_variable}, {rint!r}, {rext!r})",
+            "except TypeError:",
+            "    try:",
+            f"        {result} = _deposit_fn("
+            f"{radii_variable}, r_int={rint!r}, r_ext={rext!r})",
+            "    except TypeError:",
+            f"        {result} = _deposit_fn("
+            f"{radii_variable}, [{rint!r}, {rext!r}])",
+        ]
+        dimension = 2
+    elif container in ("sphere3d", "depositinsphere3d", "sphere"):
+        radius = float(params.get("r", params.get("R", 1.0)))
+        call_lines = [
+            "try:",
+            f"    {result} = pre.depositInSphere3D("
+            f"{radii_variable}, {radius!r}, [0.0, 0.0, 0.0])",
+            "except TypeError:",
+            "    try:",
+            f"        {result} = pre.depositInSphere3D("
+            f"{radii_variable}, {radius!r})",
+            "    except TypeError:",
+            f"        {result} = pre.depositInSphere3D("
+            f"{radii_variable}, radius={radius!r})",
+        ]
+        dimension = 3
+    elif container in ("cylinder3d", "depositincylinder3d", "cylinder"):
+        radius = float(params.get("R", params.get("r", 7.5)))
+        height = float(params.get("lz", 10.0))
+        call_lines = [
+            "try:",
+            f"    {result} = pre.depositInCylinder3D("
+            f"{radii_variable}, {radius!r}, {height!r}, seed={config.seed!r})",
+            "except TypeError:",
+            "    try:",
+            f"        {result} = pre.depositInCylinder3D("
+            f"{radii_variable}, {radius!r}, {height!r})",
+            "    except TypeError:",
+            f"        {result} = pre.depositInCylinder3D("
+            f"{radii_variable}, radius={radius!r}, height={height!r})",
+        ]
+        dimension = 3
+    else:
+        raise ValueError(
+            f"unsupported granulo container {config.container_type!r} "
+            f"(config {config.generation_id!r})"
+        )
+
+    return (
+        [
+            *call_lines,
+            f"{centers}, {radii_out} = _lmgc90_parse_deposit("
+            f"{result}, {radii_variable}, {dimension})",
+        ],
+        centers,
+        radii_out,
+    )
+
+
 def _kw(d: dict[str, Any]) -> str:
     parts = []
     for k, v in d.items():
@@ -323,16 +580,24 @@ def _emit_model(m: Model) -> str:
 
 
 def _loop_avatar_signature(av: Avatar) -> str | None:
-    if av.contactors or av.avatar_type in (
+    if av.avatar_type in (
         AvatarType.MESH_DEFORMABLE, AvatarType.EMPTY_AVATAR,
     ):
         return None
-    return _emit_avatar(
-        av,
-        center_expr="_center",
-        radius_expr="_radius",
-        variable="_body",
-    )
+    if any(
+        str(contactor.get("shape", "")).upper() == "POLYR"
+        for contactor in av.contactors
+    ):
+        return None
+    return "\n".join((
+        _emit_avatar(
+            av,
+            center_expr="_center",
+            radius_expr="_radius",
+            variable="_body",
+        ),
+        *_emit_contactors(av, body_ref="_body"),
+    ))
 
 
 def _emit_avatar(
@@ -624,8 +889,9 @@ def _emit_rigids_from_mesh2d(av: Avatar) -> str:
     ))
 
 
-def _emit_contactors(av: Avatar) -> list[str]:
+def _emit_contactors(av: Avatar, *, body_ref: str | None = None) -> list[str]:
     ident = _ident(av.avatar_id)
+    body_ref = body_ref or f"av_{ident}"
     lines: list[str] = []
     for index, contactor in enumerate(av.contactors):
         shape = contactor.get("shape")
@@ -702,15 +968,18 @@ def _emit_contactors(av: Avatar) -> list[str]:
         color = contactor.get("color", av.color)
         shift_arg = f", shift={shift!r}" if shift is not None else ""
         lines.append(
-            f"av_{ident}.addContactors(shape={shape!r}, color={color!r}{extra}{shift_arg})"
+            f"{body_ref}.addContactors(shape={shape!r}, color={color!r}{extra}{shift_arg})"
         )
     rigid_types = RIGID_AVATARS_2D | RIGID_AVATARS_3D | {AvatarType.EMPTY_AVATAR}
     if lines and av.avatar_type in rigid_types:
-        lines.append(f"av_{ident}.computeRigidProperties()")
+        lines.append(f"{body_ref}.computeRigidProperties()")
     return lines
 
 
-def _emit_population(pop: ParticlePopulation) -> str:
+def _emit_population(
+    pop: ParticlePopulation,
+    config: GranuloConfig | None = None,
+) -> str:
     fn_map = {
         AvatarType.RIGID_DISK: "rigidDisk",
         AvatarType.RIGID_SPHERE: "rigidSphere",
@@ -743,17 +1012,34 @@ def _emit_population(pop: ParticlePopulation) -> str:
         radius_arg = "r=float(_r)"
     ident = pop.population_id[:12].replace("-", "_")
     bodies_ref = _population_bodies_ref(pop)
-    return "\n".join([
+    lines = [
         f"# population {pop.population_id}  n={len(pop)}  {pop.avatar_type.value}",
+    ]
+    if config is not None and config.create_avatars:
+        prefix = f"_granulo_{ident}"
+        radii_in = f"{prefix}_radii"
+        lines.append(_emit_granulo_radii(config, variable=radii_in))
+        deposit_lines, centers_ref, radii_ref = _emit_granulo_deposit(
+            config, radii_in, prefix,
+        )
+        lines.extend(deposit_lines)
+    else:
+        centers_ref = f"centers_{ident}"
+        radii_ref = f"radii_{ident}"
+        lines.extend((
+            f"{centers_ref} = np.array({pop.centers.tolist()})",
+            f"{radii_ref} = np.array({pop.radii.tolist()})",
+        ))
+
+    lines.extend((
         f"{bodies_ref} = []",
-        f"centers_{ident} = np.array({pop.centers.tolist()})",
-        f"radii_{ident}   = np.array({pop.radii.tolist()})",
-        f"for _i, (_c, _r) in enumerate(zip(centers_{ident}, radii_{ident})):",
+        f"for _c, _r in zip({centers_ref}, {radii_ref}):",
         f"    _body = pre.{fn}({radius_arg}, center=_c, model=mod_{pop.model_name}, "
         f"material=mat_{pop.material_name}, color={pop.color!r}{extra})",
         f"    bodies.addAvatar(_body)",
         f"    {bodies_ref}.append(_body)",
-    ])
+    ))
+    return "\n".join(lines)
 
 
 def _emit_law(law: ContactLaw) -> str:
@@ -818,21 +1104,141 @@ def _pre_body_refs(
     return refs
 
 
-def _pre_group_refs(
+def _emit_group_members(
     project: Project,
     group_name: str,
     avatar_refs: dict[str, str],
 ) -> list[str]:
+    from .ids import parse_particle_id
+
     member_ids = list(project.avatar_groups.get(group_name, []))
     member_ids.extend(
-        population_id
-        for population_id in project.population_groups.get(group_name, [])
-        if population_id not in member_ids
+        member_id
+        for member_id in project.population_groups.get(group_name, [])
+        if member_id not in member_ids
     )
-    refs = _pre_body_refs(project, member_ids, avatar_refs)
-    if not refs:
-        raise ValueError(f"Post-processing target group {group_name!r} is empty.")
-    return refs
+    populations = {
+        population.population_id: population
+        for population in project.populations
+    }
+    avatars = {avatar.avatar_id: avatar for avatar in project.avatars}
+    batch_sizes: dict[str, int] = {}
+    for avatar_ref in avatar_refs.values():
+        batch_info = _avatar_batch_info(avatar_ref)
+        if batch_info is not None:
+            batch_name, batch_index = batch_info
+            batch_sizes[batch_name] = max(
+                batch_sizes.get(batch_name, 0), batch_index + 1,
+            )
+
+    group_ref = f"group_refs[{group_name!r}]"
+    lines: list[str] = []
+    index = 0
+    while index < len(member_ids):
+        member_id = member_ids[index]
+        population = populations.get(member_id)
+        if population is not None:
+            lines.append(
+                f"{group_ref}.extend({_population_bodies_ref(population)})"
+            )
+            index += 1
+            continue
+
+        particle = parse_particle_id(member_id)
+        if particle is not None and particle[0] in populations:
+            population = populations[particle[0]]
+            if not 0 <= particle[1] < len(population):
+                raise ValueError(
+                    f"Particle target {member_id!r} is outside its population."
+                )
+            lines.append(
+                f"{group_ref}.append("
+                f"{_population_bodies_ref(population)}[{particle[1]}])"
+            )
+            index += 1
+            continue
+
+        avatar = avatars.get(member_id)
+        if avatar is None:
+            raise ValueError(
+                f"Group {group_name!r} references unknown member {member_id!r}."
+            )
+        if _is_rigids_from_mesh2d(avatar):
+            lines.append(
+                f"{group_ref}.extend({_mesh_rigids_ref(avatar)})"
+            )
+            index += 1
+        else:
+            avatar_ref = avatar_refs.get(
+                member_id, f"av_{_ident(member_id)}",
+            )
+            batch_info = _avatar_batch_info(avatar_ref)
+            if batch_info is None:
+                lines.append(f"{group_ref}.append({avatar_ref})")
+                index += 1
+                continue
+
+            batch_name, batch_index = batch_info
+            batch_indices = [batch_index]
+            next_index = index + 1
+            while next_index < len(member_ids):
+                next_member_id = member_ids[next_index]
+                if (
+                    next_member_id in populations
+                    or parse_particle_id(next_member_id) is not None
+                ):
+                    break
+                next_avatar = avatars.get(next_member_id)
+                if next_avatar is None or _is_rigids_from_mesh2d(next_avatar):
+                    break
+                next_ref = avatar_refs.get(
+                    next_member_id, f"av_{_ident(next_member_id)}",
+                )
+                next_batch_info = _avatar_batch_info(next_ref)
+                if next_batch_info is None or next_batch_info[0] != batch_name:
+                    break
+                batch_indices.append(next_batch_info[1])
+                next_index += 1
+
+            if batch_indices == list(range(batch_sizes[batch_name])):
+                lines.append(f"{group_ref}.extend({batch_name})")
+            elif len(batch_indices) == 1:
+                lines.append(
+                    f"{group_ref}.append({batch_name}[{batch_indices[0]}])"
+                )
+            elif batch_indices == list(range(
+                batch_indices[0], batch_indices[-1] + 1,
+            )):
+                lines.append(
+                    f"{group_ref}.extend("
+                    f"{batch_name}[{batch_indices[0]}:{batch_indices[-1] + 1}])"
+                )
+            else:
+                lines.append(
+                    f"{group_ref}.extend("
+                    f"{batch_name}[i] for i in {tuple(batch_indices)!r})"
+                )
+            index = next_index
+    return lines
+
+
+def _avatar_batch_info(avatar_ref: str) -> tuple[str, int] | None:
+    if not avatar_ref.startswith("_avatar_batch_") or not avatar_ref.endswith("]"):
+        return None
+    batch_name, _, index = avatar_ref.rpartition("[")
+    try:
+        return batch_name, int(index[:-1])
+    except ValueError:
+        return None
+
+
+def _group_ref(project: Project, group_name: str) -> str:
+    if not (
+        project.avatar_groups.get(group_name)
+        or project.population_groups.get(group_name)
+    ):
+        raise ValueError(f"Group target {group_name!r} is empty or missing.")
+    return f"group_refs[{group_name!r}]"
 
 
 def _emit_postpro(
@@ -852,12 +1258,9 @@ def _emit_postpro(
             target_value if isinstance(target_value, (list, tuple))
             else [target_value]
         )
-        rigid_sets = [
-            _pre_group_refs(project, str(group_name), avatar_refs)
-            for group_name in group_names
-        ]
         rigid_sets_expr = "[" + ", ".join(
-            f"[{', '.join(refs)}]" for refs in rigid_sets
+            _group_ref(project, str(group_name))
+            for group_name in group_names
         ) + "]"
         kwargs.append(f"rigid_sets={rigid_sets_expr}")
     elif target_type in ("avatar", "group", "rigid_set"):
@@ -868,19 +1271,25 @@ def _emit_postpro(
                 or target_value in project.population_groups
             )
         ):
-            refs = _pre_group_refs(project, str(target_value), avatar_refs)
+            rigid_set = _group_ref(project, str(target_value))
+            kwargs.append(f"rigid_set={rigid_set}")
         elif isinstance(target_value, (list, tuple)):
             refs = _pre_body_refs(
                 project, [str(member_id) for member_id in target_value],
                 avatar_refs,
             )
+            if not refs:
+                raise ValueError(
+                    f"Post-processing target {target_value!r} has no bodies."
+                )
+            kwargs.append(f"rigid_set=[{', '.join(refs)}]")
         else:
             refs = _pre_body_refs(project, [str(target_value)], avatar_refs)
-        if not refs:
-            raise ValueError(
-                f"Post-processing target {target_value!r} has no bodies."
-            )
-        kwargs.append(f"rigid_set=[{', '.join(refs)}]")
+            if not refs:
+                raise ValueError(
+                    f"Post-processing target {target_value!r} has no bodies."
+                )
+            kwargs.append(f"rigid_set=[{', '.join(refs)}]")
     else:
         raise ValueError(
             f"Unsupported post-processing target type {cmd.target_type!r}."
@@ -899,20 +1308,16 @@ def _emit_dof(
             project, [str(op.target_value)], avatar_refs,
         )
     elif op.target_type == "group":
-        group_name = str(op.target_value)
-        ids = list(project.avatar_groups.get(group_name, []))
-        ids.extend(
-            population_id
-            for population_id in project.population_groups.get(group_name, [])
-            if population_id not in ids
+        group_ref = _group_ref(project, str(op.target_value))
+        params = ", ".join(
+            f"{k}={v!r}"
+            for k, v in op.parameters.items()
+            if k not in STUDIO_ONLY_KEYS
         )
-        if not ids:
-            raise ValueError(f"DOF target group {op.target_value!r} is empty.")
-        target_refs = _pre_body_refs(project, ids, avatar_refs)
-        if not target_refs:
-            raise ValueError(
-                f"DOF target group {op.target_value!r} has no bodies."
-            )
+        return (
+            f"for _body in {group_ref}:\n"
+            f"    _body.{op.operation_type}({params})"
+        )
     elif op.target_type == "color":
         color = str(op.target_value)
         target_refs = [

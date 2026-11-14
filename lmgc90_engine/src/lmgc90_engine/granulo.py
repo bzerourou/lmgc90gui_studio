@@ -216,9 +216,12 @@ def _call_deposit(pre, config: GranuloConfig) -> tuple[np.ndarray, np.ndarray]:
                 raise MaterializationError("pylmgc90.pre has no depositInSphere3D")
             R = float(p.get("r", p.get("R", 1.0)))
             try:
-                result = fn(radii_in, R)
+                result = fn(radii_in, R, [0.0, 0.0, 0.0])
             except TypeError:
-                result = fn(radii_in, radius=R)
+                try:
+                    result = fn(radii_in, R)
+                except TypeError:
+                    result = fn(radii_in, radius=R)
             return _parse_result(result, radii_in, dim=3)
 
         if ctype in ("cylinder3d", "depositincylinder3d", "cylinder"):
