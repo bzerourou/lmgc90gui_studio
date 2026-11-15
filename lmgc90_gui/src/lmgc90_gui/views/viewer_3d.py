@@ -41,6 +41,7 @@ from PyQt6.QtCore import pyqtSignal, Qt
 from lmgc90_core import Avatar, ParticlePopulation
 from lmgc90_core.types import AvatarType, AvatarOrigin
 from lmgc90_engine.avatar_factory import resolve_mesh_filepath
+from .results_bar import ResultsBar
 
 
 # ============================================================================
@@ -1362,6 +1363,10 @@ class Viewer3D(QWidget):
         self.plotter.enable_anti_aliasing()
         root.addWidget(self.plotter.interactor, stretch=1)
 
+        # ── Barre résultats (pas de temps) ────────────────────────────────
+        self._results = ResultsBar(self)
+        root.addWidget(self._results)
+
         # ── Barre d'état ───────────────────────────────────────────────────
         self._status_label = QLabel("Ready")
         self._status_label.setStyleSheet(
@@ -2202,6 +2207,8 @@ class Viewer3D(QWidget):
         self._reset_camera()
 
     def clear(self):
+        if getattr(self, "_results", None) is not None:
+            self._results.on_cleared()
         self.plotter.clear()
         self.actors.clear()
         self.avatars_data.clear()
