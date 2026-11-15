@@ -169,12 +169,20 @@ class ResultsBar(QWidget):
     def _refresh_series(self) -> None:
         if self.series is None:
             return
+        current = self.slider.value()
+        follow_latest = current == self.slider.maximum()
         try:
             n = self.series.reload()
         except Exception:
             return                            # fichier en cours d'écriture
-        if n - 1 != self.slider.maximum():
-            self.slider.setMaximum(n - 1)
+        latest = n - 1
+        if latest != self.slider.maximum():
+            self.slider.setMaximum(latest)
+        target = latest if follow_latest else min(current, latest)
+        if self.slider.value() != target:
+            self.slider.setValue(target)
+        elif target == current:
+            self.show_frame(target)
 
     # ------------------------------------------------------------ appelé par clear()
     def on_cleared(self) -> None:
