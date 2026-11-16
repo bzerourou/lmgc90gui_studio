@@ -8,6 +8,18 @@ import operator
 import types
 from typing import Any
 
+from .eval_context import (
+    AvatarProxy,
+    _AvatarList,
+    _GroupMap,
+    _MaterialMap,
+    _MaterialProxy,
+    _ModelMap,
+    _ModelProxy,
+    _NodeProxy,
+    _NodesView,
+)
+
 _MAX_POWER_EXPONENT = 1000
 _MAX_POWER_BITS = 100_000
 
@@ -89,6 +101,62 @@ _ALLOWED_CONTEXT_FUNCS = frozenset({
     "avatars_by_type",
     "avatars_by_origin",
 })
+_SAFE_PROXY_TYPES = frozenset({
+    AvatarProxy,
+    _AvatarList,
+    _GroupMap,
+    _MaterialMap,
+    _MaterialProxy,
+    _ModelMap,
+    _ModelProxy,
+    _NodeProxy,
+    _NodesView,
+})
+_SAFE_ATTRIBUTES = {
+    AvatarProxy: frozenset({
+        "index", "center", "x", "y", "z", "radius", "color", "material_name",
+        "model_name", "avatar_type", "origin", "generation_type", "is_hollow",
+        "nb_vertices", "vertices", "axis", "contactors", "wall_params",
+        "mesh_params", "brick_lx", "brick_ly", "brick_lz", "nodes",
+    }),
+    _NodeProxy: frozenset({"coor"}),
+    _MaterialProxy: frozenset({"name", "density", "material_type"}),
+    _ModelProxy: frozenset({"name", "physics", "element", "dimension"}),
+}
+
+
+def _is_safe_eval_value(value: Any) -> bool:
+    value_type = type(value)
+    if value_type in (type(None), bool, int, float, complex, str, bytes):
+        return True
+    if value_type in (list, tuple):
+        return all(_is_safe_eval_value(item) for item in value)
+    if value_type is dict:
+        return all(
+            _is_safe_eval_value(key) and _is_safe_eval_value(item)
+            for key, item in value.items()
+        )
+    if value_type in _SAFE_PROXY_TYPES:
+        return True
+    return (
+        value_type.__module__ == "numpy"
+        and isinstance(value, numbers.Number)
+    )
+
+
+def _safe_attribute(obj: Any, name: str) -> Any:
+    allowed = _SAFE_ATTRIBUTES.get(type(obj), ())
+    is_material_property = (
+        type(obj) is _MaterialProxy
+        and type(obj._m.properties) is dict
+        and name in obj._m.properties
+    )
+    if name not in allowed and not is_material_property:
+        raise ValueError("accès à cet attribut non autorisé")
+    value = getattr(obj, name)
+    if callable(value) or not _is_safe_eval_value(value):
+        raise ValueError("valeur d'attribut non autorisée")
+    return value
 
 
 class SafeEvaluator:
@@ -110,7 +178,12 @@ def _eval(node: ast.AST, ctx: dict[str, Any]) -> Any:
     if isinstance(node, ast.Name):
         if node.id not in ctx:
             raise NameError(node.id)
-        return ctx[node.id]
+        value = ctx[node.id]
+        if node.id in _ALLOWED_FUNCS or node.id in _ALLOWED_CONTEXT_FUNCS:
+            return value
+        if not _is_safe_eval_value(value):
+            raise ValueError("valeur de contexte non autorisée")
+        return value
     if isinstance(node, ast.BinOp):
         op = _BIN.get(type(node.op))
         if op is None:
@@ -163,7 +236,10 @@ def _eval(node: ast.AST, ctx: dict[str, Any]) -> Any:
             raise ValueError("Opération non autorisée : Call")
         args = [_eval(a, ctx) for a in node.args]
         kwargs = {kw.arg: _eval(kw.value, ctx) for kw in node.keywords if kw.arg}
-        return fn(*args, **kwargs)
+        value = fn(*args, **kwargs)
+        if not _is_safe_eval_value(value):
+            raise ValueError("résultat de fonction non autorisé")
+        return value
     if isinstance(node, ast.Attribute):
         if node.attr.startswith("_"):
             raise ValueError("Opération non autorisée : private attr")
@@ -172,14 +248,16 @@ def _eval(node: ast.AST, ctx: dict[str, Any]) -> Any:
             raise ValueError("accès aux modules non autorisé")
         if node.attr in {"format", "format_map"}:
             raise ValueError("format de chaîne non autorisé")
-        value = getattr(obj, node.attr)
-        if callable(value):
-            raise ValueError("accès aux attributs appelables non autorisé")
-        return value
+        return _safe_attribute(obj, node.attr)
     if isinstance(node, ast.Subscript):
         obj = _eval(node.value, ctx)
+        if not _is_safe_eval_value(obj):
+            raise ValueError("indexation d'un objet non autorisée")
         key = _eval(node.slice, ctx)
-        return obj[key]
+        value = obj[key]
+        if not _is_safe_eval_value(value):
+            raise ValueError("valeur indexée non autorisée")
+        return value
     if isinstance(node, ast.List):
         return [_eval(e, ctx) for e in node.elts]
     if isinstance(node, ast.Tuple):
@@ -206,8 +284,9 @@ def _eval_listcomp(node: ast.ListComp | ast.GeneratorExp, ctx: dict[str, Any]) -
         raise ValueError("cible de for simple uniquement")
     name = gen.target.id
     out = []
+    local = ctx.copy()
     for item in iterable:
-        local = {**ctx, name: item}
+        local[name] = item
         if all(_eval(c, local) for c in gen.ifs):
             out.append(_eval(node.elt, local))
     return out

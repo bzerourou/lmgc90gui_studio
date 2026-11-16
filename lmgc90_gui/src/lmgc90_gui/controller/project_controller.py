@@ -18,6 +18,7 @@ from lmgc90_core import (
     Avatar,
     ContactLaw,
     DOFOperation,
+    ForLoop,
     GranuloConfig,
     MasonryConfig,
     Loop,
@@ -29,16 +30,6 @@ from lmgc90_core import (
     VisibilityRule,
     pre,
 )
-try:
-    from lmgc90_core import ForLoop
-except ImportError:  # pragma: no cover — outdated editable install
-    try:
-        from lmgc90_core.entities import ForLoop
-    except ImportError as exc:
-        raise ImportError(
-            "lmgc90_core is outdated (missing ForLoop). Reinstall:\n"
-            "  pip install -e .\\lmgc90_core -e .\\lmgc90_engine -e \".\\lmgc90_gui[qt]\""
-        ) from exc
 from lmgc90_core.errors import LMGC90Error, ValidationError
 from lmgc90_engine import EngineSession
 from lmgc90_engine.errors import PylmgcNotAvailable
@@ -84,6 +75,10 @@ class ProjectController(_QObject):
     @property
     def session(self) -> EngineSession:
         return self._session
+
+    def compatibility_catalog_source(self) -> str:
+        from lmgc90_engine.schema import compatibility_catalog_source
+        return compatibility_catalog_source()
 
     @property
     def filepath(self) -> Optional[Path]:
@@ -158,7 +153,7 @@ class ProjectController(_QObject):
         """
         if not callable(builder):
             raise TypeError("apply_scene expects a callable(project) -> None")
-        prev = getattr(self._project, "_on_conflict", "error")
+        prev = self._project._on_conflict
         existing_granulo_ids = {
             config.generation_id for config in self._project.granulo
         }

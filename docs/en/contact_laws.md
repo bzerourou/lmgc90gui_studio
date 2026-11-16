@@ -12,15 +12,21 @@ A contact law describes the mechanical response of a contactor pair. The visibil
 4. Fill in the **Parameters** fields. They change according to the selected law.
 5. Click **Add** and check that the law appears in the list.
 
-The fields shown are the required `pylmgc90.pre.tact_behav` options for the selected law. Use the family selector to filter the list without removing access to the other laws. Parameters are passed using their exact LMGC90 names; they are numerical and must be set for the physical problem.
+The fields shown come from the compatibility schema for the selected law. A field without a default is required; fields with a default are pre-filled. Use the family selector to filter the list without removing access to other laws. Parameters are passed using their exact LMGC90 names and must be chosen for the physical problem.
 
-## Law and parameter catalogue
+## Fallback law and parameter catalogue
 
-The catalogue below corresponds to the 53 laws in the `pylmgc90` version used as the application reference. The compatible contactor-pair family is shown for each law; consult the LMGC90 documentation for physical assumptions and valid parameter ranges.
+The table below documents the 53 entries in the core `ContactLawType`
+fallback catalog and their fallback parameter schemas. When compatibility
+data for the installed pylmgc90 version is available, the application uses
+that data for the law list, families, and parameter fields instead; the
+runtime list can therefore differ. The family headings describe the core
+fallback grouping. Consult the LMGC90 documentation for physical assumptions
+and valid parameter ranges.
 
 ### Rigid / rigid
 
-| Law | Required parameters |
+| Law | Fallback parameter fields |
 |---|---|
 | `IQS_CLB` | `fric` |
 | `IQS_CLB_g0` | `fric` |
@@ -44,7 +50,7 @@ The catalogue below corresponds to the 53 laws in the `pylmgc90` version used as
 
 ### Any / deformable (`any/defo`)
 
-| Law | Required parameters |
+| Law | Fallback parameter fields |
 |---|---|
 | `GAP_SGR_CLB`, `GAP_SGR_CLB_g0`, `VEL_SGR_CLB` | `fric` |
 | `GAP_SGR_STICK` | none |
@@ -67,7 +73,7 @@ The catalogue below corresponds to the 53 laws in the `pylmgc90` version used as
 
 ### Point / point
 
-| Law | Required parameters |
+| Law | Fallback parameter fields |
 |---|---|
 | `ELASTIC_WIRE`, `ELASTIC_ROD` | `stiffness`, `prestrain` |
 | `BRITTLE_ELASTIC_WIRE` | `stiffness`, `prestrain`, `Fmax` |
@@ -76,13 +82,13 @@ The catalogue below corresponds to the 53 laws in the `pylmgc90` version used as
 
 ### Any / any
 
-| Law | Required parameters |
+| Law | Fallback parameter fields |
 |---|---|
 | `COUPLED_DOF`, `NORMAL_COUPLED_DOF` | none |
 | `ELASTIC_REPELL_CLB`, `ELASTIC_REPELL_CLB_g0`, `ELASTIC_REPELL_CLB_adapt` | `stiffness`, `fric` |
 | `VISCO_ELASTIC_REPELL_CLB` | `stiffness`, `viscosity`, `fric` |
 
-Laws grouped on the same row share the same options. Parameter names are case-sensitive (`Wthk`, `Fmax`, `Gc1`, etc.) and must be preserved exactly.
+Laws grouped on the same row share the same fallback options. Parameter names are case-sensitive (`Wthk`, `Fmax`, `Gc1`, etc.) and must be preserved exactly.
 
 ## Edit, delete and associate a law
 

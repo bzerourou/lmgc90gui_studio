@@ -13,17 +13,12 @@ from lmgc90_core import Avatar, Material, MaterialType, Model, ValidationError, 
 from lmgc90_core.types import (
     AvatarOrigin,
     AvatarType,
-    ISOTROPIC_FIELDS,
-    MATERIAL_PROPERTY_CHOICES,
-    MATERIAL_PROPERTY_SCHEMA,
-    ORTHOTROPIC_FIELDS_2D,
-    ORTHOTROPIC_FIELDS_3D,
+    ELEMENTS_BY_PHYSICS,
     material_type_name,
 )
+from lmgc90_engine.schema import material_schema_catalog, model_schema_catalog
 
 # ---------------------------------------------------------------------------
-_ELEMENTS_2D = ["T3xxx", "Q4xxx", "T6xxx", "Q8xxx", "Q9xxx"]
-_ELEMENTS_3D = ["H8xxx", "H20xx", "TE4xx", "TE10x", "PRI6x"]
 _ELEMENT_INFO = {
     "T3xxx": "Triangle linéaire à 3 nœuds",
     "Q4xxx": "Quadrangle bilinéaire à 4 nœuds",
@@ -36,6 +31,7 @@ _ELEMENT_INFO = {
     "TE10x": "Tétraèdre quadratique à 10 nœuds",
     "PRI6x": "Prisme à 6 nœuds",
 }
+# These are mesh-generator tokens, not finite-element model element names.
 _MESH_TYPES_2D = ["2T3", "Q4", "4T3", "Q8"]
 _MESH_TYPES_3D = ["H8"]
 _ANISOTROPY = ["iso__", "ortho"]
@@ -43,30 +39,10 @@ _KINEMATIC = ["small", "large"]
 _FORMULATION = ["UpdtL", "TotaL"]
 _MASS_STORAGE = ["lump_", "coher"]
 
-_MAT_DEFAULTS = {
-    "ELAS": {"elas": "standard", "young": 70e9, "nu": 0.3, "anisotropy": "isotropic"},
-    "ELAS_DILA": {
-        "elas": "standard", "young": 70e9, "nu": 0.3, "anisotropy": "isotropic",
-        "dilatation": 1e-5,
-    },
-    "VISCO_ELAS": {
-        "elas": "standard", "young": 1.17e11, "nu": 0.35, "anisotropy": "isotropic",
-        "viscosity": 1e6,
-    },
-    "ELAS_PLAS": {
-        "elas": "standard", "young": 1.17e11, "nu": 0.35, "anisotropy": "isotropic",
-        "sigc": 3e8, "hard": 0.0,
-    },
-    "THERMO_ELAS": {
-        "elas": "standard", "young": 70e9, "nu": 0.3, "anisotropy": "isotropic",
-        "dilatation": 1e-5, "conductivity": 50.0, "capacity": 500.0,
-    },
-    "PORO_ELAS": {
-        "elas": "standard", "young": 70e9, "nu": 0.3, "anisotropy": "isotropic",
-        "permeability": 1e-12, "biot": 1.0,
-    },
-}
-_ELASTIC_TYPES = list(_MAT_DEFAULTS.keys())
+_WIZARD_MATERIAL_TYPES = frozenset({
+    "ELAS", "ELAS_DILA", "VISCO_ELAS", "ELAS_PLAS",
+    "THERMO_ELAS", "PORO_ELAS",
+})
 _GEOM_2D = ["Rectangle", "Disque", "Fichier externe"]
 _GEOM_3D = ["Boîte (H8)", "Sphère", "Cylindre", "Fichier externe"]
 
@@ -136,6 +112,12 @@ def create_mesh_wizard(controller, parent=None):
             self.setTitle("Matériau")
             self.setSubTitle("Créer un matériau élastique ou en réutiliser un")
             lay = QVBoxLayout(self)
+            self.material_schema = material_schema_catalog()
+            self.material_types = tuple(
+                material_type
+                for material_type in self.material_schema["types"]
+                if material_type in _WIZARD_MATERIAL_TYPES
+            )
             self.create_mat = QCheckBox("Créer un nouveau matériau")
             self.create_mat.setChecked(True)
             lay.addWidget(self.create_mat)
@@ -147,7 +129,7 @@ def create_mesh_wizard(controller, parent=None):
             self.mat_name = QLineEdit("ELAS1")
             self.mat_name.setMaxLength(5)
             self.mat_type = QComboBox()
-            self.mat_type.addItems(_ELASTIC_TYPES)
+            self.mat_type.addItems(self.material_types)
             self.density = QDoubleSpinBox()
             self.density.setRange(1, 1e6)
             self.density.setValue(2500.0)
@@ -167,8 +149,7 @@ def create_mesh_wizard(controller, parent=None):
         def initializePage(self):
             mats = [
                 m.name for m in self.wizard().controller.project.materials
-                if material_type_name(m.material_type) in _ELASTIC_TYPES
-                or material_type_name(m.material_type) == "ELAS"
+                if material_type_name(m.material_type) in self.material_types
             ]
             self.existing.clear()
             if mats:
@@ -191,11 +172,14 @@ def create_mesh_wizard(controller, parent=None):
                     item.widget().deleteLater()
             self._prop_widgets.clear()
             key = self.mat_type.currentText()
-            defaults = dict(_MAT_DEFAULTS.get(key, {}))
-            schema = MATERIAL_PROPERTY_SCHEMA.get(key, ())
-            for name, schema_default, kind in schema:
-                default = defaults.get(name, schema_default)
-                choices = MATERIAL_PROPERTY_CHOICES.get(name)
+            schema = self.material_schema["properties"].get(key, ())
+            type_choices = self.material_schema.get(
+                "choices_by_type", {},
+            ).get(key, {})
+            for name, default, kind in schema:
+                choices = type_choices.get(
+                    name, self.material_schema["choices"].get(name),
+                )
                 if name == "anisotropy" and key != "ELAS":
                     choices = ("isotropic",)
                 if choices:
@@ -213,9 +197,10 @@ def create_mesh_wizard(controller, parent=None):
                     w.setDecimals(6)
                     if name.startswith(("young", "G", "sigc")):
                         w.setDecimals(4)
-                    w.setValue(float(default))
+                    if default is not None:
+                        w.setValue(float(default))
                 else:
-                    w = QLineEdit(str(default))
+                    w = QLineEdit("" if default is None else str(default))
                 self.prop_form.addRow(name, w)
                 self._prop_widgets[name] = w
 
@@ -233,17 +218,17 @@ def create_mesh_wizard(controller, parent=None):
                 anisotropy.currentText().strip().lower() in ("orthotropic", "ortho")
                 if anisotropy is not None else False
             )
+            orthotropic_fields = self.material_schema["orthotropic_fields"]
             dimension_fields = set(
-                ORTHOTROPIC_FIELDS_3D
-                if self._dimension() == 3
-                else ORTHOTROPIC_FIELDS_2D
+                orthotropic_fields.get(self._dimension(), ())
             )
-            all_orthotropic_fields = set(ORTHOTROPIC_FIELDS_3D)
+            all_orthotropic_fields = set(orthotropic_fields.get(3, ()))
+            isotropic_fields = set(self.material_schema["isotropic_fields"])
 
             for name, widget in self._prop_widgets.items():
                 if name == "anisotropy":
                     visible = True
-                elif name in ISOTROPIC_FIELDS:
+                elif name in isotropic_fields:
                     visible = not orthotropic
                 elif name in all_orthotropic_fields:
                     visible = orthotropic and name in dimension_fields
@@ -295,7 +280,8 @@ def create_mesh_wizard(controller, parent=None):
             self.mod_name = QLineEdit("femxx")
             self.mod_name.setMaxLength(5)
             self.physics = QComboBox()
-            self.physics.addItems(["MECAx", "MULTI", "THERx", "POROx"])
+            self.model_schema = model_schema_catalog(ELEMENTS_BY_PHYSICS)
+            self.physics.addItems(list(self.model_schema))
             self.element = QComboBox()
             self.element_info = QLabel("")
             self.anisotropy = QComboBox(); self.anisotropy.addItems(_ANISOTROPY)
@@ -311,6 +297,7 @@ def create_mesh_wizard(controller, parent=None):
             form.addRow("Formulation", self.formulation)
             form.addRow("Mass storage", self.mass)
             lay.addLayout(form)
+            self.physics.currentTextChanged.connect(self._refresh_elements)
             self.element.currentTextChanged.connect(
                 lambda t: self.element_info.setText(_ELEMENT_INFO.get(t, ""))
             )
@@ -319,18 +306,30 @@ def create_mesh_wizard(controller, parent=None):
 
         def initializePage(self):
             dim = self.wizard().page(MeshWizard.PAGE_DIM).dimension()
-            elems = _ELEMENTS_2D if dim == 2 else _ELEMENTS_3D
-            self.element.clear()
-            self.element.addItems(elems)
+            self._refresh_elements()
+            elements_for_dimension = {
+                element
+                for physics_schema in self.model_schema.values()
+                for element in physics_schema.get(
+                    "elements_by_dimension", {},
+                ).get(str(dim), ())
+            }
             models = [
                 m.name for m in self.wizard().controller.project.models
-                if m.dimension == dim and m.element in (set(_ELEMENTS_2D) | set(_ELEMENTS_3D))
+                if m.dimension == dim and m.element in elements_for_dimension
             ]
             self.existing.clear()
             if models:
                 self.existing.addItems(models)
             else:
                 self.existing.addItem(f"(Aucun modèle {dim}D)")
+
+        def _refresh_elements(self, *_a):
+            dim = self.wizard().page(MeshWizard.PAGE_DIM).dimension()
+            physics_schema = self.model_schema.get(self.physics.currentText(), {})
+            elements = physics_schema.get("elements_by_dimension", {})
+            self.element.clear()
+            self.element.addItems(list(elements.get(str(dim), ())))
 
         def _toggle(self, on: bool):
             for w in (self.mod_name, self.physics, self.element,

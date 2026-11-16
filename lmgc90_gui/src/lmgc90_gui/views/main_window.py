@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Optional
 
 from lmgc90_gui import __version__ as APP_VERSION
-from lmgc90_engine.schema import compatibility_catalog_source
 
 from ..controller.project_controller import ProjectController
 from ..controller.signals import qt_available
@@ -313,7 +312,7 @@ def create_main_window(controller: Optional[ProjectController] = None):
         def _update_status(self) -> None:
             p = self.controller.project
             n_vars = len(p.dynamic_vars)
-            source = compatibility_catalog_source()
+            source = self.controller.compatibility_catalog_source()
             self.statusBar().showMessage(
                 f"📁 {p.name}  ·  {p.dimension}D  ·  🔵 bodies={p.n_bodies}  ·  "
                 f"𝑥 vars={n_vars}  ·  "

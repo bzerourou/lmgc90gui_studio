@@ -4,32 +4,10 @@ Architecture: pure core. No Qt. No pylmgc90.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from .project import Project
-from .compute_script import (
-    default_routines,
-    generate_command_script,
-    infer_chipy_contact_routines,
-)
-
-# Backward-compatible defaults (subset); full defaults live in ComputeScriptGenerator
-_DEFAULTS: dict[str, Any] = {
-    "dt": 1e-3,
-    "nb_steps": 1000,
-    "theta": 0.5,
-    "tol": 1.666e-4,
-    "relax": 1.0,
-    "norm": "Quad ",
-    "gs_it1": 50,
-    "gs_it2": 1000, 
-    "solver_type": "Stored_Delassus_Loops         ",
-    "freq_write": 50,
-    "freq_display": 50,
-    "dimension": None,
-    "deformable": False,
-    "disable_log": True,
-}
+from .compute_script import generate_command_script
 
 
 def emit_chipy(project: Project, **params: Any) -> str:
@@ -39,8 +17,7 @@ def emit_chipy(project: Project, **params: Any) -> str:
     ``vis_entries``, ``use_restart``, …). Unknown keys are ignored by the
     generator defaults merge.
     """
-    p = dict(_DEFAULTS)
-    p.update({k: v for k, v in params.items() if v is not None})
+    p = {k: v for k, v in params.items() if v is not None}
     if p.get("dimension") is None:
         p["dimension"] = project.dimension
 

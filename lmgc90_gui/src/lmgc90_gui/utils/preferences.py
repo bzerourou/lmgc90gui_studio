@@ -11,23 +11,25 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from lmgc90_core import CHIPY_DEFAULTS
+
 
 @dataclass
 class Preferences:
     # --- computation (chipy defaults) ---
-    dt: float = 1e-3
-    nb_steps: int = 1000
-    theta: float = 0.5
-    tol: float = 1.666e-4
-    relax: float = 1.0
-    gs_it1: int = 50
-    gs_it2: int = 1000
-    norm: str = "Quad "
-    deformable: bool = False
-    disable_log: bool = True
-    freq_write: int = 50
-    freq_display: int = 50
-    solver_type: str = "Stored_Delassus_Loops         "
+    dt: float = CHIPY_DEFAULTS["dt"]
+    nb_steps: int = CHIPY_DEFAULTS["nb_steps"]
+    theta: float = CHIPY_DEFAULTS["theta"]
+    tol: float = CHIPY_DEFAULTS["tol"]
+    relax: float = CHIPY_DEFAULTS["relax"]
+    gs_it1: int = CHIPY_DEFAULTS["gs_it1"]
+    gs_it2: int = CHIPY_DEFAULTS["gs_it2"]
+    norm: str = CHIPY_DEFAULTS["norm"]
+    deformable: bool = CHIPY_DEFAULTS["deformable"]
+    disable_log: bool = CHIPY_DEFAULTS["disable_log"]
+    freq_write: int = CHIPY_DEFAULTS["freq_write"]
+    freq_display: int = CHIPY_DEFAULTS["freq_display"]
+    solver_type: str = CHIPY_DEFAULTS["solver_type"]
     chipy_options: dict[str, Any] = field(default_factory=dict)
 
     # --- environment ---

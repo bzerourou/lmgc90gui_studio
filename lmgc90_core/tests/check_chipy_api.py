@@ -22,7 +22,6 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-DEFAULT_DIALOG = Path("lmgc90_gui/src/lmgc90_gui/dialogs/chipy_routines_dialog.py")
 CATALOGS = ("_INSP2D_FUNCS", "_INSP3D_FUNCS", "_INSPI_FUNCS", "_SET_FUNCS")
 DET2D = ("CLALp", "CLJCx", "DKALp", "DKDKL", "DKDKx", "DKJCx", "DKKDx", "DKPLx",
          "P2P2L", "PLALp", "PLJCx", "PLPLx", "PTPT2")
@@ -62,17 +61,18 @@ def load_chipy():
         return None
 
 
-def load_catalogs(path: Path) -> dict[str, list[tuple]]:
-    """Lit les catalogues de la classe ChipyRoutinesDialog SANS importer PyQt6."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    out: dict[str, list[tuple]] = {}
-    for cls in (n for n in tree.body if isinstance(n, ast.ClassDef)):
-        for node in cls.body:
-            if (isinstance(node, ast.Assign) and len(node.targets) == 1
-                    and isinstance(node.targets[0], ast.Name)
-                    and node.targets[0].id in CATALOGS):
-                out[node.targets[0].id] = list(ast.literal_eval(node.value))
-    return out
+def load_catalogs() -> dict[str, list[tuple]]:
+    """Load routine metadata from the headless core, without importing Qt."""
+    from lmgc90_core.chipy_catalogs import (
+        INSP2D_FUNCS, INSP3D_FUNCS, INSPI_FUNCS, SET_FUNCS,
+    )
+
+    return {
+        "_INSP2D_FUNCS": INSP2D_FUNCS,
+        "_INSP3D_FUNCS": INSP3D_FUNCS,
+        "_INSPI_FUNCS": INSPI_FUNCS,
+        "_SET_FUNCS": SET_FUNCS,
+    }
 
 
 def chipy_names_in(source: str) -> Counter:
@@ -101,13 +101,10 @@ def real_arity(fn) -> int | None:
 
 
 # --------------------------------------------------------------------------
-def check_catalogs(chipy, path: Path) -> dict[str, list[tuple]]:
+def check_catalogs(chipy) -> dict[str, list[tuple]]:
     global uninspectable_arities
-    print(f"== 1. Catalogues du dialogue ({path})")
-    if not path.is_file():
-        bad(f"fichier introuvable : {path} (utilisez --dialog)")
-        return {}
-    cats = load_catalogs(path)
+    print("== 1. Catalogues Chipy de lmgc90_core")
+    cats = load_catalogs()
     for name in CATALOGS:
         entries = cats.get(name, [])
         print(f" -- {name}: {len(entries)} entrées")
@@ -304,7 +301,6 @@ def show(chipy, names: list[str]) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dialog", type=Path, default=DEFAULT_DIALOG)
     ap.add_argument("--script", action="append", default=[], help="command.py à tester (répétable)")
     ap.add_argument("--show", nargs="*", help="affiche signature/doc/source de ces noms chipy")
     ap.add_argument("--no-generate", action="store_true", help="saute l'étape 2")
@@ -314,7 +310,7 @@ def main() -> int:
     if args.show is not None:
         show(chipy, args.show)
         return 0
-    cats = check_catalogs(chipy, args.dialog)
+    cats = check_catalogs(chipy)
     if not args.no_generate:
         check_generated(chipy, cats)
     if args.script:

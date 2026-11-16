@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal, Qt
 
 from lmgc90_core import Avatar, ParticlePopulation
+from lmgc90_core.ids import parse_particle_id
 from lmgc90_core.types import AvatarType, AvatarOrigin
 from lmgc90_engine.avatar_factory import resolve_mesh_filepath
 from .results_bar import ResultsBar
@@ -1016,22 +1017,6 @@ def _apply_avatar_dofs(mesh: pv.PolyData, avatar: Avatar, controller) -> pv.Poly
 
 
 
-def _expand_renderables(renderables) -> List[Tuple[int, Avatar]]:
-    """Transforme les avatars et les populations en une séquence d'avatars rendables.
-
-    Coûteux pour les grandes populations — à réserver aux DOF / sélection,
-    pas au rendu massif (voir `_split_renderables` + `_add_population_glyph`).
-    """
-    expanded: List[Tuple[int, Avatar]] = []
-    for item in renderables or []:
-        if isinstance(item, ParticlePopulation):
-            for i in range(len(item)):
-                expanded.append((len(expanded), item.as_avatar_view(i)))
-        elif isinstance(item, Avatar):
-            expanded.append((len(expanded), item))
-    return expanded
-
-
 def _split_renderables(renderables):
     """Sépare avatars individuels et ParticlePopulation (sans expansion)."""
     avatars: List[Avatar] = []
@@ -1068,6 +1053,53 @@ def _population_color(pop: ParticlePopulation, color_mode: str) -> str:
         h = hash(pop.material_name) & 0xFFFFFF
         return '#{:06x}'.format(h | 0x404040)
     return _lmgc_color(pop.color)
+
+
+def _renderable_at_index(renderables, index):
+    if not isinstance(index, int) or index < 0:
+        return None, None
+    for item in renderables or []:
+        if isinstance(item, ParticlePopulation):
+            item_count = len(item)
+        elif isinstance(item, Avatar):
+            item_count = 1
+        else:
+            item_count = 0
+        if index < item_count:
+            return item, index
+        index -= item_count
+    return None, None
+
+
+def _population_target_indices(
+    target_type, target_value, state, population, renderable_order=None,
+):
+    if target_type == 'avatar':
+        if isinstance(target_value, int):
+            item, index = _renderable_at_index(renderable_order, target_value)
+            if item is population:
+                return np.asarray([index], dtype=np.intp)
+            return np.empty(0, dtype=np.intp)
+        values = [str(target_value)]
+    elif target_type == 'group':
+        group_name = str(target_value)
+        values = [
+            *(state.avatar_groups.get(group_name, []) or []),
+            *(state.population_groups.get(group_name, []) or []),
+        ]
+        values = [str(value) for value in values]
+    else:
+        return np.empty(0, dtype=np.intp)
+
+    indices = []
+    for value in values:
+        if value == population.population_id:
+            return np.arange(len(population), dtype=np.intp)
+        particle = parse_particle_id(value)
+        if particle is not None and particle[0] == population.population_id:
+            if 0 <= particle[1] < len(population):
+                indices.append(particle[1])
+    return np.asarray(sorted(set(indices)), dtype=np.intp)
 
 
 def _glyph_source(avatar_type: AvatarType, is_2d: bool) -> pv.PolyData:
@@ -1214,6 +1246,9 @@ class Viewer3D(QWidget):
         self._pylmgc90_mode  = False       # True = rendu via visuAvatars
         self._population_counts = {}       # actor_idx → N grains (rendu batch)
         self._batch_meta = {}              # actor_idx → {centers, radii, items}
+        self._overlay_avatars = []
+        self._rendered_populations = []
+        self._renderable_order = []
         self._last_pick_pos = None         # world coords du dernier pick
         self._setup_ui()
 
@@ -1644,7 +1679,12 @@ class Viewer3D(QWidget):
     # Rendu DOF
     # =========================================================================
 
-    def _draw_dof_hints(self, avatars: List[Avatar]):
+    def _draw_dof_hints(
+        self,
+        avatars: List[Avatar],
+        populations: List[ParticlePopulation] | None = None,
+        renderable_order=None,
+    ):
         """Marqueurs DOF enrichis : direction (X/Y/Z), type, signe.
 
         Couleurs axes : X rouge · Y vert · Z bleu
@@ -1669,6 +1709,11 @@ class Viewer3D(QWidget):
             if op.target_type == 'avatar':
                 tv = op.target_value
                 if isinstance(tv, int):
+                    item, _ = _renderable_at_index(renderable_order, tv)
+                    if isinstance(item, Avatar):
+                        return [item]
+                    if renderable_order is not None:
+                        return []
                     return [bodies[tv]] if 0 <= tv < len(bodies) else []
                 av = id_map.get(str(tv))
                 return [av] if av is not None else []
@@ -1800,7 +1845,168 @@ class Viewer3D(QWidget):
                             color = axis_color
                         _add(mesh, color)
 
+        self._draw_population_dof_hints(
+            populations or [], ops, state, _add, renderable_order,
+        )
         self.plotter.render()
+
+    def _draw_population_dof_hints(
+        self, populations, operations, state, add, renderable_order,
+    ):
+        def _add_glyphs(centers, scales, prototype, color, opacity=0.92):
+            cloud = pv.PolyData(_centers_as_3d(centers))
+            cloud["scale"] = np.asarray(scales, dtype=np.float64)
+            add(
+                cloud.glyph(scale="scale", geom=prototype, orient=False),
+                color,
+                opacity,
+            )
+
+        for operation in operations:
+            params = dict(operation.parameters or {})
+            op_type = operation.operation_type
+
+            for population in populations:
+                indices = _population_target_indices(
+                    operation.target_type,
+                    operation.target_value,
+                    state,
+                    population,
+                    renderable_order,
+                )
+                if not indices.size:
+                    continue
+
+                centers = _centers_as_3d(population.centers[indices]).copy()
+                radii = np.asarray(population.radii[indices], dtype=np.float64)
+                scales = np.maximum(0.05, radii * 0.9)
+                for previous in operations:
+                    if previous is operation:
+                        break
+                    if previous.operation_type != 'translate':
+                        continue
+                    moved = _population_target_indices(
+                        previous.target_type,
+                        previous.target_value,
+                        state,
+                        population,
+                        renderable_order,
+                    )
+                    if not moved.size:
+                        continue
+                    mask = np.isin(indices, moved)
+                    if not mask.any():
+                        continue
+                    previous_params = previous.parameters or {}
+                    offset = np.array([
+                        float(previous_params.get('dx', 0) or 0),
+                        float(previous_params.get('dy', 0) or 0),
+                        float(previous_params.get('dz', 0) or 0),
+                    ])
+                    centers[mask] += offset
+
+                if op_type == 'rotate':
+                    axis = params.get('axis') or [0, 0, 1]
+                    prototype = _rotate_hint_mesh(
+                        [0, 0, 0], axis, scale=1.2,
+                    )
+                    _add_glyphs(
+                        centers, scales, prototype,
+                        _DOF_TYPE_COLORS['rotate'],
+                    )
+                    continue
+
+                if op_type == 'translate':
+                    vector = np.array([
+                        float(params.get('dx', 0) or 0),
+                        float(params.get('dy', 0) or 0),
+                        float(params.get('dz', 0) or 0),
+                    ])
+                    if np.linalg.norm(vector) < 1e-12:
+                        continue
+                    prototype = _arrow_mesh(
+                        [0, 0, 0], vector, scale=1.1,
+                    )
+                    _add_glyphs(
+                        centers, scales, prototype,
+                        _DOF_TYPE_COLORS['translate'],
+                    )
+                    continue
+
+                if op_type not in ('imposeDrivenDof', 'imposeInitValue'):
+                    continue
+
+                description = str(params.get('description', '') or '')
+                dofty = str(params.get('dofty', 'vlocy') or 'vlocy').lower()
+                try:
+                    ct = float(params.get('ct', 0.0) or 0.0)
+                except Exception:
+                    ct = 0.0
+                is_init = op_type == 'imposeInitValue'
+                is_predef = description == 'predefined'
+                is_force = 'force' in dofty or 'f' == dofty
+                is_fixed = (not is_predef) and abs(ct) < 1e-14 and not is_init
+
+                comp = params.get('component', 1)
+                if isinstance(comp, (list, tuple)):
+                    components = [
+                        int(value) for value in comp
+                        if int(value) in (1, 2, 3)
+                    ]
+                else:
+                    try:
+                        value = int(comp)
+                        components = [value] if value in (1, 2, 3) else [1]
+                    except Exception:
+                        components = [1]
+
+                for component_index, component in enumerate(components):
+                    direction = np.asarray({
+                        1: (1, 0, 0),
+                        2: (0, 1, 0),
+                        3: (0, 0, 1),
+                    }[component], dtype=np.float64)
+                    origins = centers + (
+                        direction * (scales * 0.15 * component_index)[:, None]
+                    )
+                    axis_color = _DOF_AXIS_COLORS.get(component, _DOF_COLOR)
+
+                    if is_fixed:
+                        _add_glyphs(
+                            origins,
+                            scales,
+                            _fixed_axis_mesh([0, 0, 0], component, scale=1.0),
+                            axis_color,
+                            opacity=0.85,
+                        )
+                        _add_glyphs(
+                            origins,
+                            scales,
+                            _pin_mesh([0, 0, 0], scale=0.6),
+                            _DOF_TYPE_COLORS['fixed'],
+                            opacity=0.9,
+                        )
+                    else:
+                        sign = 1.0 if ct >= 0 else -1.0
+                        if is_predef and abs(ct) > 0:
+                            sign = 1.0 if ct > 0 else -1.0
+                        arrow_direction = direction * sign
+                        magnitude = (
+                            min(2.0, 1.0 + abs(ct) * 0.02)
+                            if abs(ct) > 0 else 1.0
+                        )
+                        prototype = _arrow_mesh(
+                            [0, 0, 0],
+                            arrow_direction,
+                            scale=magnitude,
+                        )
+                        color = (
+                            _DOF_TYPE_COLORS['init'] if is_init
+                            else _DOF_TYPE_COLORS['force'] if is_force
+                            else _DOF_TYPE_COLORS['predefined'] if is_predef
+                            else axis_color
+                        )
+                        _add_glyphs(origins, scales, prototype, color)
 
     def _clear_dof_actors(self):
         for actor in self._dof_actors:
@@ -1815,7 +2021,8 @@ class Viewer3D(QWidget):
     def _toggle_dof(self, show: bool):
         if show:
             self._draw_dof_hints(
-                [av for _, av in self.avatars_data]
+                self._overlay_avatars, self._rendered_populations,
+                self._renderable_order,
             )
         else:
             self._clear_dof_actors()
@@ -1827,7 +2034,9 @@ class Viewer3D(QWidget):
 
     def _toggle_laws(self, show: bool):
         if show:
-            self._draw_law_links([av for _, av in self.avatars_data])
+            self._draw_law_links(
+                self._overlay_avatars, self._rendered_populations,
+            )
         else:
             self._clear_law_actors()
         self.plotter.render()
@@ -1847,7 +2056,11 @@ class Viewer3D(QWidget):
         b = 0x40 + (h & 0xBF)
         return f"#{r:02x}{g:02x}{b:02x}"
 
-    def _draw_law_links(self, avatars: List[Avatar]):
+    def _draw_law_links(
+        self,
+        avatars: List[Avatar],
+        populations: List[ParticlePopulation] | None = None,
+    ):
         """See-tables: segment centroide(couleur candidat) -> centroide(antagoniste)."""
         self._clear_law_actors()
         if not getattr(self, "_law_check", None) or not self._law_check.isChecked():
@@ -1856,18 +2069,26 @@ class Viewer3D(QWidget):
         if state is None:
             return
         rules = getattr(state, "visibility", None) or []
-        if not rules or not avatars:
+        if not rules or (not avatars and not populations):
             return
 
-        by_color: Dict[str, List] = {}
+        by_color: Dict[str, List[np.ndarray]] = {}
         for av in avatars:
             col = (getattr(av, "color", None) or "").strip()
             if not col:
                 continue
-            by_color.setdefault(col, []).append(_as3(av.center))
+            by_color.setdefault(col, []).append(
+                np.asarray([_as3(av.center)], dtype=float)
+            )
+        for population in populations or []:
+            col = (population.color or "").strip()
+            if col and len(population):
+                by_color.setdefault(col, []).append(
+                    _centers_as_3d(population.centers)
+                )
 
         def _centroid(pts):
-            return np.array(pts, dtype=float).mean(axis=0)
+            return np.concatenate(pts, axis=0).mean(axis=0)
 
         drawn = 0
         for rule in rules:
@@ -1981,45 +2202,38 @@ class Viewer3D(QWidget):
             return
 
         singles, populations = _split_renderables(avatars)
-
-        # ── Mode pylmgc90 ────────────────────────────────────────────────────
-        if self._pylmgc90_mode:
-            # visuAvatars a besoin d'une liste plate ; expansion uniquement ici
-            renderables = _expand_renderables(avatars)
-            self._render_with_pylmgc90([av for _, av in renderables])
-            return
-
-        next_idx = 0
+        self._overlay_avatars = singles
+        self._rendered_populations = populations
+        self._renderable_order = list(avatars)
         opacity_factor = self._opacity_slider.value() / 100.0
 
+        # ── Mode pylmgc90 ────────────────────────────────────────────────────
+        if self._pylmgc90_mode and singles:
+            if self._render_with_pylmgc90(singles):
+                next_idx = max(self.actors, default=-1) + 1
+                self._add_population_glyphs(
+                    populations, next_idx, opacity_factor,
+                )
+                if self._dof_check.isChecked():
+                    self._draw_dof_hints(
+                        singles, populations, self._renderable_order,
+                    )
+                if (
+                    getattr(self, "_law_check", None) is not None
+                    and self._law_check.isChecked()
+                ):
+                    self._draw_law_links(singles, populations)
+                self._refresh_group_combo()
+                self._update_info()
+                self._reset_camera()
+                return
+
+        next_idx = 0
+
         # ── Populations SoA : glyphs (ou points si très grand N) ─────────────
-        for pop in populations:
-            n = len(pop)
-            if n == 0:
-                continue
-            color = _population_color(pop, self._color_mode)
-            actor = self._add_point_cloud(
-                centers=pop.centers,
-                radii=pop.radii,
-                color=color,
-                avatar_type=pop.avatar_type,
-                is_2d=(pop.dimension == 2),
-                opacity=_OPACITY_BATCH * opacity_factor,
-                n_hint=n,
-            )
-            self.actors[next_idx] = actor
-            self._orig_colors[next_idx] = color
-            if n:
-                self.avatars_data.append((next_idx, pop.as_avatar_view(0)))
-                self._population_counts[next_idx] = n
-                self._batch_meta[next_idx] = {
-                    "centers": _centers_as_3d(pop.centers),
-                    "radii": np.asarray(pop.radii, dtype=np.float64),
-                    "n": n,
-                    "items": [None] * n,  # population : pas d'Avatar par grain
-                    "population_id": pop.population_id,
-                }
-            next_idx += 1
+        next_idx = self._add_population_glyphs(
+            populations, next_idx, opacity_factor,
+        )
 
         # ── Avatars individuels : batch disk/sphere via glyph si nombreux ────
         _BATCH_TYPES = {
@@ -2097,15 +2311,49 @@ class Viewer3D(QWidget):
         if self._dof_check.isChecked() or (
             getattr(self, "_law_check", None) is not None and self._law_check.isChecked()
         ):
-            renderables = _expand_renderables(avatars)
             if self._dof_check.isChecked():
-                self._draw_dof_hints([av for _, av in renderables])
+                self._draw_dof_hints(
+                    singles, populations, self._renderable_order,
+                )
             if getattr(self, "_law_check", None) is not None and self._law_check.isChecked():
-                self._draw_law_links([av for _, av in renderables])
+                self._draw_law_links(singles, populations)
 
         self._refresh_group_combo()
         self._update_info()
         self._reset_camera()
+
+    def _add_population_glyphs(
+        self,
+        populations: List[ParticlePopulation],
+        next_idx: int,
+        opacity_factor: float,
+    ) -> int:
+        for population in populations:
+            n = len(population)
+            if not n:
+                continue
+            color = _population_color(population, self._color_mode)
+            actor = self._add_point_cloud(
+                centers=population.centers,
+                radii=population.radii,
+                color=color,
+                avatar_type=population.avatar_type,
+                is_2d=(population.dimension == 2),
+                opacity=_OPACITY_BATCH * opacity_factor,
+                n_hint=n,
+            )
+            self.actors[next_idx] = actor
+            self._orig_colors[next_idx] = color
+            self.avatars_data.append((next_idx, population.as_avatar_view(0)))
+            self._population_counts[next_idx] = n
+            self._batch_meta[next_idx] = {
+                "centers": _centers_as_3d(population.centers),
+                "radii": np.asarray(population.radii, dtype=np.float64),
+                "n": n,
+                "population_id": population.population_id,
+            }
+            next_idx += 1
+        return next_idx
 
     def _add_point_cloud(
         self,
@@ -2157,7 +2405,7 @@ class Viewer3D(QWidget):
         self._status(f"Glyphs — {n} particules (seuil ≥ {_GLYPH_THRESHOLD})")
         return actor
 
-    def _render_with_pylmgc90(self, avatars: List[Avatar]):
+    def _render_with_pylmgc90(self, avatars: List[Avatar]) -> bool:
         """Rendu haute fidélité via pre.visuAvatars()."""
         self._status("🔬Rendu pylmgc90 en cours…")
         result = _render_via_pylmgc90(avatars, self.controller)
@@ -2169,8 +2417,7 @@ class Viewer3D(QWidget):
             )
             self._pylmgc90_mode = False
             self._pylmgc90_btn.setChecked(False)
-            self.update_avatars(avatars)
-            return
+            return False
 
         # Afficher chaque bloc (un par type de corps : RBDY2, MAILx…)
         for i in range(result.n_blocks):
@@ -2205,6 +2452,7 @@ class Viewer3D(QWidget):
         self._update_info()
         self._refresh_group_combo()
         self._reset_camera()
+        return True
 
     def clear(self):
         if getattr(self, "_results", None) is not None:
@@ -2215,6 +2463,9 @@ class Viewer3D(QWidget):
         self._orig_colors.clear()
         self._population_counts.clear()
         self._batch_meta.clear()
+        self._overlay_avatars.clear()
+        self._rendered_populations.clear()
+        self._renderable_order.clear()
         self._last_pick_pos  = None
         self._selected_idx   = None
         self._dof_actors.clear()

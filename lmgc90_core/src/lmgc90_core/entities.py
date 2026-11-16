@@ -405,7 +405,6 @@ class ForLoop:
     group_name: Optional[str] = None
     generated_ids: list[str] = field(default_factory=list)
     loop_id: str = field(default_factory=new_avatar_id)
-    use_soa: bool = False
     condition: Optional[str] = None
     _generated_items: list[Any] = field(default_factory=list, repr=False, compare=False)
 
@@ -428,7 +427,6 @@ class ForLoop:
             "group_name": self.group_name,
             "generated_ids": list(self.generated_ids),
             "loop_id": self.loop_id,
-            "use_soa": self.use_soa,
         }
 
     @classmethod
@@ -451,7 +449,6 @@ class ForLoop:
             group_name=data.get("group_name"),
             generated_ids=list(data.get("generated_ids") or []),
             loop_id=data.get("loop_id") or new_avatar_id(),
-            use_soa=bool(data.get("use_soa", False)),
         )
 
 

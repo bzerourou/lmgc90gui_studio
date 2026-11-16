@@ -8,6 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+from lmgc90_core import CHIPY_DEFAULTS
+
 from .base_tab import BaseTab
 
 
@@ -46,9 +48,9 @@ def create_compute_tab(parent=None):
             # ── Time ──────────────────────────────────────────────────
             time_g = QGroupBox("⏱️ Time / integration")
             tf = QFormLayout(time_g)
-            self.dt_input = QLineEdit("1e-3")
-            self.nb_steps_input = QLineEdit("1000")
-            self.theta_input = QLineEdit("0.5")
+            self.dt_input = QLineEdit(str(CHIPY_DEFAULTS["dt"]))
+            self.nb_steps_input = QLineEdit(str(CHIPY_DEFAULTS["nb_steps"]))
+            self.theta_input = QLineEdit(str(CHIPY_DEFAULTS["theta"]))
             tf.addRow("Time step (dt)", self.dt_input)
             tf.addRow("Number of iterations", self.nb_steps_input)
             tf.addRow("Integration parameter", self.theta_input)
@@ -57,18 +59,20 @@ def create_compute_tab(parent=None):
             # ── Solver ────────────────────────────────────────────────
             sol_g = QGroupBox("🔧 Contact solver")
             sf = QFormLayout(sol_g)
-            self.tol_input = QLineEdit("1.666e-4")
-            self.relax_input = QLineEdit("1.0")
+            self.tol_input = QLineEdit(str(CHIPY_DEFAULTS["tol"]))
+            self.relax_input = QLineEdit(str(CHIPY_DEFAULTS["relax"]))
             self.norm_combo = QComboBox()
             self.norm_combo.addItems(["Quad ", "QM   ", "Maxm "])
-            self.gs_it1_input = QLineEdit("50")
-            self.gs_it2_input = QLineEdit("1000")
+            self.norm_combo.setCurrentText(str(CHIPY_DEFAULTS["norm"]))
+            self.gs_it1_input = QLineEdit(str(CHIPY_DEFAULTS["gs_it1"]))
+            self.gs_it2_input = QLineEdit(str(CHIPY_DEFAULTS["gs_it2"]))
             self.solver_combo = QComboBox()
             self.solver_combo.addItems([
                 "Stored_Delassus_Loops         ",
                 "Exchange_Local_Global         ",
                 "Conjugate_Gradient            ",
             ])
+            self.solver_combo.setCurrentText(str(CHIPY_DEFAULTS["solver_type"]))
             sf.addRow("Tolerance", self.tol_input)
             sf.addRow("Relaxation", self.relax_input)
             sf.addRow("Norm", self.norm_combo)
@@ -80,8 +84,8 @@ def create_compute_tab(parent=None):
             # ── I/O ───────────────────────────────────────────────────
             io_g = QGroupBox("💾 Outputs")
             iof = QFormLayout(io_g)
-            self.freq_write_input = QLineEdit("50")
-            self.freq_display_input = QLineEdit("50")
+            self.freq_write_input = QLineEdit(str(CHIPY_DEFAULTS["freq_write"]))
+            self.freq_display_input = QLineEdit(str(CHIPY_DEFAULTS["freq_display"]))
             for field in (
                 self.dt_input, self.nb_steps_input, self.theta_input, self.tol_input,
                 self.relax_input, self.gs_it1_input, self.gs_it2_input,
@@ -93,8 +97,9 @@ def create_compute_tab(parent=None):
                 "The numeric fields accept project variables and expressions."
             ))
             self.disable_log_check = QCheckBox("Disable chipy log messages")
-            self.disable_log_check.setChecked(True)
+            self.disable_log_check.setChecked(bool(CHIPY_DEFAULTS["disable_log"]))
             self.deformable_check = QCheckBox("ReadDatbox(deformable=True)")
+            self.deformable_check.setChecked(bool(CHIPY_DEFAULTS["deformable"]))
             iof.addRow("Frequency WriteOut", self.freq_write_input)
             iof.addRow("Frequency Display", self.freq_display_input)
             iof.addRow(self.disable_log_check)
@@ -207,18 +212,29 @@ def create_compute_tab(parent=None):
             dim = 2
             if self.controller is not None:
                 dim = int(self.controller.project.dimension)
+            defaults = CHIPY_DEFAULTS
             base = {
-                "dt": self.eval_float(self.dt_input.text(), 1e-3, "dt"),
-                "nb_steps": self.eval_int(self.nb_steps_input.text(), 1000, "nb_steps"),
-                "theta": self.eval_float(self.theta_input.text(), 0.5, "theta"),
-                "tol": self.eval_float(self.tol_input.text(), 1.666e-4, "tol"),
-                "relax": self.eval_float(self.relax_input.text(), 1.0, "relax"),
+                "dt": self.eval_float(self.dt_input.text(), defaults["dt"], "dt"),
+                "nb_steps": self.eval_int(
+                    self.nb_steps_input.text(), defaults["nb_steps"], "nb_steps"
+                ),
+                "theta": self.eval_float(self.theta_input.text(), defaults["theta"], "theta"),
+                "tol": self.eval_float(self.tol_input.text(), defaults["tol"], "tol"),
+                "relax": self.eval_float(self.relax_input.text(), defaults["relax"], "relax"),
                 "norm": self.norm_combo.currentText(),
-                "gs_it1": self.eval_int(self.gs_it1_input.text(), 50, "gs_it1"),
-                "gs_it2": self.eval_int(self.gs_it2_input.text(), 1000, "gs_it2"),
+                "gs_it1": self.eval_int(
+                    self.gs_it1_input.text(), defaults["gs_it1"], "gs_it1"
+                ),
+                "gs_it2": self.eval_int(
+                    self.gs_it2_input.text(), defaults["gs_it2"], "gs_it2"
+                ),
                 "solver_type": self.solver_combo.currentText(),
-                "freq_write": self.eval_int(self.freq_write_input.text(), 50, "freq_write"),
-                "freq_display": self.eval_int(self.freq_display_input.text(), 50, "freq_display"),
+                "freq_write": self.eval_int(
+                    self.freq_write_input.text(), defaults["freq_write"], "freq_write"
+                ),
+                "freq_display": self.eval_int(
+                    self.freq_display_input.text(), defaults["freq_display"], "freq_display"
+                ),
                 "disable_log": self.disable_log_check.isChecked(),
                 "deformable": self.deformable_check.isChecked(),
                 "dimension": dim,
@@ -227,17 +243,27 @@ def create_compute_tab(parent=None):
             base.update(getattr(self, "_chipy_params", {}) or {})
             # form fields win for the classic solver/time keys
             base.update({
-                "dt": self.eval_float(self.dt_input.text(), 1e-3, "dt"),
-                "nb_steps": self.eval_int(self.nb_steps_input.text(), 1000, "nb_steps"),
-                "theta": self.eval_float(self.theta_input.text(), 0.5, "theta"),
-                "tol": self.eval_float(self.tol_input.text(), 1.666e-4, "tol"),
-                "relax": self.eval_float(self.relax_input.text(), 1.0, "relax"),
+                "dt": self.eval_float(self.dt_input.text(), defaults["dt"], "dt"),
+                "nb_steps": self.eval_int(
+                    self.nb_steps_input.text(), defaults["nb_steps"], "nb_steps"
+                ),
+                "theta": self.eval_float(self.theta_input.text(), defaults["theta"], "theta"),
+                "tol": self.eval_float(self.tol_input.text(), defaults["tol"], "tol"),
+                "relax": self.eval_float(self.relax_input.text(), defaults["relax"], "relax"),
                 "norm": self.norm_combo.currentText(),
-                "gs_it1": self.eval_int(self.gs_it1_input.text(), 50, "gs_it1"),
-                "gs_it2": self.eval_int(self.gs_it2_input.text(), 1000, "gs_it2"),
+                "gs_it1": self.eval_int(
+                    self.gs_it1_input.text(), defaults["gs_it1"], "gs_it1"
+                ),
+                "gs_it2": self.eval_int(
+                    self.gs_it2_input.text(), defaults["gs_it2"], "gs_it2"
+                ),
                 "solver_type": self.solver_combo.currentText(),
-                "freq_write": self.eval_int(self.freq_write_input.text(), 50, "freq_write"),
-                "freq_display": self.eval_int(self.freq_display_input.text(), 50, "freq_display"),
+                "freq_write": self.eval_int(
+                    self.freq_write_input.text(), defaults["freq_write"], "freq_write"
+                ),
+                "freq_display": self.eval_int(
+                    self.freq_display_input.text(), defaults["freq_display"], "freq_display"
+                ),
                 "disable_log": self.disable_log_check.isChecked(),
                 "deformable": self.deformable_check.isChecked() or bool((self._chipy_params or {}).get("deformable")),
                 "dimension": dim,
@@ -475,8 +501,11 @@ def create_compute_tab(parent=None):
 
         def _open_chipy_dialog(self) -> None:
             from ...dialogs.chipy_routines_dialog import ChipyRoutinesDialog
+            current_params = dict(self._chipy_params or {})
+            if self.controller is not None:
+                current_params.update(self.controller.prefs.chipy_params())
             dlg = ChipyRoutinesDialog(
-                current_params=dict(self._chipy_params),
+                current_params=current_params,
                 controller=self.controller,
                 parent=self,
             )

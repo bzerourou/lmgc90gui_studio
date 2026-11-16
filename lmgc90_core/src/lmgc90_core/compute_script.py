@@ -32,10 +32,6 @@ from .project import Project
 from .types import AvatarType, RIGID_AVATARS_2D, RIGID_AVATARS_3D
 
 
-_GMSH_2D_ELEMENT_TYPES = {
-    2, 3, 9, 10, 16, *range(20, 26), *range(36, 45),
-}
-
 _CHIPY_REQUIRED_POSITIONAL_ARITY = {
     # These wrapped Fortran calls have (*args) in the snapshot; their signatures
     # are documented by the Chipy routines UI but cannot be introspected there.
@@ -45,7 +41,7 @@ _CHIPY_REQUIRED_POSITIONAL_ARITY = {
 
 
 def _rigids_from_mesh2d_count(avatar: Avatar) -> int:
-    """Count 2D surface elements, each of which becomes one rigid body."""
+    """Count the Gmsh 2D elements expanded to rigid bodies by pylmgc90."""
     import importlib.resources
 
     mesh_params = avatar.mesh_params or {}
@@ -60,48 +56,77 @@ def _rigids_from_mesh2d_count(avatar: Avatar) -> int:
         ):
             raise ValueError(f"invalid package mesh path {filepath!r}")
         source = importlib.resources.files(package).joinpath(*resource_name.split("/"))
-        text = source.read_text(encoding="utf-8")
+        if not source.is_file():
+            raise FileNotFoundError(f"package mesh resource not found: {filepath}")
+        with importlib.resources.as_file(source) as path:
+            return _gmsh_rigid_surface_count(
+                path, mesh_size=mesh_params.get("mesh_size")
+            )
     else:
         path = Path(filepath).expanduser()
-        if path.suffix.lower() not in (".msh", ".vtk", ".vtu", ".mesh"):
-            path = path.with_suffix(".msh")
-        text = path.read_text(encoding="utf-8")
-
-    lines = text.splitlines()
-    try:
-        format_index = lines.index("$MeshFormat")
-        version, binary = lines[format_index + 1].split()[:2]
-        if binary != "0":
-            raise ValueError("binary Gmsh meshes are not supported for group indexing")
-        elements_index = lines.index("$Elements")
-        header = lines[elements_index + 1].split()
-    except (ValueError, IndexError) as exc:
-        raise ValueError("expected an ASCII Gmsh mesh with an Elements section") from exc
-
-    if version.startswith("2."):
-        count = int(header[0])
-        elements = lines[elements_index + 2:elements_index + 2 + count]
-        return sum(
-            1 for element in elements
-            if len(element.split()) > 1
-            and int(element.split()[1]) in _GMSH_2D_ELEMENT_TYPES
+        if not path.is_file():
+            raise FileNotFoundError(f"mesh file not found: {path}")
+        return _gmsh_rigid_surface_count(
+            path, mesh_size=mesh_params.get("mesh_size")
         )
-    if version.startswith("4."):
-        blocks, total = int(header[0]), int(header[1])
-        cursor = elements_index + 2
-        surface_count = 0
-        parsed = 0
-        for _ in range(blocks):
-            entity_dim, _, _, block_count = map(int, lines[cursor].split()[:4])
-            cursor += 1
-            if entity_dim == 2:
-                surface_count += block_count
-            cursor += block_count
-            parsed += block_count
-        if parsed != total:
-            raise ValueError("Gmsh Elements section has an inconsistent element count")
-        return surface_count
-    raise ValueError(f"unsupported Gmsh mesh version {version!r}")
+
+
+def _gmsh_rigid_surface_count(path: Path, *, mesh_size: Any = None) -> int:
+    """Use Gmsh's element dimensions and CAD meshing path, not type-ID tables."""
+    try:
+        import gmsh  # type: ignore
+    except ImportError as exc:
+        raise ValueError(
+            "Gmsh is required to count rigidsFromMesh2D elements accurately"
+        ) from exc
+
+    suffix = path.suffix.lower()
+    cad_suffixes = (".brep", ".brp", ".step", ".stp", ".iges", ".igs", ".geo")
+    if suffix != ".msh" and suffix not in cad_suffixes:
+        raise ValueError(
+            f"unsupported rigidsFromMesh2D mesh format {suffix!r}; "
+            "expected .msh or a Gmsh-supported CAD file"
+        )
+
+    initialized = False
+    try:
+        gmsh.initialize()
+        initialized = True
+        if suffix in cad_suffixes:
+            mesh_path = path.with_suffix(".msh")
+            regenerate = (
+                not mesh_path.is_file()
+                or mesh_path.stat().st_mtime < path.stat().st_mtime
+            )
+            if regenerate:
+                gmsh.model.add("lmgc90_studio")
+                try:
+                    gmsh.model.occ.importShapes(str(path))
+                    gmsh.model.occ.synchronize()
+                except Exception:
+                    gmsh.open(str(path))
+                if mesh_size is not None and float(mesh_size) > 0:
+                    gmsh.option.setNumber(
+                        "Mesh.CharacteristicLengthMax", float(mesh_size)
+                    )
+                    gmsh.option.setNumber(
+                        "Mesh.CharacteristicLengthMin", float(mesh_size) * 0.2
+                    )
+                gmsh.model.mesh.generate(2)
+            else:
+                gmsh.open(str(mesh_path))
+        else:
+            gmsh.open(str(path))
+
+        _, element_tags, _ = gmsh.model.mesh.getElements(2)
+        return sum(len(tags) for tags in element_tags)
+    except Exception as exc:
+        raise ValueError(
+            f"Gmsh could not count 2D elements in {path}: {exc}"
+        ) from exc
+    finally:
+        if initialized:
+            gmsh.finalize()
 
 
 class _JournalLike(Protocol):
@@ -115,14 +140,24 @@ class ComputeScriptGenerator:
         'mhyp': 1, 'deformable': False, 'physics': 'MECAx',
         'Rloc_tol': 5e-2,
         'use_RBDY2': True,  'use_RBDY3': False,
-        'use_DKDKx': False,  'use_DKJCx': False, 'use_DKKDx': False,
+        'use_CLJCx': False, 'use_DKALp': False, 'use_DKDKL': False,
+        'use_DKDKx': False, 'use_DKJCx': False, 'use_DKKDx': False,
+        'use_DKPLx': False, 'use_P2P2L': False, 'use_PLALp': False,
+        'use_PLJCx': False, 'use_PTPT2': False,
+        'use_CDCDx': False, 'use_CDPLx': False, 'use_CSASp': False,
+        'use_CSPRx': False, 'use_PRASp': False, 'use_PRPLx': False,
+        'use_PTPT3': False, 'use_SPDCx': False, 'use_SPPRx': False,
         'use_PLPLx': False, 'use_CLALp': False,
         'use_SPSPx': False, 'use_SPCDx': False,  'use_SPPLx': False,
-        'use_CDCDx': False, 'use_CDPLx': False,  'use_PRPRx': False,
+        'use_PRPRx': False,
+        'use_DKMECAx': False, 'use_ALpMECAx': False, 'use_SPMECAx': False,
+        'use_PT2Dx': False, 'use_PT3Dx': False, 'use_bulk_behav': False,
         'use_SelectProx_macro': True,
         'use_mecaMAILx': False, 'use_therMAILx': False, 'use_poroMAILx': False,
+        'use_multiMAILx': False,
         'visu_RBDY2': True,  'visu_RBDY3': False,
         'visu_mecaMAILx': False, 'visu_therMAILx': False, 'visu_poroMAILx': False,
+        'visu_mecaMAIL': False, 'visu_therMAIL': False, 'visu_poroMAIL': False,
         'display_in_loop': True,
         'extract_Rnod': False, 'extract_Vloc': False, 'extract_Rloc': False,
         'extract_energy': False, 'extract_KE': False,
@@ -185,7 +220,7 @@ class ComputeScriptGenerator:
         'gs_it1': 50, 'gs_it2': 1000,
         'solver_type': 'Stored_Delassus_Loops         ',
         'freq_write': 50, 'freq_display': 50,
-        'disable_log': False,
+        'disable_log': True,
     }
 
     _NO_ID_FUNCS = frozenset({
@@ -214,6 +249,12 @@ class ComputeScriptGenerator:
             raise TypeError("ComputeScriptGenerator requires a Project")
         self.project = project
         self.journal = journal
+
+    def _warn(self, message: str) -> None:
+        if self.journal is not None:
+            self.journal.warning(message)
+        else:
+            warnings.warn(message, UserWarning, stacklevel=2)
 
     # =========================================================================
     # API publique
@@ -478,10 +519,7 @@ class ComputeScriptGenerator:
                             f"de l'avatar mesh {avatar.avatar_id[:8]} ({exc}); "
                             "les indices suivants ne seront pas résolus."
                         )
-                        if self.journal is not None:
-                            self.journal.warning(msg)
-                        else:
-                            print("WARNING:", msg)
+                        self._warn(msg)
                         continue
                 elif (
                     avatar.avatar_type in rigid_types
@@ -536,10 +574,7 @@ class ComputeScriptGenerator:
                     f"Groupe '{grp_name}' : {len(ignored)} membre(s) "
                     "non RBDY ignoré(s) pour cette action."
                 )
-                if self.journal is not None:
-                    self.journal.warning(msg)
-                else:
-                    print("WARNING:", msg)
+                self._warn(msg)
             if missing:
                 msg = (
                     f"Groupe '{grp_name}' : {len(missing)} identifiant(s) introuvable(s) — "
@@ -547,10 +582,7 @@ class ComputeScriptGenerator:
                     f"{len(member_ids)} membres, {len(result)} corps). "
                     f"IDs: {', '.join(m[:8] + '…' for m in missing[:10])}"
                 )
-                if self.journal is not None:
-                    self.journal.warning(msg)
-                else:
-                    print("WARNING:", msg)
+                self._warn(msg)
                 self._unresolved_group_refs = getattr(self, '_unresolved_group_refs', {})
                 self._unresolved_group_refs[grp_name] = list(missing)
             return result
@@ -1290,8 +1322,8 @@ class ComputeScriptGenerator:
             w('# potentiellement INCOMPLÈTES par rapport à ce que vous attendez :\n')
             for grp_name, missing_ids in self._unresolved_group_refs.items():
                 w(f"#   - groupe '{grp_name}' : {len(missing_ids)} avatar(s) manquant(s)\n")
-            w('# Vérifiez le journal de l\'application (F7) pour le détail complet,\n')
-            w('# ou nettoyez les groupes concernés puis régénérez ce script.\n')
+            w('# Consultez les avertissements émis pendant la génération pour le détail,\n')
+            w('# puis nettoyez les groupes concernés et régénérez ce script.\n')
             w('# ' + '=' * 68 + '\n')
 
         # ── 10. Finalisation ──────────────────────────────────────────────────
@@ -1340,6 +1372,10 @@ _TAGS = {"DISKx", "JONCx", "POLYG", "PT2Dx", "PT2DL", "xKSID", "DISKL",
          "ALpxx", "CLxxx", "ASpxx", "CSxxx", "CSpxx"}
 _TAG_BY_FOLD= {t.casefold(): t for t in _TAGS}
 _TAG_BY_FOLD['cspxx'] = 'CSxxx'  # normalize common typo
+
+
+# Shared defaults for script, preference, and routine-dialog clients.
+CHIPY_DEFAULTS = ComputeScriptGenerator._DEFAULTS
 
 
 def infer_chipy_contact_routines(project) -> Dict[str, bool]:
@@ -1436,8 +1472,10 @@ def default_routines(project: Project) -> Dict[str, Any]:
     dim = int(getattr(project, "dimension", 2) or 2)
     flags = infer_chipy_contact_routines(project)
     for name in (*DETECTORS_2D, *DETECTORS_3D):
-        flags[f"use_{name}"] = False
-    flags["use_SelectProx_macro"] = True
+        flags[f"use_{name}"] = bool(CHIPY_DEFAULTS.get(f"use_{name}", False))
+    flags["use_SelectProx_macro"] = bool(
+        CHIPY_DEFAULTS["use_SelectProx_macro"]
+    )
     flags["use_RBDY2"] = dim == 2
     flags["use_RBDY3"] = dim == 3
     flags['deformable'] = bool(flags.get('use_mecaMAILx'))

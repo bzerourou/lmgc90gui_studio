@@ -167,14 +167,30 @@ class RemoveAvatar:
                 for name, ids in project.avatar_groups.items()
                 if self.avatar.avatar_id in ids
             }
+            emptied_groups = {
+                name for name, ids in self.groups_touched.items()
+                if not set(ids).difference({self.avatar.avatar_id})
+            }
             self.operations_touched = [
                 (index, operation)
                 for index, operation in enumerate(project.operations)
-                if operation.target_type == "avatar"
-                and operation.target_value == self.avatar.avatar_id
+                if (
+                    operation.target_type == "avatar"
+                    and operation.target_value == self.avatar.avatar_id
+                ) or (
+                    operation.target_type == "group"
+                    and operation.target_value in emptied_groups
+                )
             ]
             self._captured = True
         project._drop_avatar(self.avatar.avatar_id)
+        touched_operation_ids = {
+            id(operation) for _, operation in self.operations_touched
+        }
+        project.operations[:] = [
+            operation for operation in project.operations
+            if id(operation) not in touched_operation_ids
+        ]
 
     def revert(self, project: Project) -> None:
         index = (
@@ -879,16 +895,32 @@ class RemoveLoop:
                 for name, ids in project.avatar_groups.items()
                 if generated_ids.intersection(ids)
             }
+            emptied_groups = {
+                name for name, ids in self.groups_touched.items()
+                if not set(ids).difference(generated_ids)
+            }
             self.operations_touched = [
                 (index, operation)
                 for index, operation in enumerate(project.operations)
-                if operation.target_type == "avatar"
-                and operation.target_value in generated_ids
+                if (
+                    operation.target_type == "avatar"
+                    and operation.target_value in generated_ids
+                ) or (
+                    operation.target_type == "group"
+                    and operation.target_value in emptied_groups
+                )
             ]
             self._captured = True
 
         for avatar_id in generated_ids:
             project._drop_avatar(avatar_id)
+        touched_operation_ids = {
+            id(operation) for _, operation in self.operations_touched
+        }
+        project.operations[:] = [
+            operation for operation in project.operations
+            if id(operation) not in touched_operation_ids
+        ]
         project._drop_loop(self.loop.loop_id)
 
     def revert(self, project: Project) -> None:
@@ -1152,9 +1184,12 @@ class SetGroup:
     name: str
     ids: list[str]
     previous: list[str] | None = None
+    _captured: bool = False
 
     def apply(self, project: Project) -> None:
-        self.previous = list(project.avatar_groups.get(self.name, []))
+        if not self._captured:
+            self.previous = list(project.avatar_groups.get(self.name, []))
+            self._captured = True
         project.avatar_groups[self.name] = list(self.ids)
 
     def revert(self, project: Project) -> None:
@@ -1173,6 +1208,7 @@ class SetGroup:
                 "name": self.name,
                 "ids": list(self.ids),
                 "previous": list(self.previous) if self.previous is not None else None,
+                "captured": self._captured,
             },
         }
 
@@ -1545,6 +1581,7 @@ def command_from_journal(
         cmd = SetGroup(str(payload.get("name", "")), list(payload.get("ids") or []))
         prev = payload.get("previous")
         cmd.previous = list(prev) if prev is not None else None
+        cmd._captured = bool(payload.get("captured", prev is not None))
         return cmd
     if op == "remove_group":
         return RemoveGroup(

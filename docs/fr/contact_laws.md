@@ -12,15 +12,22 @@ Une loi de contact décrit la réponse mécanique d’une paire de contacteurs. 
 4. Complétez les champs de **Parameters**. Ils changent selon la loi sélectionnée.
 5. Cliquez sur **Add** et vérifiez que la loi apparaît dans la liste.
 
-Les champs affichés sont les options obligatoires de `pylmgc90.pre.tact_behav` pour la loi choisie. La famille permet de filtrer la liste sans masquer les autres lois. Les paramètres sont transmis avec leur nom LMGC90 exact ; ils sont numériques et doivent être renseignés selon le problème physique.
+Les champs affichés proviennent du schéma de compatibilité de la loi choisie. Un champ sans valeur par défaut est obligatoire ; les champs avec une valeur par défaut sont préremplis. La famille permet de filtrer la liste sans masquer les autres lois. Les paramètres sont transmis avec leur nom LMGC90 exact et doivent être choisis selon le problème physique.
 
-## Catalogue de lois et paramètres
+## Catalogue de repli des lois et paramètres
 
-Le catalogue ci-dessous correspond aux 53 lois de la version `pylmgc90` utilisée comme référence par l’application. La compatibilité des lois avec les paires de contacteurs est indiquée par famille ; vérifiez la documentation LMGC90 pour les conditions physiques et les domaines de validité des paramètres.
+Le tableau ci-dessous documente les 53 entrées de l'enum core
+`ContactLawType` et leurs schémas de paramètres de repli. Lorsque des données
+de compatibilité correspondant à la version installée de pylmgc90 sont
+disponibles, l'application les utilise à la place pour la liste des lois,
+les familles et les champs ; le catalogue runtime peut donc différer. Les
+titres de famille décrivent le regroupement core de repli. Consultez la
+documentation LMGC90 pour les hypothèses physiques et les domaines de
+validité des paramètres.
 
 ### Rigide / rigide
 
-| Loi | Paramètres obligatoires |
+| Loi | Champs de paramètres (schéma de repli) |
 |---|---|
 | `IQS_CLB` | `fric` |
 | `IQS_CLB_g0` | `fric` |
@@ -44,7 +51,7 @@ Le catalogue ci-dessous correspond aux 53 lois de la version `pylmgc90` utilisé
 
 ### Déformable / quelconque (`any/defo`)
 
-| Loi | Paramètres obligatoires |
+| Loi | Champs de paramètres (schéma de repli) |
 |---|---|
 | `GAP_SGR_CLB`, `GAP_SGR_CLB_g0`, `VEL_SGR_CLB` | `fric` |
 | `GAP_SGR_STICK` | aucun |
@@ -67,7 +74,7 @@ Le catalogue ci-dessous correspond aux 53 lois de la version `pylmgc90` utilisé
 
 ### Point / point
 
-| Loi | Paramètres obligatoires |
+| Loi | Champs de paramètres (schéma de repli) |
 |---|---|
 | `ELASTIC_WIRE`, `ELASTIC_ROD` | `stiffness`, `prestrain` |
 | `BRITTLE_ELASTIC_WIRE` | `stiffness`, `prestrain`, `Fmax` |
@@ -76,13 +83,13 @@ Le catalogue ci-dessous correspond aux 53 lois de la version `pylmgc90` utilisé
 
 ### Quelconque / quelconque
 
-| Loi | Paramètres obligatoires |
+| Loi | Champs de paramètres (schéma de repli) |
 |---|---|
 | `COUPLED_DOF`, `NORMAL_COUPLED_DOF` | aucun |
 | `ELASTIC_REPELL_CLB`, `ELASTIC_REPELL_CLB_g0`, `ELASTIC_REPELL_CLB_adapt` | `stiffness`, `fric` |
 | `VISCO_ELASTIC_REPELL_CLB` | `stiffness`, `viscosity`, `fric` |
 
-Les paramètres partagés dans une ligne ont le même jeu d’options. Les noms sensibles à la casse (`Wthk`, `Fmax`, `Gc1`, etc.) doivent rester tels quels.
+Les lois regroupées sur une ligne partagent les mêmes options de repli. Les noms sensibles à la casse (`Wthk`, `Fmax`, `Gc1`, etc.) doivent rester tels quels.
 
 ## Modifier, supprimer et associer une loi
 

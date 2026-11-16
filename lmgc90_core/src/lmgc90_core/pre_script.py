@@ -1,7 +1,10 @@
 """Emit an auditable `pre.py`. This is the reproducibility artefact."""
 from __future__ import annotations
 
+import hashlib
+import keyword
 import math
+from dataclasses import dataclass
 from typing import Any
 
 from .entities import Avatar, ContactLaw, GranuloConfig, Material, Model, VisibilityRule
@@ -46,12 +49,12 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
     L("# --- materials ---")
     for m in project.materials:
         L(_emit_material(m))
-        L(f"mats.addMaterial(mat_{m.name})")
+        L(f"mats.addMaterial({_material_ref(m.name)})")
     L()
     L("# --- models ---")
     for m in project.models:
         L(_emit_model(m))
-        L(f"mods.addModel(mod_{m.name})")
+        L(f"mods.addModel({_model_ref(m.name)})")
     L()
 
     L("# --- avatars ---")
@@ -170,7 +173,7 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
             raise ValueError(
                 f"granulo config {config.generation_id!r} has no particle population"
             )
-        L(f"# granulometry distribution {config.generation_id}")
+        L(f"# granulometry distribution {config.generation_id!r}")
         L(_emit_granulo_radii(config))
         L()
 
@@ -195,7 +198,7 @@ def emit_pre(project: Project, *, use_loop: bool = False) -> str:
         L("# --- contact laws ---")
         for law in project.laws:
             L(_emit_law(law))
-            L(f"tacts.addBehav(law_{law.name})")
+            L(f"tacts.addBehav({_law_ref(law.name)})")
         L()
 
     if project.visibility:
@@ -243,7 +246,32 @@ def emit_equivalent(project: Project, obj) -> str:
 
 
 def _ident(avatar_id: str) -> str:
-    return avatar_id.replace("-", "_")
+    value = str(avatar_id)
+    prefix = "".join(
+        char if char.isascii() and (char.isalnum() or char == "_") else "_"
+        for char in value
+    )[:32]
+    if not prefix or prefix[0].isdigit():
+        prefix = f"id_{prefix}"
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return f"{prefix}_{digest}"
+
+
+def _material_ref(name: str) -> str:
+    return f"mat_{_ident(name)}"
+
+
+def _model_ref(name: str) -> str:
+    return f"mod_{_ident(name)}"
+
+
+def _law_ref(name: str) -> str:
+    return f"law_{_ident(name)}"
+
+
+@dataclass(frozen=True)
+class _GeneratedExpression:
+    source: str
 
 
 def _canonical_gmsh_primitive(geom: Any) -> str | None:
@@ -340,12 +368,12 @@ def _mesh_rigids_ref(av: Avatar) -> str:
 
 
 def _population_bodies_ref(population: ParticlePopulation) -> str:
-    ident = population.population_id[:12].replace("-", "_")
+    ident = _ident(population.population_id)
     return f"_population_bodies_{ident}"
 
 
 def _granulo_ident(identifier: str) -> str:
-    return identifier.replace("-", "_")
+    return _ident(identifier)
 
 
 def _granulo_script_helper() -> str:
@@ -556,16 +584,13 @@ def _emit_granulo_deposit(
 
 
 def _kw(d: dict[str, Any]) -> str:
-    parts = []
-    for k, v in d.items():
-        parts.append(f"{k}={v!r}")
-    return ", ".join(parts)
+    return f"**{d!r}"
 
 
 def _emit_material(m: Material) -> str:
     extra = (", " + _kw(m.properties)) if m.properties else ""
     return (
-        f"mat_{m.name} = pre.material(name={m.name!r}, "
+        f"{_material_ref(m.name)} = pre.material(name={m.name!r}, "
         f"materialType={material_type_name(m.material_type)!r}, "
         f"density={m.density}{extra})"
     )
@@ -574,7 +599,7 @@ def _emit_material(m: Material) -> str:
 def _emit_model(m: Model) -> str:
     extra = (", " + _kw(m.options)) if m.options else ""
     return (
-        f"mod_{m.name} = pre.model(name={m.name!r}, physics={m.physics!r}, "
+        f"{_model_ref(m.name)} = pre.model(name={m.name!r}, physics={m.physics!r}, "
         f"element={m.element!r}, dimension={m.dimension}{extra})"
     )
 
@@ -609,9 +634,9 @@ def _emit_avatar(
 ) -> str:
     ident = _ident(av.avatar_id)
     target = variable or f"av_{ident}"
-    mat, mod = f"mat_{av.material_name}", f"mod_{av.model_name}"
-    c = center_expr if center_expr is not None else av.center
-    radius = radius_expr if radius_expr is not None else av.radius
+    mat, mod = _material_ref(av.material_name), _model_ref(av.model_name)
+    c = center_expr if center_expr is not None else repr(av.center)
+    radius = radius_expr if radius_expr is not None else repr(av.radius)
     color = av.color
     t = av.avatar_type
     if t == AvatarType.RIGID_DISK:
@@ -633,70 +658,70 @@ def _emit_avatar(
     if t == AvatarType.RIGID_JONC:
         ax = av.axis or {}
         return (
-            f"{target} = pre.rigidJonc(axe1={ax.get('axe1')}, axe2={ax.get('axe2')}, "
+            f"{target} = pre.rigidJonc(axe1={ax.get('axe1')!r}, axe2={ax.get('axe2')!r}, "
             f"center={c}, model={mod}, material={mat}, color={color!r})"
         )
     if t == AvatarType.SMOOTH_WALL:
         wp = av.wall_params or {}
         return (
-            f"{target} = pre.smoothWall(l={wp.get('l')}, h={wp.get('h')}, "
+            f"{target} = pre.smoothWall(l={wp.get('l')!r}, h={wp.get('h')!r}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
-            f"nb_polyg={wp.get('nb_polyg', 10)})"
+            f"nb_polyg={wp.get('nb_polyg', 10)!r})"
         )
     if t == AvatarType.ROUGH_WALL:
         wp = av.wall_params or {}
         return (
-            f"{target} = pre.roughWall(l={wp.get('l')}, r={wp.get('r')}, "
+            f"{target} = pre.roughWall(l={wp.get('l')!r}, r={wp.get('r')!r}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
-            f"nb_vertex={wp.get('nb_vertex', 10)})"
+            f"nb_vertex={wp.get('nb_vertex', 10)!r})"
         )
     if t == AvatarType.ROUGH_WALL_3D:
         wp = av.wall_params or {}
         return (
-            f"{target} = pre.roughWall3D(lx={wp.get('lx', 1.0)}, ly={wp.get('ly', 1.0)}, "
-            f"lz={wp.get('lz', 0.1)}, center={c}, model={mod}, material={mat}, color={color!r})"
+            f"{target} = pre.roughWall3D(lx={wp.get('lx', 1.0)!r}, ly={wp.get('ly', 1.0)!r}, "
+            f"lz={wp.get('lz', 0.1)!r}, center={c}, model={mod}, material={mat}, color={color!r})"
         )
     if t == AvatarType.FINE_WALL:
         wp = av.wall_params or {}
         radius = wp.get("h", 2.0 * wp.get("r", 0.02)) / 2.0
         return (
-            f"{target} = pre.fineWall(l={wp.get('l')}, r={radius}, "
+            f"{target} = pre.fineWall(l={wp.get('l')!r}, r={radius!r}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
-            f"nb_vertex={wp.get('nb_vertex', 10)})"
+            f"nb_vertex={wp.get('nb_vertex', 10)!r})"
         )
     if t == AvatarType.GRANULO_WALL:
         wp = av.wall_params or {}
         max_radius = wp.get("h", 2.0 * wp.get("rmax", 0.03)) / 2.0
         return (
-            f"{target} = pre.granuloRoughWall(l={wp.get('l')}, "
-            f"rmin={wp.get('rmin')}, rmax={max_radius}, "
+            f"{target} = pre.granuloRoughWall(l={wp.get('l')!r}, "
+            f"rmin={wp.get('rmin')!r}, rmax={max_radius!r}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}, "
-            f"nb_vertex={wp.get('nb_vertex', 10)})"
+            f"nb_vertex={wp.get('nb_vertex', 10)!r})"
         )
     if t == AvatarType.GRANULO_ROUGH_WALL_3D:
         wp = av.wall_params or {}
         return (
-            f"{target} = pre.granuloRoughWall3D(lx={wp.get('lx', 1.0)}, ly={wp.get('ly', 1.0)}, "
-            f"lz={wp.get('lz', 0.1)}, rmin={wp.get('rmin', 0.01)}, rmax={wp.get('rmax', 0.02)}, "
+            f"{target} = pre.granuloRoughWall3D(lx={wp.get('lx', 1.0)!r}, ly={wp.get('ly', 1.0)!r}, "
+            f"lz={wp.get('lz', 0.1)!r}, rmin={wp.get('rmin', 0.01)!r}, rmax={wp.get('rmax', 0.02)!r}, "
             f"center={c}, model={mod}, material={mat}, color={color!r})"
         )
     if t == AvatarType.RIGID_CLUSTER:
         return (
             f"{target} = pre.rigidCluster(r={radius}, center={c}, "
-            f"model={mod}, material={mat}, color={color!r}, nb_disk={av.nb_vertices})"
+            f"model={mod}, material={mat}, color={color!r}, nb_disk={av.nb_vertices!r})"
         )
     if t == AvatarType.RIGID_CYLINDER:
         wp = av.wall_params or {}
         hollow = ", is_Hollow=True" if av.is_hollow else ""
         return (
-            f"{target} = pre.rigidCylinder(r={radius}, h={wp.get('h')}, "
+            f"{target} = pre.rigidCylinder(r={radius}, h={wp.get('h')!r}, "
             f"center={c}, model={mod}, material={mat}, color={color!r}{hollow})"
         )
     if t == AvatarType.RIGID_PLAN:
         ax = av.axis or {}
         return (
             f"{target} = pre.rigidPlan(center={c}, model={mod}, material={mat}, "
-            f"color={color!r}, axe1={ax.get('axe1')}, axe2={ax.get('axe2')}, axe3={ax.get('axe3')})"
+            f"color={color!r}, axe1={ax.get('axe1')!r}, axe2={ax.get('axe2')!r}, axe3={ax.get('axe3')!r})"
         )
     if t == AvatarType.RIGID_OVOID:
         kwargs = [f"center={c}", f"model={mod}", f"material={mat}", f"color={color!r}"]
@@ -709,7 +734,7 @@ def _emit_avatar(
         if av.generation_type == "regular":
             return (
                 f"{target} = pre.rigidPolygon(model={mod}, material={mat}, center={c}, "
-                f"color={color!r}, generation_type='regular', nb_vertices={av.nb_vertices}, "
+                f"color={color!r}, generation_type='regular', nb_vertices={av.nb_vertices!r}, "
                 f"radius={radius})"
             )
         vertices = [
@@ -726,7 +751,7 @@ def _emit_avatar(
             return (
                 f"{target} = pre.rigidPolyhedron(model={mod}, material={mat}, "
                 f"center={c}, color={color!r}, generation_type='regular', "
-                f"nb_vertices={av.nb_vertices}, radius={radius})"
+                f"nb_vertices={av.nb_vertices!r}, radius={radius})"
             )
         return (
             f"{target} = pre.rigidPolyhedron(model={mod}, material={mat}, "
@@ -770,7 +795,8 @@ def _emit_avatar(
             y0 = mp["cy"] - mp["ly"] / 2.0
             return (
                 f"mesh_{ident} = pre.buildMesh2D({mp.get('mesh_type', '2T3')!r}, "
-                f"{x0}, {y0}, {mp['lx']}, {mp['ly']}, {mp['nx']}, {mp['ny']})\n"
+                f"{x0!r}, {y0!r}, {mp['lx']!r}, {mp['ly']!r}, "
+                f"{mp['nx']!r}, {mp['ny']!r})\n"
                 f"av_{ident} = pre.buildMeshedAvatar(mesh=mesh_{ident}, model={mod}, material={mat})"
             )
         if geom == "Boîte (H8)":
@@ -778,8 +804,9 @@ def _emit_avatar(
             y0 = mp["cy"] - mp["ly"] / 2.0
             z0 = mp.get("cz", 0.0) - mp["lz"] / 2.0
             return (
-                f"mesh_{ident} = pre.buildMeshH8({x0}, {y0}, {z0}, "
-                f"{mp['lx']}, {mp['ly']}, {mp['lz']}, {mp['nx']}, {mp['ny']}, {mp['nz']})\n"
+                f"mesh_{ident} = pre.buildMeshH8({x0!r}, {y0!r}, {z0!r}, "
+                f"{mp['lx']!r}, {mp['ly']!r}, {mp['lz']!r}, "
+                f"{mp['nx']!r}, {mp['ny']!r}, {mp['nz']!r})\n"
                 f"av_{ident} = pre.buildMeshedAvatar(mesh=mesh_{ident}, model={mod}, material={mat})"
             )
         primitive_geom = _canonical_gmsh_primitive(geom)
@@ -803,11 +830,11 @@ def _emit_avatar(
                 mesh_file = f"_mesh_file_{ident}"
                 return "\n".join((
                     f"with importlib.resources.as_file(importlib.resources.files({package!r}).joinpath({resource_parts})) as {mesh_file}:",
-                    f"    mesh_{ident} = pre.readMesh(str({mesh_file}), {mp.get('dim', 2)})",
+                    f"    mesh_{ident} = pre.readMesh(str({mesh_file}), {mp.get('dim', 2)!r})",
                     f"av_{ident} = pre.buildMeshedAvatar(mesh=mesh_{ident}, model={mod}, material={mat})",
                 ))
             return (
-                f"mesh_{ident} = pre.readMesh({filepath!r}, {mp.get('dim', 2)})\n"
+                f"mesh_{ident} = pre.readMesh({filepath!r}, {mp.get('dim', 2)!r})\n"
                 f"av_{ident} = pre.buildMeshedAvatar(mesh=mesh_{ident}, model={mod}, material={mat})"
             )
         raise NotImplementedError(
@@ -859,8 +886,8 @@ def _emit_rigids_from_mesh2d(av: Avatar) -> str:
     ident = _ident(av.avatar_id)
     mesh_ref = f"_mesh_{ident}"
     bodies_ref = _mesh_rigids_ref(av)
-    mod = f"mod_{av.model_name}"
-    mat = f"mat_{av.material_name}"
+    mod = _model_ref(av.model_name)
+    mat = _material_ref(av.material_name)
 
     if filepath.startswith("pkg://"):
         package, separator, resource_name = filepath[6:].partition("/")
@@ -936,35 +963,39 @@ def _emit_contactors(av: Avatar, *, body_ref: str | None = None) -> list[str]:
                     f"{faces_name}, {vertices_name} = pre.buildPolyhedronConnectivity("
                     f"pre.getRegularPolyhedronVertices({count}, {radius!r}))",
                 ))
-                options["vertices"] = vertices_name
-                options["connectivity"] = faces_name
-                options["nb_vertices"] = f"len({vertices_name})"
-                options["nb_faces"] = f"len({faces_name})"
+                options["vertices"] = _GeneratedExpression(vertices_name)
+                options["connectivity"] = _GeneratedExpression(faces_name)
+                options["nb_vertices"] = _GeneratedExpression(
+                    f"len({vertices_name})"
+                )
+                options["nb_faces"] = _GeneratedExpression(f"len({faces_name})")
             elif generation_type == "full":
                 options["nb_vertices"] = len(options["vertices"])
                 options["nb_faces"] = len(options["connectivity"])
             if shift is not None:
-                if isinstance(options["vertices"], str):
-                    vertices_name = options["vertices"]
+                vertices = options["vertices"]
+                if isinstance(vertices, _GeneratedExpression):
                     shifted_name = f"_contactor_{ident}_{index}_shifted_vertices"
                     lines.append(
-                        f"{shifted_name} = {vertices_name} + np.array({shift!r})"
+                        f"{shifted_name} = {vertices.source} + np.array({shift!r})"
                     )
-                    options["vertices"] = shifted_name
-                else:
+                    options["vertices"] = _GeneratedExpression(shifted_name)
+                elif isinstance(vertices, (list, tuple)):
                     options["vertices"] = [
                         [coordinate + shift[axis] for axis, coordinate in enumerate(vertex)]
-                        for vertex in options["vertices"]
+                        for vertex in vertices
                     ]
+                else:
+                    raise ValueError("POLYR contactor vertices must be a sequence")
 
         kwargs = []
         for key, value in options.items():
-            if key in ("nb_vertices", "nb_faces") and isinstance(value, str):
-                value = value
+            if isinstance(value, _GeneratedExpression):
+                value_source = value.source
             else:
-                value = repr(value)
-            kwargs.append(f"{key}={value}")
-        extra = ", " + ", ".join(kwargs) if kwargs else ""
+                value_source = repr(value)
+            kwargs.append(f"{key!r}: {value_source}")
+        extra = ", **{" + ", ".join(kwargs) + "}" if kwargs else ""
         color = contactor.get("color", av.color)
         shift_arg = f", shift={shift!r}" if shift is not None else ""
         lines.append(
@@ -997,9 +1028,9 @@ def _emit_population(
         )
     extra = ""
     if pop.avatar_type == AvatarType.RIGID_CLUSTER:
-        extra = f", nb_disk={pop.extra_params.get('nb_disk', 3)}"
+        extra = f", nb_disk={pop.extra_params.get('nb_disk', 3)!r}"
     if pop.avatar_type == AvatarType.RIGID_CYLINDER:
-        extra = f", h={pop.extra_params.get('h', 1.0)}"
+        extra = f", h={pop.extra_params.get('h', 1.0)!r}"
     if pop.avatar_type in (AvatarType.RIGID_POLYGON, AvatarType.RIGID_POLYHEDRON):
         nb_default = 6 if pop.avatar_type == AvatarType.RIGID_POLYGON else 8
         radius_arg = (
@@ -1010,10 +1041,10 @@ def _emit_population(
         extra = ""
     else:
         radius_arg = "r=float(_r)"
-    ident = pop.population_id[:12].replace("-", "_")
+    ident = _ident(pop.population_id)
     bodies_ref = _population_bodies_ref(pop)
     lines = [
-        f"# population {pop.population_id}  n={len(pop)}  {pop.avatar_type.value}",
+        f"# population {pop.population_id!r}  n={len(pop)}  {pop.avatar_type.value!r}",
     ]
     if config is not None and config.create_avatars:
         prefix = f"_granulo_{ident}"
@@ -1034,8 +1065,8 @@ def _emit_population(
     lines.extend((
         f"{bodies_ref} = []",
         f"for _c, _r in zip({centers_ref}, {radii_ref}):",
-        f"    _body = pre.{fn}({radius_arg}, center=_c, model=mod_{pop.model_name}, "
-        f"material=mat_{pop.material_name}, color={pop.color!r}{extra})",
+        f"    _body = pre.{fn}({radius_arg}, center=_c, model={_model_ref(pop.model_name)}, "
+        f"material={_material_ref(pop.material_name)}, color={pop.color!r}{extra})",
         f"    bodies.addAvatar(_body)",
         f"    {bodies_ref}.append(_body)",
     ))
@@ -1043,10 +1074,10 @@ def _emit_population(
 
 
 def _emit_law(law: ContactLaw) -> str:
-    fric = f", fric={law.friction}" if law.friction is not None else ""
+    fric = f", fric={law.friction!r}" if law.friction is not None else ""
     extra = (", " + _kw(law.properties)) if law.properties else ""
     return (
-        f"law_{law.name} = pre.tact_behav(name={law.name!r}, "
+        f"{_law_ref(law.name)} = pre.tact_behav(name={law.name!r}, "
         f"law={law.law_type_name!r}{fric}{extra})"
     )
 
@@ -1058,7 +1089,7 @@ def _emit_see(rule: VisibilityRule, i: int) -> str:
         f"colorCandidat={rule.candidate_color!r}, "
         f"CorpsAntagoniste={rule.antagonist_body!r}, antagoniste={rule.antagonist_contactor!r}, "
         f"colorAntagoniste={rule.antagonist_color!r}, "
-        f"behav=law_{rule.behavior_name}, alert={rule.alert})"
+        f"behav={_law_ref(rule.behavior_name)}, alert={rule.alert!r})"
     )
 
 
@@ -1246,7 +1277,7 @@ def _emit_postpro(
     cmd,
     avatar_refs: dict[str, str],
 ) -> str:
-    kwargs = [f"name={cmd.name!r}", f"step={cmd.step}"]
+    kwargs = [f"name={cmd.name!r}", f"step={cmd.step!r}"]
     target_type = (cmd.target_type or "global").lower()
     target_value = cmd.target_value
     if target_type == "global" or target_value is None:
@@ -1309,11 +1340,18 @@ def _emit_dof(
         )
     elif op.target_type == "group":
         group_ref = _group_ref(project, str(op.target_value))
-        params = ", ".join(
-            f"{k}={v!r}"
-            for k, v in op.parameters.items()
-            if k not in STUDIO_ONLY_KEYS
-        )
+        params = _kw({
+            key: value
+            for key, value in op.parameters.items()
+            if key not in STUDIO_ONLY_KEYS
+        })
+        if (
+            not isinstance(op.operation_type, str)
+            or not op.operation_type.isidentifier()
+            or keyword.iskeyword(op.operation_type)
+            or op.operation_type.startswith("_")
+        ):
+            raise ValueError("Invalid DOF operation type.")
         return (
             f"for _body in {group_ref}:\n"
             f"    _body.{op.operation_type}({params})"
@@ -1331,11 +1369,18 @@ def _emit_dof(
             raise ValueError(f"No avatars have contactor color {color!r}.")
     else:
         raise ValueError(f"Unsupported DOF target type {op.target_type!r}.")
-    params = ", ".join(
-        f"{k}={v!r}"
-        for k, v in op.parameters.items()
-        if k not in STUDIO_ONLY_KEYS
-    )
+    params = _kw({
+        key: value
+        for key, value in op.parameters.items()
+        if key not in STUDIO_ONLY_KEYS
+    })
+    if (
+        not isinstance(op.operation_type, str)
+        or not op.operation_type.isidentifier()
+        or keyword.iskeyword(op.operation_type)
+        or op.operation_type.startswith("_")
+    ):
+        raise ValueError("Invalid DOF operation type.")
     return "\n".join(
         f"{target}.{op.operation_type}({params})"
         for target in target_refs

@@ -180,9 +180,9 @@ class ResultsBar(QWidget):
             self.slider.setMaximum(latest)
         target = latest if follow_latest else min(current, latest)
         if self.slider.value() != target:
-            self.slider.setValue(target)
+            self.slider.setValue(target)      # déclenche show_frame
         elif target == current:
-            self.show_frame(target)
+            self.show_frame(current)          # rafraîchit les acteurs
 
     # ------------------------------------------------------------ appelé par clear()
     def on_cleared(self) -> None:

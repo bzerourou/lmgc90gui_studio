@@ -35,7 +35,7 @@ tests/test_schema_audit.py
 <<<<<<< HEAD
 =======
 tests/test_schema_materials.py
->>>>>>> 634bb2a (new version 0.7.7)
+>>>>>>> 634bb2a (new version 0.7.8)
 =======
 tests/test_schema_materials.py
 >>>>>>> 10e38cb (fix some bugs)

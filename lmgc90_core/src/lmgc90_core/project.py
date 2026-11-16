@@ -43,6 +43,13 @@ Entity = Union[
 
 @dataclass
 class Project:
+    """Project state; private collection mutators are the command layer's API.
+
+    ``_insert_*``, ``_replace_*``, and ``_drop_*`` are internal mutation
+    methods used by ``commands.py``. Application code should use public
+    ``Project`` operations so mutations remain undoable.
+    """
+
     name: str = "untitled"
     dimension: int = 2
     units: UnitSystem = UnitSystem.SI
@@ -64,12 +71,13 @@ class Project:
     history: CommandHistory = field(default_factory=CommandHistory, repr=False)
     record: bool = True
     _command_batch: list[Any] | None = field(default=None, repr=False)
+    _on_conflict: Optional[str] = field(default=None, repr=False, compare=False)
 
     # ------------------------------------------------------------------ API
 
     def _conflict_mode(self, on_conflict: Optional[str] = None) -> str:
         """error | skip | merge — see apply_scene(on_conflict=...)."""
-        mode = on_conflict or getattr(self, "_on_conflict", None) or "error"
+        mode = on_conflict or self._on_conflict or "error"
         if mode not in ("error", "skip", "merge"):
             return "error"
         return mode
