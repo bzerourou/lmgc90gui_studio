@@ -46,13 +46,13 @@ Ouvrez **Onglets → Ouvrir → Granulo** (`Ctrl+6`).
 | **Type d'avatar** | 2D : `rigidDisk`, `rigidDiscreteDisk`, `rigidPolygon` ; 3D : `rigidSphere`, `rigidPolyhedron` | 1ᵉʳ de la liste |
 | **Matériau** | tous les matériaux du projet | — |
 | **Modèle** | modèles de la **même dimension** que le projet | — |
-| **Couleur (5 car.)** | complétée par des `x` si plus courte (ex. `BLU` → `BLUxx`), tronquée à 5 | `BLUEx` |
-| **Groupe (5 car.)** | idem | `granx` |
+| **Couleur (5 car.)** | code LMGC90 : complétée par des `x` si plus courte et tronquée à 5 caractères | `BLUEx` |
+| **Groupe** | nom libre, conservé sans padding ni troncature | `granulo_box2d` |
 | **Seed** | entier ≥ 0, ou `random` (valeur minimale du champ) | `42` |
 | **Utiliser dépôt pylmgc (engine)** | voir §A.4 | décoché |
 | **Distribution seule (rayons)** | ne crée ni avatars ni population | décoché |
 
-> **Types `rigidPolygon` / `rigidPolyhedron`.** Ils sont proposés dans la liste mais le formulaire ne permet pas encore de renseigner leurs paramètres (nombre de sommets) : le dépôt est alors refusé avec un message du type *« rigidPolygon: extra_params['nb_vertices'] … »*. Utilisez pour l'instant `rigidDisk`, `rigidDiscreteDisk` ou `rigidSphere`.
+> **Types proposés dans l'interface.** Le formulaire offre cinq types : `rigidDisk`, `rigidDiscreteDisk`, `rigidPolygon`, `rigidSphere` et `rigidPolyhedron`. Pour les polygones et polyèdres, les paramètres de sommets ne sont pas éditables dans le formulaire : les valeurs par défaut du modèle sont utilisées (6 sommets en 2D, 8 en 3D). Le core prend aussi en charge `rigidCluster` et `rigidCylinder`, mais ces deux types ne sont pas proposés dans cette liste.
 
 ### Conteneurs
 
@@ -82,6 +82,8 @@ Quatre comportements possibles :
 | **Distribution seule** | case **Distribution seule (rayons)** | tire N rayons dans `[rmin, rmax]`, enregistre l'intention (`[dist]` dans la liste) ; **aucun** grain, aucune population ; la case pylmgc est alors désactivée |
 
 > Les positions obtenues avec numpy et avec pylmgc90 diffèrent (algorithmes différents). Pour des études comparables, gardez le même mode et la même graine.
+
+La case **Utiliser dépôt pylmgc (engine)** choisit le générateur, pas le mode de stockage : les deux chemins créent une `ParticlePopulation` SoA. Il n'existe pas de case d'activation du SoA.
 
 ## A.5 Générer, contrôler, supprimer
 
@@ -154,7 +156,9 @@ Dans **ForLoop**, deux cibles utilisent les dépôts :
 | `mon_projet.lmgc90` | JSON : métadonnées de la population (identifiant, type, matériau, modèle, couleur, origine, dimension, groupe, `n_particles`), intention de dépôt (`granulo_generations`) |
 | `mon_projet.populations.npz` | tableaux compressés `centres` et `rayons` de toutes les populations |
 
-**Copiez, déplacez ou archivez les deux fichiers ensemble.** Si le `.npz` manque à l'ouverture, les populations concernées sont ignorées sans message : le projet s'ouvre sans grains. Si le projet n'a plus de population, l'ancien `.npz` est supprimé à la sauvegarde.
+**Copiez, déplacez ou archivez les deux fichiers ensemble.** Si le `.npz` manque ou est illisible, les populations concernées sont ignorées et un avertissement est ajouté au projet. Les métadonnées JSON contiennent les empreintes SHA-256 des tableaux `centers` et `radii` : une empreinte manquante produit un avertissement (compatibilité avec les anciens fichiers), tandis qu'une empreinte invalide fait ignorer la population. Si le projet n'a plus de population, l'ancien `.npz` est supprimé à la sauvegarde.
+
+À l'écriture, chaque fichier est préparé dans un fichier temporaire du même répertoire, synchronisé (`flush`/`fsync`), puis remplacé avec `os.replace`. Le remplacement est atomique fichier par fichier.
 
 Poids typique des tableaux : `(dimension + 1) × 8` octets par grain avant compression, soit 24 octets en 2D (≈ 2,4 Mo pour 100 000 grains).
 
@@ -165,7 +169,7 @@ Poids typique des tableaux : `(dimension + 1) × 8` octets par grain avant compr
 
 ### Performances
 
-- Viewer 3D : le rendu transforme chaque grain en objet temporaire puis fusionne les disques/sphères par lot de même couleur. C'est supportable jusqu'à quelques dizaines de milliers de grains ; au-delà, l'actualisation devient lente (le viewer est une aide de contrôle).
+- Viewer 3D : les positions et rayons de toute la population sont transmis au rendu par lot ; les disques/sphères sont dessinés dans un acteur fusionné par population. Ce chemin ne sous-échantillonne pas à 5000 particules : au-delà de quelques dizaines de milliers, l'actualisation peut devenir lente.
 - Les grains d'une même couleur sont dessinés comme un **seul** objet : ils ne sont pas sélectionnables individuellement en mode *Sélect.*.
 - Création des corps pylmgc90 : un appel par grain (limite de LMGC90), donc temps proportionnel à N à l'écriture de la DATBOX.
 
@@ -248,16 +252,16 @@ class ParticlePopulation:
 
 `POPULATION_TYPES` : `RIGID_DISK`, `RIGID_SPHERE`, `RIGID_DISCRETE`, `RIGID_CLUSTER`, `RIGID_CYLINDER`, `RIGID_POLYGON`, `RIGID_POLYHEDRON`.
 
-`extra_params` exigés (`_validate_extra`) :
+`extra_params` et valeurs par défaut :
 
 | Type | Clé |
 |---|---|
-| `rigidCluster` | `nb_disk` (int ≥ 2, défaut 3) |
+| `rigidCluster` | `nb_disk` (int ≥ 2, défaut 3 à l'émission) |
 | `rigidCylinder` | `h` > 0 (obligatoire) |
-| `rigidPolygon` | `nb_vertices` (int ≥ 3) |
-| `rigidPolyhedron` | `nb_vertices` (int ≥ 4) |
+| `rigidPolygon` | `nb_vertices` (int ≥ 3, défaut 6) |
+| `rigidPolyhedron` | `nb_vertices` (int ≥ 4, défaut 8) |
 
-> `GranuloTab` et `NumpyGranulo.deposit` n'alimentent pas `extra_params` ; polygones/polyèdres échouent donc à `create()` (voir A.3).
+`ParticlePopulation.create()` renseigne les valeurs par défaut des polygones et polyèdres avant validation. `GranuloTab` ne permet pas de modifier ces paramètres ; les types `rigidCluster` et `rigidCylinder` restent accessibles par l'API, mais ne figurent pas dans sa liste.
 
 ### Construction validée
 
@@ -336,18 +340,19 @@ save_populations_sidecar(pops, npz)     # clés "<pid>__centers", "<pid>__radii"
 load_populations_sidecar(npz)           # {pid: (centers, radii)} ; absent ⇒ {}
 ```
 
-- `project_to_dict` écrit `particle_populations` (méta via `to_meta_dict()`), `populations_groups`, `granulo_generations` (incluant `radii` pour les distributions seules) et, si des populations existent, `particle_populations_sidecar`.
-- `load_project` fusionne méta + tableaux ; une population dont les tableaux sont introuvables est ignorée (pas d'avertissement). Les `history` sont restaurés par `load_stacks`.
+- `project_to_dict` écrit `particle_populations` (méta via `to_meta_dict()`), `populations_groups` et `granulo_generations` (incluant `radii` pour les distributions seules). `save_project` ajoute `particle_populations_sidecar` et `population_sidecar_integrity`, avec `centers_sha256` et `radii_sha256` pour chaque population.
+- `save_project` écrit le sidecar et le JSON dans des fichiers temporaires adjacents, synchronise leur contenu, puis les remplace avec `os.replace` (atomiquement par fichier).
+- `load_project` fusionne méta + tableaux et vérifie formes, nombre de particules et empreintes ; une population absente ou dont l'intégrité échoue est ignorée avec avertissement. Une empreinte absente est signalée mais n'empêche pas le chargement. Les `history` sont restaurés par `load_stacks`.
 - Formes : `to_meta_dict()` / `from_meta_and_arrays()` (production), `to_dict()` / `from_dict()` (autonome).
 
 ## B.5 Consommateurs
 
 | Consommateur | Comportement |
 |---|---|
-| `pre_script._emit_population` | `centers_<id>` / `radii_<id>` en clair + boucle `pre.<fn>(r=…, center=…, model=…, material=…, color=…)` ; `fn` ∈ {`rigidDisk`, `rigidSphere`, `rigidDiscreteDisk`, `rigidCluster`, `rigidCylinder`} (autres types ⇒ `rigidDisk`) |
+| `pre_script._emit_population` | `centers_<id>` / `radii_<id>` en clair + boucle `pre.<fn>(…, center=…, model=…, material=…, color=…)` pour les sept types de `POPULATION_TYPES` : `rigidDisk`, `rigidSphere`, `rigidDiscreteDisk`, `rigidCluster`, `rigidCylinder`, `rigidPolygon`, `rigidPolyhedron`. Un type non pris en charge provoque une erreur, sans repli vers `rigidDisk`. Les populations créées par `ForLoop` passent par cette même émission. |
 | `engine.materialize` | `build_population_bodies` (un appel `pre.<fn>` par particule) ; `scene.bodies_by_population_id[pid]` ; `session.population_map` ; populations ajoutées après les avatars AoS |
-| `viewer_3d` | `_expand_renderables` : `as_avatar_view(i)` pour chaque particule ; fusion par `(type, couleur)` pour disque/sphère ; acteur fusionné non « pickable » |
-| `scene_geometry` | sous-échantillonnage à `max_population_preview = 5000` |
+| `viewer_3d` | transmet tous les centres/rayons de chaque population au rendu par lot ; pas de limite à 5000 particules dans ce chemin |
+| `scene_geometry.build_scene_geometry` | utilitaire de géométrie de scène : sous-échantillonne chaque population à `max_population_preview = 5000` |
 | `visibility_tab` | `_project_contact_options` ajoute `(corps, forme, couleur, rôle)` d'après `pop.avatar_type`, `pop.dimension`, `pop.color` |
 | `dof_tab` | liste les couleurs de populations ; groupes = `avatar_groups` |
 | `compute_script` | indifférent ; `_resolve_group_ids` ne résout que les avatars AoS |
@@ -359,9 +364,9 @@ load_populations_sidecar(npz)           # {pid: (centers, radii)} ; absent ⇒ {
 
 ## B.7 Étendre
 
-**Nouveau type SoA** : `types.POPULATION_TYPES` → `population._validate_extra` (+ `as_avatar_view`) → `avatar_factory.build_population_bodies` (`fn_map`) → `pre_script._emit_population` (`fn`) → GUI (`GranuloTab` : champs pour `extra_params`) → tests.
+**Nouveau type SoA** : `types.POPULATION_TYPES` → `population._validate_extra` (+ `as_avatar_view`) → `avatar_factory.build_population_bodies` (`fn_map`) → `pre_script._emit_population` (`fn`) → tests. Si le type doit être sélectionnable dans l'interface, l'ajouter aussi à la liste 2D ou 3D de `GranuloTab` ; celle-ci propose actuellement cinq types sur les sept du core.
 
-**Corriger polygone/polyèdre en GUI** : ajouter dans `GranuloTab` des champs `nb_vertices`/`radius` et les passer à `GranuloConfig` (`extra_params` à introduire dans le modèle), puis à `NumpyGranulo.deposit` → `ParticlePopulation.create(extra_params=…)`.
+**Paramètres géométriques dans GranuloTab** : si l'interface doit permettre de régler les sommets d'un polygone/polyèdre, ajouter des champs dédiés et transmettre leurs valeurs jusqu'à `ParticlePopulation.create(extra_params=…)`. En l'absence de réglage, les valeurs par défaut du core sont utilisées.
 
 **Nouveau conteneur** : `NumpyGranulo._sample` + `_inside`, `granulo_tab._CONTAINERS`, éventuellement `engine.granulo._call_deposit`.
 

@@ -35,7 +35,7 @@ class ResultsBar(QWidget):
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setEnabled(False)
         self.label = QLabel("—")
-        self.label.setMinimumWidth(150)
+        self.label.setMinimumWidth(80)
         self.field = QComboBox()
         self.field.setToolTip("Champ utilisé pour la couleur")
         self.field.addItem(_UNIFORM)
@@ -180,9 +180,9 @@ class ResultsBar(QWidget):
             self.slider.setMaximum(latest)
         target = latest if follow_latest else min(current, latest)
         if self.slider.value() != target:
-            self.slider.setValue(target)      # déclenche show_frame
+            self.slider.setValue(target)
         elif target == current:
-            self.show_frame(current)          # rafraîchit les acteurs
+            self.show_frame(target)
 
     # ------------------------------------------------------------ appelé par clear()
     def on_cleared(self) -> None:

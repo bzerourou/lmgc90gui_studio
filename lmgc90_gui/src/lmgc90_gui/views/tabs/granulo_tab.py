@@ -94,8 +94,8 @@ def create_granulo_tab(parent=None):
             self.mod_combo = QComboBox()
             self.color_edit = QLineEdit("BLUEx")
             self.color_edit.setMaxLength(5)
-            self.group_edit = QLineEdit("granx")
-            self.group_edit.setMaxLength(5)
+            self.group_edit = QLineEdit("granulo_box2d")
+            self.group_edit.setPlaceholderText("nom libre, ex. granulo_box2d")
             self.seed_spin = QLineEdit("42")
             self.seed_spin.setPlaceholderText("entier, expression ou random")
             self.pylmgc_check = QCheckBox(
@@ -126,7 +126,7 @@ def create_granulo_tab(parent=None):
             form.addRow("Matériau", self.mat_combo)
             form.addRow("Modèle", self.mod_combo)
             form.addRow("Couleur (5 car.)", self.color_edit)
-            form.addRow("Groupe (5 car.)", self.group_edit)
+            form.addRow("Groupe", self.group_edit)
             form.addRow("Seed", self.seed_spin)
             for field in (self.n_spin, self.rmin, self.rmax):
                 field.setPlaceholderText("nombre ou expression")
@@ -369,7 +369,7 @@ def create_granulo_tab(parent=None):
                     )
                     return
             color = lmgc5(self.color_edit.text(), "BLUEx")
-            group = lmgc5(self.group_edit.text(), "granx")
+            group = self.group_edit.text().strip() or "granulo_box2d"
             cfg = GranuloConfig(
                 nb_particles=nb_particles,
                 radius_min=radius_min,

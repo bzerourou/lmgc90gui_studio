@@ -293,10 +293,10 @@ def rotating_drum(project: Project) -> None:
 
 
 def hopper_discharge(project: Project) -> None:
-    """Décharge en trémie — 2 roughWall inclinés + dépôt Box2D (MVC 0.5.7).
+    """Décharge en trémie — 2 roughWall inclinés + dépôt Box2D.
 
     Géométrie dans le repère depositInBox2D [0,lx]×[0,ly], puis parois
-    décalées vers le bas (translate groupe) pour placer le V sous le nuage.
+    abaissées sous le dépôt.
     """
     import math
     from ..entities import DOFOperation, GranuloConfig, PostProCommand
@@ -348,7 +348,7 @@ def hopper_discharge(project: Project) -> None:
         target_value="hopper_walls",
         parameters={"component": [1, 2, 3], "dofty": "vlocy"},
     ))
-    # shift V below the deposit box (same as old example: dy = -box_lx)
+    # Keep the V below the deposit box.
     project.add(DOFOperation(
         operation_type="translate",
         target_type="group",
@@ -381,7 +381,7 @@ def hopper_discharge(project: Project) -> None:
     see_table(
         project,
         cand_body="RBDY2", cand="DISKx", cand_color="BLUEx",
-        ant_body="RBDY2", ant="JONCx", ant_color="GRAYx",
+        ant_body="RBDY2", ant="POLYG", ant_color="GRAYx",
         law="grain", alert=0.05,
     )
     project.add(PostProCommand(name="KINETIC ENERGY", step=20))
@@ -396,9 +396,9 @@ def avalanche_slope(project: Project) -> None:
     box_lx, box_ly = 1.5, 1.0
     slope_length = 4.0
     slope_angle = math.radians(25.0)
-    slope = project.add(smooth_wall(
-        l=slope_length, h=0.1, center=[0.0, 0.0], model="rigid", material="TDURx",
-        color="REEDx", nb_polyg=30,
+    slope = project.add(jonc(
+        axe1=slope_length / 2.0, axe2=0.05, center=[0.0, 0.0],
+        model="rigid", material="TDURx", color="REEDx",
     ))
     project.add(DOFOperation(
         operation_type="rotate", target_type="avatar", target_value=slope.avatar_id,
@@ -523,10 +523,11 @@ def ball_bearing(project: Project) -> None:
     project.add(Material(name="acier", material_type=MaterialType.RIGID, density=7800.0))
     project.add(Model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
 
-    outer_race_inner_radius = 0.0095
+    outer_race_inner_radius = 0.0100
     inner_race_outer_radius = 0.0050
-    ball_radius = (outer_race_inner_radius - inner_race_outer_radius) / 2.0
-    pitch_radius = inner_race_outer_radius + ball_radius
+    ball_radius = 0.0020
+    pitch_radius = (outer_race_inner_radius + inner_race_outer_radius) / 2.0
+    alert = 0.001
     nb_balls = 7
     center = [0.0, 0.0]
 
@@ -545,6 +546,7 @@ def ball_bearing(project: Project) -> None:
         r=inner_race_outer_radius, center=center, model="rigid", material="acier",
         color="ORANx", is_hollow=False,
     ))
+
     project.add(DOFOperation(
         operation_type="imposeDrivenDof",
         target_type="avatar",
@@ -575,13 +577,19 @@ def ball_bearing(project: Project) -> None:
         project,
         cand_body="RBDY2", cand="DISKx", cand_color="BLUEx",
         ant_body="RBDY2", ant="DISKx", ant_color="ORANx",
-        law="law01", alert=0.0005,
+        law="law01", alert=alert,
     )
     see_table(
         project,
         cand_body="RBDY2", cand="DISKx", cand_color="BLUEx",
         ant_body="RBDY2", ant="xKSID", ant_color="GRAYx",
-        law="law01", alert=0.0005,
+        law="law01", alert=alert,
+    )
+    see_table(
+        project,
+        cand_body="RBDY2", cand="DISKx", cand_color="BLUEx",
+        ant_body="RBDY2", ant="DISKx", ant_color="BLUEx",
+        law="law01", alert=alert,
     )
 
 
@@ -758,9 +766,11 @@ def biaxial_compression(project: Project) -> None:
     ensure_rigid_2d(project, density=2600.0)
     box_lx, box_ly = 2.0, 1.5
     thickness = 0.04
-    floor = project.add(smooth_wall(
-        l=box_lx + 0.4, h=0.1, center=[box_lx / 2.0, -0.05],
-        model="rigid", material="TDURx", color="GRAYx"))
+    floor = project.add(jonc(
+        axe1=(box_lx + 0.4) / 2.0, axe2=0.05,
+        center=[box_lx / 2.0, -0.05],
+        model="rigid", material="TDURx", color="GRAYx",
+    ))
     project.add(DOFOperation(
         operation_type="imposeDrivenDof", target_type="avatar",
         target_value=floor.avatar_id,
@@ -769,9 +779,9 @@ def biaxial_compression(project: Project) -> None:
 
     def _vertical_wall(x):
         h = box_ly + 0.3
-        w = project.add(rough_wall(
-            l=h, r=thickness, center=[x, h / 2.0],
-            model="rigid", material="TDURx", color="GRAYx", nb_vertex=10,
+        w = project.add(jonc(
+            axe1=h / 2.0, axe2=thickness, center=[x, h / 2.0],
+            model="rigid", material="TDURx", color="GRAYx",
         ))
         project.add(DOFOperation(
             operation_type="rotate", target_type="avatar", target_value=w.avatar_id,
@@ -783,11 +793,18 @@ def biaxial_compression(project: Project) -> None:
     left = _vertical_wall(-thickness)
     right = _vertical_wall(box_lx + thickness)
     project.group("press_walls", [left.avatar_id, right.avatar_id])
-    project.add(DOFOperation(
-        operation_type="imposeDrivenDof", target_type="group",
-        target_value="press_walls",
-        parameters={"component": [1, 2, 3], "dofty": "vlocy", "ct": 0.0},
-    ))
+    compression_speed = 0.2
+    for wall, vx in ((left, compression_speed), (right, -compression_speed)):
+        project.add(DOFOperation(
+            operation_type="imposeDrivenDof", target_type="avatar",
+            target_value=wall.avatar_id,
+            parameters={"component": [2, 3], "dofty": "vlocy", "ct": 0.0},
+        ))
+        project.add(DOFOperation(
+            operation_type="imposeDrivenDof", target_type="avatar",
+            target_value=wall.avatar_id,
+            parameters={"component": 1, "dofty": "vlocy", "ct": vx},
+        ))
     project.granulo.append(GranuloConfig(
         nb_particles=200, radius_min=0.04, radius_max=0.07,
         container_type="Box2D", container_params={"lx": box_lx, "ly": box_ly},
@@ -831,7 +848,9 @@ def l_shaped_wall(project: Project) -> None:
             model_name="rigid",
             color=color,
             origin=AvatarOrigin.MANUAL,
-            wall_params={"l": lx, "h": ly, "brick_name": "std"},
+            wall_params={
+                "l": lx, "h": ly, "brick_name": "std", "masonry": True,
+            },
         ))
 
     ids = []

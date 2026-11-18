@@ -216,9 +216,8 @@ def create_masonry_wizard(controller, parent=None):
             self.color.setPlaceholderText("5 car. LMGC90")
             self.store_group = QCheckBox("Enregistrer le groupe")
             self.store_group.setChecked(True)
-            self.group_name = QLineEdit("mason")
-            self.group_name.setMaxLength(5)
-            self.group_name.setPlaceholderText("5 car. LMGC90")
+            self.group_name = QLineEdit("mur_briques")
+            self.group_name.setPlaceholderText("nom libre, ex. mur_briques")
             self.fill_ends = QCheckBox("Demi-briques aux extrémités (Standard)")
             self.add_law = QCheckBox("Ajouter loi IQS_CLB + see-table (POLYG 2D / POLYR 3D)")
             self.add_law.setChecked(True)
@@ -474,7 +473,7 @@ def create_masonry_wizard(controller, parent=None):
                 model_name=mod_name,
                 color=lmgc5(lay_p.color.text(), "REEDx"),
                 group_name=(
-                    lmgc5(lay_p.group_name.text(), "mason")
+                    lay_p.group_name.text().strip() or "mur_briques"
                     if lay_p.store_group.isChecked() else None
                 ),
                 brick_name=lmgc5(br_p.brick_name.text(), "stdxx"),

@@ -115,6 +115,14 @@ workers et vues spécifiques ont leurs propres répertoires. Les registres du
 code font autorité : évitez de maintenir une seconde liste figée dans ce
 guide.
 
+Le point d'entrée de l'application est `lmgc90_gui.app.main` ; il ouvre la
+fenêtre principale maximisée. Gardez les chemins de modules de diagnostic dans
+les infobulles ou le journal de l'application plutôt que dans les libellés
+visibles, car ceux-ci augmentent la largeur minimale de la fenêtre. La barre
+d'outils du visualiseur 3D est répartie sur deux rangées et la barre des
+résultats conserve une largeur minimale bornée afin que la fenêtre puisse
+tenir sur un écran de bureau standard.
+
 ## Scènes d'exemple
 
 Les constructeurs de scènes core sont des fonctions recevant un `Project`

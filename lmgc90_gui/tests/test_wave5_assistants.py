@@ -26,10 +26,10 @@ def test_apply_masonry_on_project():
     ctrl.add(pre.material(name="brick", materialType="RIGID", density=1800))
     ctrl.add(pre.model(name="rigid", physics="MECAx", element="Rxx2D", dimension=2))
     bricks = ctrl.apply_masonry(MasonryConfig(
-        n_courses=2, n_columns=2, bond="stack", group_name="mur",
+        n_courses=2, n_columns=2, bond="stack", group_name="mur_briques",
     ))
     assert len(bricks) == 4
-    assert "mur" in ctrl.project.avatar_groups
+    assert "mur_briques" in ctrl.project.avatar_groups
     text = ctrl.emit_pre_script()
     assert "rigidPolygon" in text or "vertices" in text
 

@@ -1264,6 +1264,8 @@ class Viewer3D(QWidget):
         # ── Barre d'outils ────────────────────────────────────────────────────
         tb = QHBoxLayout()
         tb.setSpacing(4)
+        tb_options = QHBoxLayout()
+        tb_options.setSpacing(4)
 
         self.info_label = QLabel("0 avatar(s)")
         self.info_label.setStyleSheet("color:#aaa; font-size:9pt;")
@@ -1304,7 +1306,7 @@ class Viewer3D(QWidget):
         self._edges_check = QCheckBox("Edges")
         self._edges_check.setChecked(True)
         self._edges_check.toggled.connect(self._toggle_edges)
-        tb.addWidget(self._edges_check)
+        tb_options.addWidget(self._edges_check)
 
         # Conditions aux limites
         self._dof_check = QCheckBox("DOF")
@@ -1313,7 +1315,7 @@ class Viewer3D(QWidget):
             "DOF : X red · Y green · Z blue · constraint (bar+purple) · velocity (arrow) · force (orange) · predefined (bright orange) · rotate (pink) · translate (cyan)"
         )
         self._dof_check.toggled.connect(self._toggle_dof)
-        tb.addWidget(self._dof_check)
+        tb_options.addWidget(self._dof_check)
 
         self._law_check = QCheckBox("Laws")
         self._law_check.setChecked(False)
@@ -1321,9 +1323,9 @@ class Viewer3D(QWidget):
             "See-tables: lien couleur candidat -> antagoniste, teinte par nom de loi"
         )
         self._law_check.toggled.connect(self._toggle_laws)
-        tb.addWidget(self._law_check)
+        tb_options.addWidget(self._law_check)
 
-        tb.addWidget(_sep())
+        tb_options.addWidget(_sep())
 
         # Mode couleur
         #tb.addWidget(QLabel("Couleur :"))
@@ -1332,9 +1334,9 @@ class Viewer3D(QWidget):
         self._color_combo.addItems(["LMGC90", "By type", "By material", "By origin"])
         self._color_combo.setFixedWidth(90)
         self._color_combo.currentIndexChanged.connect(self._on_color_mode_changed)
-        tb.addWidget(self._color_combo)
+        tb_options.addWidget(self._color_combo)
 
-        tb.addWidget(_sep())
+        tb_options.addWidget(_sep())
 
         # Opacité globale
         #tb.addWidget(QLabel("Opacité :"))
@@ -1344,9 +1346,9 @@ class Viewer3D(QWidget):
         self._opacity_slider.setFixedWidth(50)
         self._opacity_slider.setToolTip("Global opacity of avatars")
         self._opacity_slider.valueChanged.connect(self._on_opacity_changed)
-        tb.addWidget(self._opacity_slider)
+        tb_options.addWidget(self._opacity_slider)
 
-        tb.addWidget(_sep())
+        tb_options.addWidget(_sep())
 
         # Bouton pylmgc90
         self._pylmgc90_btn = QPushButton("🔬")
@@ -1357,29 +1359,29 @@ class Viewer3D(QWidget):
         )
         self._pylmgc90_btn.setFixedWidth(50)
         self._pylmgc90_btn.toggled.connect(self._on_pylmgc90_toggled)
-        tb.addWidget(self._pylmgc90_btn)
+        tb_options.addWidget(self._pylmgc90_btn)
 
-        tb.addWidget(_sep())
+        tb_options.addWidget(_sep())
 
         rst = QPushButton("🔄")
         rst.setToolTip("Reset the camera")
         rst.setFixedWidth(40)
         rst.clicked.connect(self._reset_camera)
-        tb.addWidget(rst)
+        tb_options.addWidget(rst)
 
         clr = QPushButton("🗑️")
         clr.setToolTip("Clear the scene")
         clr.setFixedWidth(40)
         clr.clicked.connect(self.clear)
-        tb.addWidget(clr)
+        tb_options.addWidget(clr)
 
         exp = QPushButton("📷")
         exp.setToolTip("Export the scene as a PNG")
         exp.setFixedWidth(40)
         exp.clicked.connect(self._export_png)
-        tb.addWidget(exp)
+        tb_options.addWidget(exp)
 
-        tb.addStretch()
+        tb_options.addStretch()
 
         # Filtre groupe
         #tb.addWidget(QLabel("Groupe :"))
@@ -1388,9 +1390,10 @@ class Viewer3D(QWidget):
         self._group_combo.setMinimumWidth(100)
         self._group_combo.addItem("All groups")
         self._group_combo.currentTextChanged.connect(self._on_group_filter)
-        tb.addWidget(self._group_combo)
+        tb_options.addWidget(self._group_combo)
 
         root.addLayout(tb)
+        root.addLayout(tb_options)
 
         # ── Plotter PyVista ───────────────────────────────────────────────────
         self.plotter = QtInteractor(self)

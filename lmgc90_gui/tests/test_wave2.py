@@ -35,6 +35,7 @@ def test_preferences_roundtrip(tmp_path: Path):
         dt=2e-3,
         nb_steps=50,
         python_executable="python3",
+        auto_detect_contactors=True,
         chipy_options={"advanced_write_out_dof": False, "use_RBDY3": True},
     )
     path = tmp_path / "prefs.json"
@@ -43,9 +44,37 @@ def test_preferences_roundtrip(tmp_path: Path):
     assert loaded.dt == 2e-3
     assert loaded.nb_steps == 50
     assert loaded.python_executable == "python3"
+    assert loaded.auto_detect_contactors is True
+    assert loaded.chipy_params()["use_SelectProx_macro"] is False
     assert "dt" in loaded.chipy_params()
     assert loaded.chipy_params()["advanced_write_out_dof"] is False
     assert loaded.chipy_params()["use_RBDY3"] is True
+
+
+def test_contactors_default_to_select_prox_macro():
+    prefs = Preferences(chipy_options={"use_SelectProx_macro": False})
+
+    assert prefs.auto_detect_contactors is False
+    assert prefs.chipy_params()["use_SelectProx_macro"] is True
+
+
+def test_contactors_preference_selects_macro_or_inferred_detector():
+    ctrl = ProjectController()
+    ctrl.new_project("contactor-preference", dimension=3)
+    ctrl.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    ctrl.add(pre.model(name="rigid", physics="MECAx", element="Rxx3D", dimension=3))
+    ctrl.add(pre.rigidSphere(
+        r=0.1, center=[0, 0, 0], model="rigid", material="STEEL",
+    ))
+
+    default_script = ctrl.emit_chipy_script()
+    assert default_script.count("chipy.SelectProxTactors()") == 1
+    assert "chipy.SPSPx_SelectProxTactors()" not in default_script
+
+    ctrl.prefs.auto_detect_contactors = True
+    automatic_script = ctrl.emit_chipy_script()
+    assert "chipy.SelectProxTactors()" not in automatic_script
+    assert automatic_script.count("chipy.SPSPx_SelectProxTactors()") == 1
 
 
 def test_prepare_run_directory(tmp_path: Path):

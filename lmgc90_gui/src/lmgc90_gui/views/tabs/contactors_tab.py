@@ -272,9 +272,9 @@ def create_contactors_tab(parent=None):
             self.shape_combo = QComboBox()
             self.shape_combo.currentTextChanged.connect(self._on_shape_changed)
             self.color_edit = QLineEdit("BLUEx")
-            self.bygroup_edit = QLineEdit()
-            self.bygroup_edit.setPlaceholderText("mesh element group (e.g. down)")
-            self.group_label = QLabel("Group")
+            self.bygroup_edit = QLineEdit("down")
+            self.bygroup_edit.setPlaceholderText("required (e.g. down)")
+            self.group_label = QLabel("Group (required)")
             form.addRow("Shape", self.shape_combo)
             form.addRow("Color", self.color_edit)
             form.addRow(self.group_label, self.bygroup_edit)
@@ -492,7 +492,11 @@ def create_contactors_tab(parent=None):
                 if params:
                     entry["params"] = params
                 group = self.bygroup_edit.text().strip()
-                if shape in self._mesh_contactors and group:
+                if shape in self._mesh_contactors and not group:
+                    raise ValidationError(
+                        f"{shape} requires a non-empty mesh group (e.g. down)"
+                    )
+                if shape in self._mesh_contactors:
                     entry["group"] = group
                 updated = av.copy()
                 updated.contactors.append(entry)

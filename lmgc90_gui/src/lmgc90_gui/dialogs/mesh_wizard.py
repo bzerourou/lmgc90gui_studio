@@ -13,6 +13,8 @@ from lmgc90_core import Avatar, Material, MaterialType, Model, ValidationError, 
 from lmgc90_core.types import (
     AvatarOrigin,
     AvatarType,
+    CONTACTORS_MESH_2D,
+    CONTACTORS_MESH_3D,
     ELEMENTS_BY_PHYSICS,
     material_type_name,
 )
@@ -45,6 +47,7 @@ _WIZARD_MATERIAL_TYPES = frozenset({
 })
 _GEOM_2D = ["Rectangle", "Disque", "Fichier externe"]
 _GEOM_3D = ["Boîte (H8)", "Sphère", "Cylindre", "Fichier externe"]
+_MESH_CONTACTORS = set(CONTACTORS_MESH_2D) | set(CONTACTORS_MESH_3D)
 
 
 def create_mesh_wizard(controller, parent=None):
@@ -461,14 +464,23 @@ def create_mesh_wizard(controller, parent=None):
             form = QFormLayout(self)
             self.add_tact = QCheckBox("Ajouter un contacteur de bord")
             self.add_tact.setChecked(True)
+            self.add_tact.toggled.connect(lambda _checked: self.completeChanged.emit())
             self.shape = QComboBox()
+            self.shape.currentTextChanged.connect(
+                lambda _shape: self.completeChanged.emit()
+            )
             self.color = QLineEdit("CYANx")
-            self.by_group = QLineEdit()
-            self.by_group.setPlaceholderText("optionnel — groupe de nœuds/faces")
+            self.by_group = QLineEdit("down")
+            self.by_group.setPlaceholderText(
+                "obligatoire pour un contacteur de maillage (ex. down)"
+            )
+            self.by_group.textChanged.connect(
+                lambda _text: self.completeChanged.emit()
+            )
             form.addRow(self.add_tact)
             form.addRow("Shape", self.shape)
             form.addRow("Color", self.color)
-            form.addRow("by group", self.by_group)
+            form.addRow("by group (required)", self.by_group)
 
         def initializePage(self):
             dim = self.wizard().page(MeshWizard.PAGE_DIM).dimension()
@@ -478,16 +490,28 @@ def create_mesh_wizard(controller, parent=None):
             else:
                 self.shape.addItems(["CSpxx", "ASpxx", "PT3Dx"])
 
+        def isComplete(self) -> bool:
+            return (
+                not self.add_tact.isChecked()
+                or self.shape.currentText() not in _MESH_CONTACTORS
+                or bool(self.by_group.text().strip())
+            )
+
         def contactors(self) -> List[dict]:
             if not self.add_tact.isChecked():
                 return []
+            shape = self.shape.currentText()
             entry = {
-                "shape": self.shape.currentText(),
+                "shape": shape,
                 "color": self.color.text().strip() or "CYANx",
             }
-            byg = self.by_group.text().strip()
-            if byg:
-                entry["group"] = byg
+            if shape in _MESH_CONTACTORS:
+                group = self.by_group.text().strip()
+                if not group:
+                    raise ValueError(
+                        f"{shape} requires a non-empty mesh group (e.g. down)"
+                    )
+                entry["group"] = group
             return [entry]
 
     class MeshSummaryPage(QWizardPage):

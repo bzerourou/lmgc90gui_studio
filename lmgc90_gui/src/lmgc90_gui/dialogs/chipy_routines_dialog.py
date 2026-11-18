@@ -870,8 +870,8 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         )
         fl_rs.addRow("Pas de reprise :", self._spin_rs_step)
         fl_rs.addRow(_note(
-            "Genere :  chipy.ReadIni()  +  chipy.SetStep(restart_step) "
-            "avant la boucle de calcul."
+            "Genere : chipy.ReadIni(record=N), puis "
+            "chipy.OpenDisplayFiles(restart=N+1), avant la boucle de calcul."
         ))
         grp_rs.setLayout(fl_rs)
         vb.addWidget(grp_rs)
@@ -1172,7 +1172,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         combo_grp.setEditable(True)
         combo_grp.addItem("")
         groups = list(
-            (getattr(getattr(self, "controller", None), "state", None)
+            (getattr(getattr(self, "controller", None), "project", None)
              and getattr(self.controller.project, "avatar_groups", {}) or {}).keys()
         )
         combo_grp.addItems(groups)
@@ -1612,7 +1612,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         combo_grp.setEditable(True)
         combo_grp.addItem("")
         _groups = list(
-            (getattr(getattr(self, "controller", None), "state", None)
+            (getattr(getattr(self, "controller", None), "project", None)
              and getattr(self.controller.project, "avatar_groups", {}) or {}).keys()
         )
         combo_grp.addItems(_groups)
@@ -1789,7 +1789,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         combo_grp.addItem("")          # vide = pas de groupe
         groups = list(
             (getattr(getattr(self, "controller", None),
-                     "state", None) and
+                     "project", None) and
              getattr(self.controller.project, "avatar_groups", {}) or {}).keys()
         )
         combo_grp.addItems(groups)
@@ -1853,7 +1853,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         }
 
     def _pick_avatar_ids(self, target_edit: "QLineEdit", dim: str):
-        """\n        Ouvre un dialogue de selection d'avatars du projet.        Insere les IDs selectionnes (1-bases) dans target_edit.        dim : "2D" ou "3D" pour filtrer les avatars affichables.        """
+        """Select project RBDY bodies and insert their 1-based indices."""
         if self.controller is None:
             QMessageBox.information(
                 self,
@@ -1863,53 +1863,85 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
             return
 
         from PyQt6.QtWidgets import QListWidget, QListWidgetItem
+        from lmgc90_core.compute_script import project_rigid_body_index_ranges
 
-        avatars = self.controller.project.avatars
-        # Filtrer selon la dimension
-        _3D_TYPES = {
-            "rigidSphere", "rigidPlan", "rigidCylinder",
-            "rigidPolyhedron", "roughWall3D", "granuloRoughWall3D",
-            "emptyAvatar", "mesh",
-        }
-        _2D_TYPES = {
-            "rigidDisk", "rigidJonc", "rigidPolygon", "rigidOvoid",
-            "rigidDiscrete", "rigidCluster",
-            "roughWall", "fineWall", "smoothWall", "granuloWall",
-            "emptyAvatar", "mesh",
-        }
-        filter_set = _3D_TYPES if dim == "3D" else _2D_TYPES
-
-        # Construire la liste : (id_1based, label)
-        items = []
-        for i, av in enumerate(avatars, start=1):
-            av_type_val = getattr(
-                getattr(av, "avatar_type", None), "value", ""
+        project = self.controller.project
+        requested_dimension = 3 if dim == "3D" else 2
+        if project.dimension != requested_dimension:
+            QMessageBox.information(
+                self,
+                "Aucun corps RBDY {}".format(dim),
+                "Le projet est en dimension {}D.".format(project.dimension),
             )
-            if av_type_val in filter_set:
-                label = "{}  [{}]  type: {}".format(
-                    i,
-                    getattr(av, "color", ""),
-                    av_type_val,
-                )
-                items.append((i, label))
+            return
+
+        body_ranges, _, mesh_count_errors = project_rigid_body_index_ranges(
+            project
+        )
+        items = []
+        for avatar in project.avatars:
+            body_range = body_ranges.get(avatar.avatar_id)
+            if body_range is None:
+                continue
+            first, count = body_range
+            avatar_type = getattr(avatar.avatar_type, "value", str(avatar.avatar_type))
+            for offset in range(count):
+                body_index = first + offset
+                expanded = f" body {offset + 1}/{count}" if count > 1 else ""
+                items.append((
+                    body_index,
+                    f"{body_index}  [{getattr(avatar, 'color', '')}]  "
+                    f"type: {avatar_type}{expanded}",
+                ))
+
+        for population in project.populations:
+            body_range = body_ranges.get(population.population_id)
+            if body_range is None:
+                continue
+            first, count = body_range
+            population_type = getattr(
+                population.avatar_type, "value", str(population.avatar_type)
+            )
+            for offset in range(count):
+                body_index = first + offset
+                items.append((
+                    body_index,
+                    f"{body_index}  [population {population.population_id[:8]}, "
+                    f"particule {offset + 1}]  type: {population_type}",
+                ))
+
+        items.sort(key=lambda item: item[0])
+
+        if mesh_count_errors:
+            details = "\n".join(
+                f"{avatar_id[:8]}…: {error}"
+                for avatar_id, error in mesh_count_errors.items()
+            )
+            QMessageBox.warning(
+                self,
+                "Indexation du maillage",
+                "Impossible de compter les corps issus de certains maillages. "
+                "Les indices suivants ne sont pas listés :\n" + details,
+            )
 
         if not items:
             QMessageBox.information(
                 self,
-                "Aucun avatar {}".format(dim),
-                "Le projet ne contient aucun avatar de type {}.".format(dim),
+                "Aucun corps RBDY {}".format(dim),
+                "Le projet ne contient aucun corps RBDY {}.".format(dim),
             )
             return
 
         # Dialogue de selection
         dlg = QDialog(self)
-        dlg.setWindowTitle("Selectionner les avatars {}".format(dim))
+        dlg.setWindowTitle("Selectionner les corps RBDY {}".format(dim))
         dlg.resize(420, 380)
         lay = QVBoxLayout(dlg)
 
         lay.addWidget(_note(
             "Selectionnez un ou plusieurs avatars (Ctrl+clic ou Maj+clic). "
-            "L'ID est le numero 1-base dans l'ordre de creation du projet."
+            "L'ID est l'index RBDY 1-base (sans MAILx; populations et "
+            "maillages rigides développés inclus)."
         ))
 
         lw = QListWidget()
@@ -2038,8 +2070,9 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
             self._cb_deformable.setChecked(True)
             self._on_phys_changed(self._combo_phys.currentIndex())
 
-        has_masonry = bool(getattr(st, "masonry_patterns", {})) or any(
-            getattr(av, "wall_params", None) for av in st.avatars
+        has_masonry = any(
+            (av.wall_params or {}).get("masonry") is True
+            for av in st.avatars
         )
         if has_masonry:
             self._cb_CLALp.setChecked(True)
@@ -2047,9 +2080,7 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         pt_laws  = {"ELASTIC_WIRE", "BRITTLE_ELASTIC_WIRE",
                     "ELASTIC_ROD", "VOIGT_ROD"}
         dof_laws = {"COUPLED_DOF", "NORMAL_COUPLED_DOF"}
-        law_types = {
-            cl.law_type_name for cl in getattr(st, "contact_laws", [])
-        }
+        law_types = {law.law_type_name for law in st.laws}
         if law_types & pt_laws:
             (self._cb_PTPT2 if dim == 2 else self._cb_PTPT3).setChecked(True)
         if law_types & dof_laws:
@@ -2065,15 +2096,16 @@ class ChipyRoutinesDialog(QDialog, BaseTab):
         n_def = sum(1 for av in st.avatars if av.avatar_type.value == "mesh")
         n_mat = len(getattr(st, "materials", []))
         n_mod = len(getattr(st, "models", []))
-        n_cl  = len(getattr(st, "contact_laws", []))
+        n_cl  = len(st.laws)
         groups = list((getattr(st, "avatar_groups", {}) or {}).keys())
         grp_str = (
             ", ".join(groups[:6]) + ("..." if len(groups) > 6 else "")
         ) if groups else "(aucun)"
-        has_mas = bool(getattr(st, "masonry_patterns", {})) or any(
-            getattr(av, "wall_params", None) for av in st.avatars
+        has_mas = any(
+            (av.wall_params or {}).get("masonry") is True
+            for av in st.avatars
         )
-        law_names = [cl.law_type_name for cl in getattr(st, "contact_laws", [])]
+        law_names = [law.law_type_name for law in st.laws]
         self._lbl_info.setText(
             "Projet       : {}\n"
             "Dimension    : {}D\n"

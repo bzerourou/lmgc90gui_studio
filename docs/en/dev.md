@@ -110,6 +110,12 @@ viewer-specific code live in their respective package directories. Treat the
 registries in code as authoritative rather than maintaining a second,
 hard-coded list in this guide.
 
+The application entry point is `lmgc90_gui.app.main`; it opens the main
+window maximized. Keep diagnostic module paths in tooltips or the application
+journal rather than visible labels, since long labels increase the window's
+minimum width. The 3D viewer toolbar uses two rows and the results bar keeps a
+bounded minimum width so the main window can fit standard desktop displays.
+
 ## Example scenes
 
 Core scene builders are functions that receive a `Project` and construct a

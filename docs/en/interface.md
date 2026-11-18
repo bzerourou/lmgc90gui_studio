@@ -26,6 +26,9 @@ The interface is divided into **six main areas**:
 
 The **command palette** is available from the **toolbar** or with the keyboard shortcut `Ctrl+K`.
 
+The window opens maximized. The 3D viewer controls are split across two rows
+to reduce the minimum window width.
+
 ![Command palette](../captures/palette_commandes.png)
 
 

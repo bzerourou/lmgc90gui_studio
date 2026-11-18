@@ -22,7 +22,7 @@ def create_viewer_tab(parent=None):
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import (
         QApplication, QHBoxLayout, QLabel, QMessageBox, QPushButton,
-        QVBoxLayout, QWidget,
+        QSizePolicy, QVBoxLayout, QWidget,
     )
 
     class ViewerTab(QWidget, BaseTab):
@@ -46,14 +46,13 @@ def create_viewer_tab(parent=None):
             self._pending_label.setStyleSheet(
                 "color: #e8a020; font-size: 9pt; font-style: italic;"
             )
-            bar.addWidget(self._pending_label)
             bar.addStretch()
 
-            self._visu_btn = QPushButton("👁 pre.visuAvatars")
+            self._visu_btn = QPushButton("👁 visuAvatars")
             self._visu_btn.clicked.connect(self._on_visu_avatars)
             bar.addWidget(self._visu_btn)
 
-            self._refresh_btn = QPushButton("🔄 Refresh the scene")
+            self._refresh_btn = QPushButton("🔄 Refresh")
             self._refresh_btn.setStyleSheet(
                 "QPushButton { font-weight: bold; padding: 3px 10px; }"
                 "QPushButton:hover { background: #2a5a9a; color: white; }"
@@ -67,6 +66,14 @@ def create_viewer_tab(parent=None):
                 "background: #111122; border-bottom: 1px solid #333; color: #eee;"
             )
             root.addWidget(bar_w)
+
+            status = QHBoxLayout()
+            status.setContentsMargins(4, 0, 4, 0)
+            self._pending_label.setSizePolicy(
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred,
+            )
+            status.addWidget(self._pending_label)
+            root.addLayout(status)
 
             self._holder_layout = QVBoxLayout()
             self._holder_layout.setContentsMargins(0, 0, 0, 0)
@@ -99,8 +106,7 @@ def create_viewer_tab(parent=None):
             try:
                 from .. import viewer_3d as v3mod
                 from ..viewer_3d import Viewer3D
-                # prove which file is loaded
-                self._tag.setText(f"{VIEWER_PORT_TAG}  [{v3mod.__file__}]")
+                self._tag.setToolTip(f"Viewer module: {v3mod.__file__}")
                 while self._holder_layout.count():
                     item = self._holder_layout.takeAt(0)
                     w = item.widget()

@@ -43,6 +43,13 @@ def create_preferences_dialog(prefs: "Preferences", parent=None):
             self.solver = QLineEdit(prefs.solver_type)
             self.deformable = QCheckBox("Modèle déformable (chipy)"); self.deformable.setChecked(prefs.deformable)
             self.disable_log = QCheckBox("Désactiver log chipy verbeux"); self.disable_log.setChecked(prefs.disable_log)
+            self.auto_detect_contactors = QCheckBox(
+                "Détection automatique des contacteurs (détecteurs individuels)"
+            )
+            self.auto_detect_contactors.setChecked(prefs.auto_detect_contactors)
+            self.auto_detect_contactors.setToolTip(
+                "Désactivée par défaut : utilise chipy.SelectProxTactors()."
+            )
             for label, w in (
                 ("dt", self.dt), ("nb_steps", self.nb_steps), ("theta", self.theta),
                 ("tol", self.tol), ("relax", self.relax),
@@ -53,6 +60,7 @@ def create_preferences_dialog(prefs: "Preferences", parent=None):
                 cf.addRow(label, w)
             cf.addRow("", self.deformable)
             cf.addRow("", self.disable_log)
+            cf.addRow("", self.auto_detect_contactors)
             tabs.addTab(comp, "Calcul")
 
             # ── Chemins / environnement (legacy Paths) ──────────────────
@@ -179,6 +187,7 @@ def create_preferences_dialog(prefs: "Preferences", parent=None):
             prefs.solver_type = self.solver.text()
             prefs.deformable = self.deformable.isChecked()
             prefs.disable_log = self.disable_log.isChecked()
+            prefs.auto_detect_contactors = self.auto_detect_contactors.isChecked()
             prefs.python_executable = self.python.text().strip() or sys.executable
             prefs.work_directory = self.workdir.text().strip()
             prefs.projects_directory = self.projdir.text().strip()

@@ -535,7 +535,7 @@ def test_pre_script_avatar_variable_names_use_full_ids():
 def test_chipy_script_enables_detectors_required_by_demo_visibility():
     project_2d = Project(name="falling_disks", dimension=2)
     falling_disks(project_2d)
-    script_2d = project_2d.to_chipy_script()
+    script_2d = project_2d.to_chipy_script(use_SelectProx_macro=False)
     assert "chipy.ComputeFreeVelocity()" in script_2d
     assert "chipy.DKDKx_SelectProxTactors()" in script_2d
     assert "chipy.DKJCx_SelectProxTactors()" in script_2d
@@ -543,14 +543,17 @@ def test_chipy_script_enables_detectors_required_by_demo_visibility():
 
     project_3d = Project(name="sphere_stack", dimension=3)
     sphere_stack(project_3d)
-    script_3d = project_3d.to_chipy_script()
+    script_3d = project_3d.to_chipy_script(use_SelectProx_macro=False)
     assert "mhyp   = 3" in script_3d
     assert "chipy.RBDY3_NewStep()" in script_3d
     assert "chipy.SPSPx_SelectProxTactors()" in script_3d
     assert "chipy.SPPLx_SelectProxTactors()" in script_3d
     assert "chipy.DKDKx_SelectProxTactors()" not in script_3d
 
-    overridden = project_3d.to_chipy_script(use_SPPLx=False)
+    overridden = project_3d.to_chipy_script(
+        use_SelectProx_macro=False,
+        use_SPPLx=False,
+    )
     assert "chipy.SPPLx_SelectProxTactors()" not in overridden
 
 

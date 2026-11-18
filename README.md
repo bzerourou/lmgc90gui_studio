@@ -177,6 +177,9 @@ lmgc90-gui
 python -m lmgc90_gui
 ```
 
+The window opens maximized. The 3D viewer controls use two rows to reduce the
+minimum window width.
+
 Main tabs (evolving): Materials, Models, Avatars, Contact, Visibility, DOF, Groups, Contactors, Granulo, Loops, deformable / masonry assistants, **3D Visualisation**, etc.
 
 - **Refresh scene**: parametric PyVista render (manual, for large projects).

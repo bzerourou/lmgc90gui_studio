@@ -27,6 +27,7 @@ class Preferences:
     norm: str = CHIPY_DEFAULTS["norm"]
     deformable: bool = CHIPY_DEFAULTS["deformable"]
     disable_log: bool = CHIPY_DEFAULTS["disable_log"]
+    auto_detect_contactors: bool = False
     freq_write: int = CHIPY_DEFAULTS["freq_write"]
     freq_display: int = CHIPY_DEFAULTS["freq_display"]
     solver_type: str = CHIPY_DEFAULTS["solver_type"]
@@ -86,6 +87,7 @@ class Preferences:
             "disable_log": self.disable_log,
         }
         params.update(self.chipy_options or {})
+        params["use_SelectProx_macro"] = not self.auto_detect_contactors
         return params
 
     def to_dict(self) -> dict:

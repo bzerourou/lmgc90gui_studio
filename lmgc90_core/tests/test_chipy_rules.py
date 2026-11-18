@@ -62,7 +62,11 @@ def test_new_spheres_enable_inferred_detector_with_stale_dialog_params():
         r=0.1, center=[0, 0, 0], model="rigid", material="STEEL",
     ))
 
-    script = emit_chipy(project, use_SPSPx=False)
+    script = emit_chipy(
+        project,
+        use_SelectProx_macro=False,
+        use_SPSPx=False,
+    )
 
     assert "chipy.SPSPx_SelectProxTactors()" in script
 
@@ -71,7 +75,7 @@ def test_empty_detector_selection_warns_and_marks_generated_script():
     project = Project(name="empty", dimension=3)
 
     with pytest.warns(UserWarning, match="No contact detector"):
-        script = emit_chipy(project)
+        script = emit_chipy(project, use_SelectProx_macro=False)
 
     assert "chipy.SelectProxTactors()" in script
     assert "# WARNING: no individual contact detector selected or inferred" in script

@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     window = create_main_window(controller)
     if icon_path is not None:
         window.setWindowIcon(QIcon(str(icon_path)))
-    window.show()
+    window.showMaximized()
     return app.exec()
 
 

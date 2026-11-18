@@ -34,6 +34,9 @@ lmgc90-gui
 python -m lmgc90_gui
 ```
 
+The application starts maximized. The 3D viewer toolbar is split across two
+rows to keep the required window width manageable.
+
 Headless / notebook:
 
 ```python

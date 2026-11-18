@@ -13,17 +13,34 @@ from lmgc90_core import Avatar, ParticlePopulation, Project
 from lmgc90_core.types import AvatarType
 
 
-# crude colour map (LMGC90-ish names → RGB 0-255)
+# LMGC90 color codes → RGB 0-255
 _COLORS = {
-    "BLUEx": (66, 135, 245),
-    "REEDx": (220, 60, 60),
+    "BLEUx": (58, 126, 200),
+    "REDxx": (217, 64, 64),
+    "VERTx": (58, 170, 90),
+    "GREEx": (58, 170, 90),
+    "JAUNx": (232, 192, 32),
     "GRAYx": (140, 140, 140),
-    "CYANx": (40, 200, 200),
-    "GREENx": (60, 180, 80),
-    "YELLO": (230, 200, 40),
-    "ORANG": (240, 140, 40),
-    "WHITEx": (230, 230, 230),
-    "BLACKx": (30, 30, 30),
+    "BLACx": (32, 32, 32),
+    "WHITx": (245, 245, 245),
+    "ORANx": (232, 120, 32),
+    "CYANx": (32, 200, 200),
+    "MAGEx": (192, 48, 192),
+    "VIOLx": (128, 64, 192),
+    "ROSEx": (232, 128, 160),
+    "BROWx": (139, 94, 60),
+    "GOLDx": (212, 160, 23),
+    "SILVx": (192, 192, 192),
+    "TURQx": (48, 213, 200),
+}
+_COLOR_ALIASES = {
+    "BLUEx": "BLEUx",
+    "REEDx": "REDxx",
+    "GREENx": "VERTx",
+    "YELLO": "JAUNx",
+    "ORANG": "ORANx",
+    "WHITEx": "WHITx",
+    "BLACKx": "BLACx",
 }
 
 
@@ -74,6 +91,7 @@ def color_rgb(name: str) -> Tuple[int, int, int]:
     if not name:
         return (66, 135, 245)
     key = name.strip()
+    key = _COLOR_ALIASES.get(key, key)
     if key in _COLORS:
         return _COLORS[key]
     # partial match

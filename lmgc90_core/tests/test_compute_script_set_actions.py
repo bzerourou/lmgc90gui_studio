@@ -3,7 +3,10 @@ import ast
 import pytest
 
 from lmgc90_core import Avatar, AvatarType, ParticlePopulation, Project, pre
-from lmgc90_core.compute_script import ComputeScriptGenerator
+from lmgc90_core.compute_script import (
+    ComputeScriptGenerator,
+    project_rigid_body_index_ranges,
+)
 
 
 def _generate(set_entries):
@@ -93,7 +96,7 @@ def _group_visibility_script(project, dimension=2):
     })
 
 
-def test_group_indices_follow_rigid_body_order_and_mesh_expansion():
+def test_group_indices_follow_rigid_body_order_and_mesh_expansion(monkeypatch):
     project = Project(name="group_indices", dimension=2)
     rigid_before = pre.rigidDisk(
         r=0.1, center=[0, 0], model="rigid", material="STEEL",
@@ -120,6 +123,10 @@ def test_group_indices_follow_rigid_body_order_and_mesh_expansion():
     )
     project.avatars.extend([rigid_before, deformable, from_mesh, rigid_after])
     project.group("selected", [deformable.avatar_id, from_mesh.avatar_id, rigid_after.avatar_id])
+    monkeypatch.setattr(
+        "lmgc90_core.compute_script._rigids_from_mesh2d_count",
+        lambda _avatar: 4,
+    )
 
     script = _group_visibility_script(project)
 
@@ -164,6 +171,70 @@ def test_group_indices_include_soa_after_aos_bodies():
 
     assert "chipy.RBDY2_SetVisible(2)" in script
     assert "chipy.RBDY2_SetVisible(3)" in script
+
+
+def test_project_rigid_body_index_ranges_match_chipy_order(monkeypatch):
+    project = Project(name="body_index_picker", dimension=2)
+    rigid = pre.rigidDisk(
+        r=0.1, center=[0, 0], model="rigid", material="STEEL",
+    )
+    mail = Avatar(
+        avatar_type=AvatarType.MESH_DEFORMABLE,
+        center=[0, 0],
+        material_name="ELAS",
+        model_name="mesh",
+    )
+    ovoid = Avatar(
+        avatar_type=AvatarType.RIGID_OVOID,
+        center=[0, 0],
+        material_name="STEEL",
+        model_name="rigid",
+    )
+    discrete = Avatar(
+        avatar_type=AvatarType.RIGID_DISCRETE,
+        center=[0, 0],
+        material_name="STEEL",
+        model_name="rigid",
+    )
+    granulo_wall = Avatar(
+        avatar_type=AvatarType.GRANULO_WALL,
+        center=[0, 0],
+        material_name="STEEL",
+        model_name="rigid",
+    )
+    from_mesh = Avatar(
+        avatar_type=AvatarType.EMPTY_AVATAR,
+        center=[0, 0],
+        material_name="STEEL",
+        model_name="rigid",
+        mesh_params={"source": "rigidsFromMesh2D"},
+    )
+    project.avatars.extend([rigid, mail, ovoid, discrete, granulo_wall, from_mesh])
+    population = ParticlePopulation.create(
+        avatar_type=AvatarType.RIGID_DISK,
+        material_name="STEEL",
+        model_name="rigid",
+        centers=[[0.0, 0.0], [1.0, 0.0]],
+        radii=[0.1, 0.1],
+    )
+    project.populations.append(population)
+    monkeypatch.setattr(
+        "lmgc90_core.compute_script._rigids_from_mesh2d_count",
+        lambda _avatar: 3,
+    )
+
+    ranges, non_rigid, mesh_errors = project_rigid_body_index_ranges(project)
+
+    assert ranges == {
+        rigid.avatar_id: (1, 1),
+        ovoid.avatar_id: (2, 1),
+        discrete.avatar_id: (3, 1),
+        granulo_wall.avatar_id: (4, 1),
+        from_mesh.avatar_id: (5, 3),
+        population.population_id: (8, 2),
+    }
+    assert mail.avatar_id in non_rigid
+    assert not mesh_errors
 
 
 @pytest.mark.parametrize(

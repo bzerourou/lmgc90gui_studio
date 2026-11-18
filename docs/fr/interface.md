@@ -25,6 +25,9 @@ L'interface est divisée en **Six zones principales** :
 
 La **palette des commandes**, est accessible dans la **barre d'outills** ou avec le raccourci clavier `ctrl+K`.
 
+La fenêtre s'ouvre maximisée. Dans le visualiseur 3D, les commandes sont
+réparties sur deux rangées pour limiter la largeur minimale requise.
+
 ![Palette des commandes](../captures/palette_commandes.png)
 
 

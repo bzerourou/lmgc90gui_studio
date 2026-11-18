@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 
 pytest.importorskip("PyQt6.QtWidgets")
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from lmgc90_core import GranuloConfig, pre
 from lmgc90_core.types import AvatarType
@@ -87,3 +87,26 @@ def test_remove_distribution_only_entry_by_selected_item(qt_app):
     assert controller.project.granulo == []
     controller.project.undo()
     assert controller.project.granulo[0].generation_id == config.generation_id
+
+
+def test_deposit_preserves_long_group_name(qt_app, monkeypatch):
+    controller = ProjectController()
+    controller.new_project("granulo-long-group", dimension=2)
+    controller.add(pre.material(name="STEEL", materialType="RIGID", density=7800))
+    controller.add(pre.model(
+        name="rigid", physics="MECAx", element="Rxx2D", dimension=2,
+    ))
+
+    tab = create_granulo_tab()
+    tab.bind_controller(controller)
+    tab.on_state_changed()
+    tab.container.setCurrentIndex(tab.container.findData("Disk2D"))
+    tab.distrib_only.setChecked(True)
+    tab.group_edit.setText("granulo_box2d")
+
+    submitted = []
+    monkeypatch.setattr(controller, "deposit", lambda config: submitted.append(config))
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args: None)
+    tab._on_deposit()
+
+    assert submitted[0].group_name == "granulo_box2d"

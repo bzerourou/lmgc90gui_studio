@@ -129,6 +129,69 @@ def _gmsh_rigid_surface_count(path: Path, *, mesh_size: Any = None) -> int:
             gmsh.finalize()
 
 
+def project_rigid_body_index_ranges(
+    project: Project,
+) -> tuple[
+    dict[str, tuple[int, int]],
+    set[str],
+    dict[str, OSError | UnicodeError | ValueError],
+]:
+    """Map avatar/population IDs to 1-based RBDY index ranges in PRE order."""
+    rigid_types = (
+        RIGID_AVATARS_2D if project.dimension == 2 else RIGID_AVATARS_3D
+    )
+    body_ranges: dict[str, tuple[int, int]] = {}
+    non_rigid_members: set[str] = set()
+    mesh_count_errors: dict[str, OSError | UnicodeError | ValueError] = {}
+    next_body_index = 1
+    index_is_known = True
+
+    for avatar in project.avatars:
+        mesh_params = avatar.mesh_params or {}
+        is_mesh_rigid_factory = (
+            str(mesh_params.get("geom", "")).lower()
+            in ("rigidsfrommesh2d", "rigids_from_mesh2d")
+            or mesh_params.get("source") == "rigidsFromMesh2D"
+        )
+        if is_mesh_rigid_factory:
+            try:
+                body_count = _rigids_from_mesh2d_count(avatar)
+            except (OSError, UnicodeError, ValueError) as exc:
+                index_is_known = False
+                non_rigid_members.add(avatar.avatar_id)
+                mesh_count_errors[avatar.avatar_id] = exc
+                continue
+        elif (
+            avatar.avatar_type in rigid_types
+            or avatar.avatar_type == AvatarType.EMPTY_AVATAR
+        ):
+            body_count = 1
+        else:
+            non_rigid_members.add(avatar.avatar_id)
+            continue
+
+        if index_is_known:
+            body_ranges[avatar.avatar_id] = (
+                next_body_index, body_count,
+            )
+            next_body_index += body_count
+
+    for population in project.populations:
+        if (
+            population.dimension != project.dimension
+            or population.avatar_type not in rigid_types
+        ):
+            non_rigid_members.add(population.population_id)
+            continue
+        if index_is_known:
+            body_ranges[population.population_id] = (
+                next_body_index, len(population),
+            )
+            next_body_index += len(population)
+
+    return body_ranges, non_rigid_members, mesh_count_errors
+
+
 class _JournalLike(Protocol):
     def warning(self, msg: str) -> None: ...
 
@@ -492,62 +555,15 @@ class ComputeScriptGenerator:
             if not member_ids:
                 return []
 
-            rigid_types = (
-                RIGID_AVATARS_2D if self.project.dimension == 2
-                else RIGID_AVATARS_3D
+            body_ranges, non_rigid_members, mesh_count_errors = (
+                project_rigid_body_index_ranges(self.project)
             )
-            body_ranges: dict[str, tuple[int, int]] = {}
-            next_body_index = 1
-            index_is_known = True
-            non_rigid_members: set[str] = set()
-
-            for avatar in self.project.avatars:
-                mesh_params = avatar.mesh_params or {}
-                is_mesh_rigid_factory = (
-                    str(mesh_params.get("geom", "")).lower()
-                    in ("rigidsfrommesh2d", "rigids_from_mesh2d")
-                    or mesh_params.get("source") == "rigidsFromMesh2D"
+            for avatar_id, exc in mesh_count_errors.items():
+                self._warn(
+                    f"Groupe '{grp_name}' : impossible de compter les corps "
+                    f"de l'avatar mesh {avatar_id[:8]} ({exc}); "
+                    "les indices suivants ne seront pas résolus."
                 )
-                if is_mesh_rigid_factory:
-                    try:
-                        body_count = _rigids_from_mesh2d_count(avatar)
-                    except (OSError, UnicodeError, ValueError) as exc:
-                        index_is_known = False
-                        non_rigid_members.add(avatar.avatar_id)
-                        msg = (
-                            f"Groupe '{grp_name}' : impossible de compter les corps "
-                            f"de l'avatar mesh {avatar.avatar_id[:8]} ({exc}); "
-                            "les indices suivants ne seront pas résolus."
-                        )
-                        self._warn(msg)
-                        continue
-                elif (
-                    avatar.avatar_type in rigid_types
-                    or avatar.avatar_type == AvatarType.EMPTY_AVATAR
-                ):
-                    body_count = 1
-                else:
-                    non_rigid_members.add(avatar.avatar_id)
-                    continue
-
-                if index_is_known:
-                    body_ranges[avatar.avatar_id] = (
-                        next_body_index, body_count,
-                    )
-                    next_body_index += body_count
-
-            for population in self.project.populations:
-                if (
-                    population.dimension != self.project.dimension
-                    or population.avatar_type not in rigid_types
-                ):
-                    non_rigid_members.add(population.population_id)
-                    continue
-                if index_is_known:
-                    body_ranges[population.population_id] = (
-                        next_body_index, len(population),
-                    )
-                    next_body_index += len(population)
 
             result = []
             missing = []

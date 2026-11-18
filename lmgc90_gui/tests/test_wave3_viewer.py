@@ -7,8 +7,20 @@ from lmgc90_gui.utils.scene_geometry import build_scene_geometry, color_rgb
 
 
 def test_color_rgb():
-    assert color_rgb("BLUEx")[2] > 200
-    assert color_rgb("unknown")  # default
+    expected = {
+        "REDxx": (217, 64, 64),
+        "VERTx": (58, 170, 90),
+        "JAUNx": (232, 192, 32),
+        "BLEUx": (58, 126, 200),
+        "TURQx": (48, 213, 200),
+        "VIOLx": (128, 64, 192),
+    }
+    for color, rgb in expected.items():
+        assert color_rgb(color) == rgb
+
+    assert color_rgb("BLUEx") == color_rgb("BLEUx")
+    assert color_rgb("REEDx") == color_rgb("REDxx")
+    assert color_rgb("unknown") == (66, 135, 245)
 
 
 def test_scene_geometry_avatars_and_pop():

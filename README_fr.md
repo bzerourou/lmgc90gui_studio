@@ -179,6 +179,9 @@ lmgc90-gui
 python -m lmgc90_gui
 ```
 
+La fenêtre démarre maximisée. Les commandes du visualiseur 3D sont réparties
+sur deux rangées afin de réduire la largeur minimale nécessaire.
+
 Onglets principaux (évolutifs) : Materials, Models, Avatars, Contact, Visibility, DOF, Groups, Contactors, Granulo, Loops, assistants déformables / maçonnerie, **Visualisation 3D**, etc.
 
 - **Rafraîchir la scène** : rendu PyVista paramétrique (manuel, pour gros projets).
